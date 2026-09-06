@@ -5,6 +5,8 @@
 
 pub mod error;
 pub mod sandbox;
+pub mod spawn;
 
 pub use error::ProcessError;
 pub use sandbox::{Applied, NotImplementedPolicy, Sandbox, SandboxError, SandboxPolicy, Unapplied};
+pub use spawn::{ChildProcess, spawn};
