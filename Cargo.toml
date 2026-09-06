@@ -11,10 +11,10 @@ rust-version = "1.95"
 repository = "https://github.com/maslakovSaveliy/chrome-light"
 
 [workspace.dependencies]
-cl-platform = { path = "crates/platform" }
-cl-ipc = { path = "crates/ipc" }
-cl-process = { path = "crates/process" }
-cl-testshell = { path = "crates/testshell" }
+cl-platform = { path = "crates/platform", version = "0.0.1" }
+cl-ipc = { path = "crates/ipc", version = "0.0.1" }
+cl-process = { path = "crates/process", version = "0.0.1" }
+cl-testshell = { path = "crates/testshell", version = "0.0.1" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

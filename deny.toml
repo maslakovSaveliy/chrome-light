@@ -4,6 +4,8 @@ targets = ["aarch64-apple-darwin", "x86_64-pc-windows-msvc", "x86_64-unknown-lin
 all-features = true
 
 [advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
 ignore = []
 
@@ -17,7 +19,7 @@ confidence-threshold = 0.9
 
 [bans]
 multiple-versions = "warn"
-wildcards = "warn"
+wildcards = "deny"
 deny = [
   { crate = "openssl", reason = "rustls only" },
   { crate = "openssl-sys", reason = "rustls only" },
