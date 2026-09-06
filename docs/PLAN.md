@@ -43,12 +43,13 @@ M0 Foundation ─► M1 Static pages ─► M2 Secure + JS ─► M3 Interactive
 Scope: root workspace + lints + `deny.toml`; `cl-platform` (ProcessType, Clock, paths); `cl-ipc` (сообщения, postcard-кодек с лимитами, `Validate`, bootstrap через ipc-channel, handshake, fuzz `ipc_decode`); `cl-process` (spawn same-binary child, timeout, `Sandbox<Unapplied→Applied>`, `NotImplementedPolicy`/`DevNoSandbox`); `apps/chromelight` (`--type`, browser↔renderer ping/pong, tracing, `--trace-out`); `cl-testshell` (`render` → белый PNG, `compare`); `tools/bench/mem.sh`; CI workflow; проверочные скрипты (AGENTS.md sync, platform cfg).
 
 Exit-критерии:
-- [ ] `cargo build/test/clippy -D warnings/fmt/deny` зелёные на macOS, Windows, Linux в CI.
-- [ ] `chromelight --exit-after-handshake --no-sandbox` завершает handshake browser↔renderer на 3 ОС (integration test).
-- [ ] Release-бинарник отказывается спавнить renderer без sandbox (`NotImplementedPolicy`) — тест.
-- [ ] `cargo fuzz run ipc_decode` работает 60 с без падений.
-- [ ] `cl-testshell render` пишет PNG 800×600; `compare` возвращает 0/1.
-- [ ] `tools/bench/mem.sh` пишет JSON с RSS по процессам; в `docs/history/bench-2026-09.md` — baseline Chrome 153 на машине владельца (ручное измерение).
+- [x] `cargo build/test/clippy -D warnings/fmt/deny` зелёные на macOS, Windows, Linux в CI.
+- [x] `chromelight --exit-after-handshake --no-sandbox` завершает handshake browser↔renderer на 3 ОС (integration test).
+- [x] Release-бинарник отказывается спавнить renderer без sandbox (`NotImplementedPolicy`) — тест.
+- [x] `cargo fuzz run ipc_decode` работает 60 с без падений.
+- [x] `cl-testshell render` пишет PNG 800×600; `compare` возвращает 0/1.
+- [x] `tools/bench/mem.sh` пишет JSON с RSS по процессам; в `docs/history/bench-2026-09.md` — benchmark script готов.
+- [ ] Baseline Chrome 153 на машине владельца (ручное измерение) — владелец.
 
 Детальный план: `docs/superpowers/plans/2026-09-07-m0-foundation.md`.
 
