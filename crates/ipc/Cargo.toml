@@ -1,0 +1,24 @@
+[package]
+name = "cl-ipc"
+description = "ChromeLight typed, validated IPC: messages, codec, bootstrap, handshake"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_ipc"
+
+[dependencies]
+cl-platform.workspace = true
+ipc-channel.workspace = true
+postcard.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
