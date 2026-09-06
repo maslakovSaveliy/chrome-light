@@ -1,0 +1,13 @@
+# See docs/CODING_STANDARDS.md §3
+too-many-arguments-threshold = 8
+type-complexity-threshold = 300
+cognitive-complexity-threshold = 30
+avoid-breaking-exported-api = false
+disallowed-methods = [
+  { path = "std::process::exit", reason = "only apps/ may exit; use Result" },
+  { path = "std::env::var", reason = "env access only via cl-platform" },
+  { path = "std::thread::sleep", reason = "use cl-platform::Clock; sleeps make tests flaky" },
+]
+disallowed-types = [
+  { path = "std::sync::Mutex", reason = "use parking_lot::Mutex" },
+]

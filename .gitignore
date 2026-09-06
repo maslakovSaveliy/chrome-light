@@ -1,0 +1,13 @@
+/target
+**/*.rs.bk
+*.pdb
+*.dmp
+/tools/wpt/checkout/
+/tools/test262/checkout/
+/tools/fuzz/artifacts/
+/tools/bench/results/
+/.planning/HANDOFF.json
+.DS_Store
+*.profile/
+/tests/fixtures/**/real-*
+.env

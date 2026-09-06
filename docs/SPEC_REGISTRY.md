@@ -1,0 +1,59 @@
+# Реестр спецификаций
+
+Одна строка на реализованную/планируемую фичу. Acceptance criteria — нормативный текст + тесты. MDN — пояснение, не источник истины. Статусы: `todo`, `wip`, `done`, `partial`, `deviation`.
+
+Формат: `spec §anchor | feature | crate::module | tests (WPT path / unit) | status | deviations / notes`.
+
+## Нормативные источники
+
+| Орган | Спецификации | URL |
+|---|---|---|
+| WHATWG | HTML, DOM, Fetch, URL, Encoding, Streams, Storage, Infra, MIME Sniffing, Web IDL, Console, Notifications, XHR, Compat | https://spec.whatwg.org |
+| W3C CSSWG | CSS Snapshot 2025 + module drafts | https://www.w3.org/TR/css-2025 ; https://drafts.csswg.org |
+| W3C WebAppSec | CSP L3, Mixed Content, Secure Contexts, Referrer Policy, Permissions Policy, Trusted Types, Fetch Metadata, COOP/COEP (в HTML) | https://w3c.github.io/webappsec/ |
+| W3C | Permissions, Pointer Events 3, UI Events, Service Workers, IndexedDB 3, Web App Manifest, WebDriver 2, WebDriver BiDi, WAI-ARIA 1.2, HTML-AAM, AccName 1.2 | https://www.w3.org/TR/ |
+| TC39 | ECMA-262, ECMA-402, Test262 | https://tc39.es |
+| WebAssembly | Core, JS API, Web API | https://webassembly.github.io/spec/ |
+| IETF | RFC 9110 (HTTP semantics), 9111 (cache), 9112 (HTTP/1.1), 9113 (HTTP/2), 9114 (HTTP/3), 9000/9001 (QUIC), 9204 (QPACK), 8446 (TLS 1.3), 6455 (WebSocket), 6265bis (cookies), 9297 (WebTransport) | https://www.rfc-editor.org |
+| Khronos / GPU for Web | WebGL 2.0, WebGPU, WGSL | https://registry.khronos.org/webgl/ ; https://gpuweb.github.io/gpuweb/ |
+| Unicode | UAX #9 (bidi), #14 (line break), #29 (segmentation), UTS #35 (CLDR) | https://unicode.org/reports/ |
+| Privacy CG | Storage Partitioning, Storage Access, CHIPS, GPC | https://privacycg.github.io |
+| Chromium (compat) | CDP, CRX3, sync.proto, MV3 API surface | https://chromedevtools.github.io/devtools-protocol/ ; https://developer.chrome.com/docs/extensions |
+
+## Реестр
+
+| Spec §anchor | Feature | Crate::module | Tests | Status | Deviations / notes |
+|---|---|---|---|---|---|
+| url.spec.whatwg.org#url-parsing | URL parser | `cl-net::url` (crate `url`) | wpt/url | todo | |
+| encoding.spec.whatwg.org#decode | byte stream decoding, BOM sniffing | `cl-html::encoding` | wpt/encoding | todo | |
+| html.spec.whatwg.org#tokenization | HTML tokenizer | `cl-html` (html5ever) | wpt/html/syntax/parsing | todo | |
+| html.spec.whatwg.org#tree-construction | tree builder | `cl-html::sink` | wpt/html/syntax/parsing | todo | |
+| dom.spec.whatwg.org#nodes | Node, Element, Text, Document | `cl-dom::node` | wpt/dom/nodes | todo | |
+| dom.spec.whatwg.org#events | EventTarget, dispatch | `cl-dom::events` | wpt/dom/events | todo | |
+| css-cascade-5, css-syntax-3, selectors-4 | cascade, parsing, selectors | `cl-style` (stylo) | wpt/css/css-cascade, css-syntax, selectors | todo | stylo deviations tracked upstream |
+| css-display-3, CSS2 §9–10 | block/inline formatting | `cl-layout::block`, `::inline` | wpt/css/CSS2, css-display | todo | |
+| css-text-3/4 | line breaking, white-space | `cl-layout::text` (parley) | wpt/css/css-text | todo | |
+| css-flexbox-1 | flex | `cl-layout::flex` (taffy) | wpt/css/css-flexbox | todo | |
+| css-grid-2 | grid | `cl-layout::grid` (taffy) | wpt/css/css-grid | todo | |
+| css-position-3 | positioned layout | `cl-layout::positioned` | wpt/css/css-position | todo | |
+| css-transforms-2, css-color-4, filter-effects-1 | paint | `cl-paint` | reftests, wpt/css/css-transforms | todo | |
+| html.spec.whatwg.org#event-loops | event loop | `cl-js::event_loop` | wpt/html/webappapis/scripting | todo | |
+| webidl.spec.whatwg.org | bindings semantics | `cl-bindings` | wpt/WebIDL, wpt/dom/idlharness | todo | |
+| fetch.spec.whatwg.org#fetching | fetch algorithm, CORS | `cl-net::fetch` | wpt/fetch, wpt/cors | todo | |
+| RFC 9111 | HTTP cache | `cl-net::cache` | unit + wpt/fetch/http-cache | todo | |
+| RFC 6265bis | cookies | `cl-net::cookies` | wpt/cookies | todo | |
+| storage.spec.whatwg.org | storage keys, quota | `cl-storage` | wpt/storage | todo | |
+| html #webstorage | localStorage/sessionStorage | `cl-webapi::storage` | wpt/webstorage | todo | |
+| w3c IndexedDB 3 | IndexedDB | `cl-storage::idb`, `cl-webapi::idb` | wpt/IndexedDB | todo | |
+| webappsec-csp | CSP L3 | `cl-net::csp`, `cl-webapi::csp` | wpt/content-security-policy | todo | |
+| html #origin, #site | origin/site model | `cl-browser::site` | wpt/html/browsers/origin | todo | |
+| html #cross-origin-opener-policies, #coep | COOP/COEP | `cl-browser::navigation`, `cl-net` | wpt/html/cross-origin-opener-policy, cross-origin-embedder-policy | todo | |
+| wai-aria-1.2, html-aam | accessibility mapping | `cl-a11y` | wpt/accname, manual | todo | |
+| ecma-262 / ecma-402 | ECMAScript | V8 via `cl-js` | test262 qualification set | todo | V8 semantics = Chrome |
+| wasm core / js-api | WebAssembly | V8 via `cl-js` | wpt/wasm | todo | |
+| CDP (Chromium) | DevTools protocol subset | `cl-devtools` | integration | todo | tip-of-tree drift — pin version |
+| sync.proto (Chromium) | sync client/server | `cl-sync`, `cl-sync-server` | integration | todo | protocol snapshot pinned per Chromium release |
+| MV3 (Chromium) | extensions runtime | `cl-extensions` | integration + curated extension corpus | todo | Chrome-specific; document unsupported APIs |
+| CRX3 (Chromium) | extension package verification | `cl-extensions::crx` | unit + fuzz | todo | |
+
+Добавляй строки в PR вместе с фичей. Строки с `deviation` обязаны иметь ссылку на WPT-тест, который мы намеренно fail-им, и bug ID.
