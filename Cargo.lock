@@ -91,6 +91,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cl-process"
+version = "0.0.1"
+dependencies = [
+ "cl-ipc",
+ "cl-platform",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "cobs"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
