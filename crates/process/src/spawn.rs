@@ -85,6 +85,25 @@ pub fn spawn(
     })
 }
 
+impl Drop for ChildProcess {
+    /// A child that is still running when its handle is dropped is killed and reaped. The
+    /// browser owns every child's lifetime; nothing may outlive its handle (docs/SECURITY.md §3).
+    fn drop(&mut self) {
+        match self.child.try_wait() {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                tracing::warn!(
+                    pid = self.child.id(),
+                    "child still running at drop; killing"
+                );
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+            }
+            Err(e) => tracing::warn!(pid = self.child.id(), error = %e, "try_wait failed at drop"),
+        }
+    }
+}
+
 impl ChildProcess {
     /// OS pid.
     #[must_use]

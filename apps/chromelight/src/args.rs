@@ -33,6 +33,11 @@ pub struct Args {
     /// Write a Chrome-trace-format JSON of all tracing spans to this path.
     #[arg(long = "trace-out")]
     pub trace_out: Option<PathBuf>,
+
+    /// Dev/test only: return an error right after the handshake without shutting the renderer
+    /// down, to exercise `ChildProcess`'s kill-on-drop safety net.
+    #[arg(long = "browser-fail-after-handshake", hide = true)]
+    pub browser_fail_after_handshake: bool,
 }
 
 fn parse_process_type(s: &str) -> Result<ProcessType, String> {

@@ -34,6 +34,10 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
     }
     println!("handshake ok renderer pid={}", renderer.pid());
 
+    if args.browser_fail_after_handshake {
+        anyhow::bail!("simulated browser failure after handshake (dev flag)");
+    }
+
     if let Some(secs) = args.idle_seconds {
         info!(secs, "idling for benchmark");
         idle(Duration::from_secs(secs));

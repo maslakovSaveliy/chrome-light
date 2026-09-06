@@ -60,3 +60,18 @@ fn trace_out_should_write_a_chrome_trace_file() {
     assert!(meta.len() > 2, "trace file should not be empty");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn browser_failure_after_handshake_should_kill_renderer_on_drop() {
+    let out = bin()
+        .args(["--no-sandbox", "--browser-fail-after-handshake"])
+        .env("RUST_LOG", "warn")
+        .output()
+        .expect("run binary");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "stderr:\n{stderr}");
+    assert!(
+        stderr.contains("child still running at drop; killing"),
+        "stderr:\n{stderr}"
+    );
+}
