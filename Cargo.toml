@@ -1,0 +1,66 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+exclude = ["tools/fuzz"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0 OR MIT"
+rust-version = "1.95"
+repository = "https://github.com/maslakovSaveliy/chrome-light"
+
+[workspace.dependencies]
+cl-platform = { path = "crates/platform" }
+cl-ipc = { path = "crates/ipc" }
+cl-process = { path = "crates/process" }
+cl-testshell = { path = "crates/testshell" }
+
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+ipc-channel = "0.23"
+parking_lot = "0.12"
+postcard = { version = "1", features = ["use-std"] }
+proptest = "1"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tiny-skia = "0.12"
+tracing = "0.1"
+tracing-chrome = "0.7"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+unused_must_use = "deny"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "warn"
+indexing_slicing = "warn"
+panic = "deny"
+todo = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+large_enum_variant = "warn"
+redundant_clone = "warn"
+needless_collect = "warn"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = "thin"
+
+# Release optimisations but debug assertions on, so DevNoSandbox exists. Used by tools/bench until real sandboxes land (M1/M2).
+[profile.release-dev]
+inherits = "release"
+debug-assertions = true

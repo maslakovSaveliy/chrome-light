@@ -1,0 +1,19 @@
+[package]
+name = "cl-platform"
+description = "ChromeLight OS abstraction layer: process types, clocks, paths"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_platform"
+
+[dependencies]
+directories.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
