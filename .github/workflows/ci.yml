@@ -1,0 +1,65 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show   # installs the toolchain from rust-toolchain.toml
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-nextest
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo deny check
+      - run: cargo doc --workspace --no-deps
+      - run: bash scripts/check-agents-md.sh
+      - run: bash tools/check-platform-cfg.sh
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo build --workspace --locked
+      - run: cargo nextest run --workspace --locked
+      - run: cargo test --workspace --doc --locked
+      - name: release build refuses unsandboxed renderer (Gate S0)
+        shell: bash
+        run: |
+          cargo build --release -p chromelight --locked
+          set +e
+          ./target/release/chromelight --exit-after-handshake --no-sandbox
+          code=$?
+          set -e
+          test "$code" -ne 0
+
+  fuzz-short:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - run: cargo +nightly fuzz build --fuzz-dir tools/fuzz --target x86_64-unknown-linux-gnu ipc_decode
+      - run: cargo +nightly fuzz run --fuzz-dir tools/fuzz --target x86_64-unknown-linux-gnu ipc_decode -- -max_total_time=60

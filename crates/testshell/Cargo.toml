@@ -1,0 +1,22 @@
+[package]
+name = "cl-testshell"
+description = "ChromeLight headless deterministic shell: render to PNG, compare PNGs (reftests, WPT product)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_testshell"
+
+[[bin]]
+name = "cl-testshell"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+tiny-skia.workspace = true
+
+[lints]
+workspace = true

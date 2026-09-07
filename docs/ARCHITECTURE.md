@@ -161,6 +161,8 @@ tools/
 docs/
 ```
 
+**Статус на 2026-09-07 (M0):** существуют `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `apps/chromelight` binary, `tools/fuzz`, `tools/bench`; остальные crate-ы — по плану M1+.
+
 Правило зависимостей между crate-ами (проверяется `cargo deny` bans + `tools/check-deps.sh`): `cl-dom` не зависит от `cl-layout`; `cl-layout` не зависит от `cl-js`; ничего в renderer не зависит от `cl-browser`; `cl-platform` — лист.
 
 ## 9. Бюджеты памяти (ADR-0012, гипотезы до измерений)

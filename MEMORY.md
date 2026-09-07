@@ -4,11 +4,11 @@
 
 ## Состояние на 2026-09-07
 
-**Фаза:** документация, правила и план заложены. Кода нет. Следующий шаг — исполнение M0 по `docs/superpowers/plans/2026-09-07-m0-foundation.md`.
+**Фаза:** M0 Foundation реализована на ветке `m0-foundation`, PR #1 (draft). CI зелёный на macOS-14 / windows-2022 / ubuntu-24.04 (check, test, fuzz-short). Память idle: 4864 КБ суммарно (browser 2496 КБ, renderer 2368 КБ). Release-sandbox gate прошла (unsandboxed renderer отказывает, exit 78). Следующее действие: финальное ревью ветки → merge в main → тег m0 → план M1.
 
 **Продукт:** **ChromeLight** (ADR-0013, риск торговой марки принят владельцем). Лицензия **Apache-2.0 OR MIT** (ADR-0014).
 
-**Репозиторий:** `git init -b main` 2026-09-07, ремоута нет. `.planning/HANDOFF.json` — пустой чекпоинт GSD (в .gitignore).
+**Репозиторий:** GitHub https://github.com/maslakovSaveliy/chrome-light (public), default branch main; ветка m0-foundation → PR #1. `.planning/HANDOFF.json` — пустой чекпоинт GSD (в .gitignore).
 
 **Окружение владельца:** macOS 26.5.2, Apple Silicon (arm64), 16 ГБ RAM, 8 ядер, Xcode 26.6, **rustup установлен** (1.95.0, targets aarch64-apple-darwin/x86_64-pc-windows-msvc/x86_64-unknown-linux-gnu; cargo-deny/nextest/fuzz/insta есть). Внимание: неинтерактивные shell-ы не видят `~/.cargo/bin` — использовать `export PATH="$HOME/.cargo/bin:$PATH"`. cmake/ninja есть, docker есть, gh есть.
 
@@ -33,8 +33,21 @@
 
 ## Открытые вопросы владельцу
 
-1. Бюджеты памяти в ADR-0012 — гипотезы; подтверждаются измерением в M1/M2.
-2. GitHub-ремоут: создать? (нужен для CI-матрицы Windows/Linux.)
+1. Chrome 153 baseline в `docs/history/bench-2026-09.md` — вручную измерить на машине владельца.
+
+## Известные долги после M0
+
+Деferred до M1+; не блокируют публичную бету:
+
+1. `BootstrapServer::accept_with_timeout` заводит один blocked accept-thread на вызов; утечка ограничена одним `spawn()` (не сроком жизни browser process) — пересмотреть handshake в M1.
+2. Release sandbox-refusal path занимает ~15 с (browser ждёт bootstrap timeout вместо poll `try_wait`); worst case `spawn` = 2×timeout (accept + handshake) — оптимизация M1.
+3. `browser_side` маскирует `Violation`, если send reject-ack провалится — log-and-ignore.
+4. `BrowserEndpoint`/`ChildEndpoint` структурно идентичны — generic helper при росте API.
+5. Fuzz job в CI без rust-cache.
+6. Test temp-dir boilerplate дублируется (testshell, chromelight tests) — helper.
+7. Browser-side `recv_timeout` — M0-ONLY poll через `park_timeout(1 ms)`; `park_timeout` не в disallowed-methods; блокирующий `BrowserEndpoint::recv` остаётся pub (используется тестами). M1: `IpcReceiverSet`/мультиплексированное ожидание, запрет unbounded recv на стороне browser на уровне типов.
+8. `browser.rs`: `renderer.wait()` после `Shutdown` — unbounded ожидание процесса; M1: `try_wait` poll с дедлайном + kill (тот же класс, что ADR-0005 §4).
+9. CI: fmt/clippy — в 3-OS матрице; `deny`/`doc`/скрипты — только ubuntu (платформонезависимы).
 
 ## Ключевые внешние факты (снимок 2026-09-07, детали — docs/RESEARCH-2026-09.md)
 
@@ -47,6 +60,14 @@
 - Версии crate-ов на 2026-09-07: stylo 0.20, cssparser 0.37, html5ever 0.39, taffy 0.14, parley 0.11, vello 0.10, wgpu 30.0, winit 0.30.13, accesskit 0.25, v8 152.2, hyper 1.11, rustls 0.23.43, quinn 0.11.11, rusqlite 0.40, ipc-channel 0.23, prost 0.14, tokio 1.53.
 
 ## Журнал сессий
+
+### 2026-09-07 — сессия 2: исполнение M0 (subagent-driven)
+- Исполнены Tasks 1–11 из `docs/superpowers/plans/2026-09-07-m0-foundation.md`: T1 workspace/lints/deny (1 fix), T2 cl-platform (no fixes), T3–T5 cl-ipc codec/validate/bootstrap/handshake (no fixes), T6–T7 cl-process sandbox/spawn (no fixes), T8 browser/child ping-pong + tracing (1 fix: `--browser-fail-after-handshake`), T9 testshell PNG (no fixes), T10 bench script (no fixes; Chrome baseline pending owner action), T11 CI check-agents + Gates (3 fixes: rustfmt nightly options noted, cargo-fuzz flags fixed, Exit codes verified).
+- CI результат: check ✅, test (macOS-14/windows-2022/ubuntu-24.04) ✅, fuzz-short ✅ на всех трёх ОС.
+- Измерения: idle RSS 4864 КБ (browser 2496, renderer 2368). Release sandbox gate PASS (unsandboxed exit 78). Fuzz run 60 s: 75.2M runs, 0 crashes.
+- Task 12: обновлены PLAN.md exit-criteria (5/6 тикнуты, Chrome baseline остаётся owner-action), MEMORY.md state/debts/log, ARCHITECTURE.md crate status.
+- Следующее действие: финальное ревью ветки → merge в main → тег `m0` → план M1 (`docs/superpowers/plans/<date>-m1-static-pages.md`).
+- Финальное ревью ветки (sonnet; opus дал 429): 0 Critical, 2 Important исправлены в фикс-волне (bounded recv, 3-OS lint), минорные долги сведены в список выше.
 
 ### 2026-09-07 — сессия 1: исследование + фундамент документации
 - Прочитан skill `browser-engine-research` (6 референсов, срез 2026-09-05).
