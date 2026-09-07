@@ -43,7 +43,7 @@ M0 Foundation ─► M1 Static pages ─► M2 Secure + JS ─► M3 Interactive
 Scope: root workspace + lints + `deny.toml`; `cl-platform` (ProcessType, Clock, paths); `cl-ipc` (сообщения, postcard-кодек с лимитами, `Validate`, bootstrap через ipc-channel, handshake, fuzz `ipc_decode`); `cl-process` (spawn same-binary child, timeout, `Sandbox<Unapplied→Applied>`, `NotImplementedPolicy`/`DevNoSandbox`); `apps/chromelight` (`--type`, browser↔renderer ping/pong, tracing, `--trace-out`); `cl-testshell` (`render` → белый PNG, `compare`); `tools/bench/mem.sh`; CI workflow; проверочные скрипты (AGENTS.md sync, platform cfg).
 
 Exit-критерии:
-- [x] `cargo build/test/clippy -D warnings/fmt/deny` зелёные на macOS, Windows, Linux в CI.
+- [x] `cargo build/test/clippy -D warnings/fmt` зелёные на macOS, Windows, Linux в CI; `deny`/`doc`/скрипты — на Linux (платформонезависимы).
 - [x] `chromelight --exit-after-handshake --no-sandbox` завершает handshake browser↔renderer на 3 ОС (integration test).
 - [x] Release-бинарник отказывается спавнить renderer без sandbox (`NotImplementedPolicy`) — тест.
 - [x] `cargo fuzz run ipc_decode` работает 60 с без падений.

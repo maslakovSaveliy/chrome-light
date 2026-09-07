@@ -39,16 +39,15 @@
 
 Деferred до M1+; не блокируют публичную бету:
 
-1. `BootstrapServer::accept_with_timeout` заводит один blocked accept-thread на вызов, но утечка ограничена сроком жизни одного `spawn()` (thread живёт максимум до timeout или до подключения ребёнка), не сроком жизни процесса браузера — пересмотреть архитектуру handshake в M1 всё равно стоит.
-2. Release sandbox-refusal path занимает ~15 с (browser ждёт bootstrap timeout вместо poll на `try_wait` exit child) — оптимизация M1.
-3. `rustfmt.toml` использует nightly-only опции (`imports_granularity`, `group_imports`) — stable rustfmt warned, но CI пасс; переход на stable-compatible опции в M1.
-4. `cl-testshell` имеет неиспользуемую зависимость `thiserror` — cleanup.
-5. `browser_side` (IPC validate) маскирует `Violation` если send reject-ack провалится — улучшить error reporting.
-6. `BrowserEndpoint` и `ChildEndpoint` структурно идентичны — рассмотреть generic helper, но сейчас явность предпочтительна.
-7. Fuzz job в CI не имеет cache — добавить в M1.
-8. Малый дублированный cleanup в `spawn` и в test temp-dir boilerplate — minor refactor M1.
-9. browser-side recv_timeout — M0-ONLY poll через park_timeout(1 ms); M1: IpcReceiverSet/мультиплексированное ожидание.
-10. CI: fmt/clippy теперь и в 3-OS матрице (после финального ревью); deny/doc/скрипты — только ubuntu.
+1. `BootstrapServer::accept_with_timeout` заводит один blocked accept-thread на вызов; утечка ограничена одним `spawn()` (не сроком жизни browser process) — пересмотреть handshake в M1.
+2. Release sandbox-refusal path занимает ~15 с (browser ждёт bootstrap timeout вместо poll `try_wait`); worst case `spawn` = 2×timeout (accept + handshake) — оптимизация M1.
+3. `browser_side` маскирует `Violation`, если send reject-ack провалится — log-and-ignore.
+4. `BrowserEndpoint`/`ChildEndpoint` структурно идентичны — generic helper при росте API.
+5. Fuzz job в CI без rust-cache.
+6. Test temp-dir boilerplate дублируется (testshell, chromelight tests) — helper.
+7. Browser-side `recv_timeout` — M0-ONLY poll через `park_timeout(1 ms)`; `park_timeout` не в disallowed-methods; блокирующий `BrowserEndpoint::recv` остаётся pub (используется тестами). M1: `IpcReceiverSet`/мультиплексированное ожидание, запрет unbounded recv на стороне browser на уровне типов.
+8. `browser.rs`: `renderer.wait()` после `Shutdown` — unbounded ожидание процесса; M1: `try_wait` poll с дедлайном + kill (тот же класс, что ADR-0005 §4).
+9. CI: fmt/clippy — в 3-OS матрице; `deny`/`doc`/скрипты — только ubuntu (платформонезависимы).
 
 ## Ключевые внешние факты (снимок 2026-09-07, детали — docs/RESEARCH-2026-09.md)
 
