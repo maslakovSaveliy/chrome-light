@@ -4,11 +4,11 @@
 
 ## Состояние на 2026-09-07
 
-**Фаза:** M0 Foundation реализована на ветке `m0-foundation`, PR #1 (draft). CI зелёный на macOS-14 / windows-2022 / ubuntu-24.04 (check, test, fuzz-short). Память idle: 4864 КБ суммарно (browser 2496 КБ, renderer 2368 КБ). Release-sandbox gate прошла (unsandboxed renderer отказывает, exit 78). Следующее действие: финальное ревью ветки → merge в main → тег m0 → план M1.
+**Фаза:** M0 Foundation завершён: PR #1 смержен в `main` (merge c0b1244), тег `m0`. CI зелёный на macOS-14 / windows-2022 / ubuntu-24.04 (check, test, fuzz-short). Память idle: 4864 КБ суммарно (browser 2496 КБ, renderer 2368 КБ). Release-sandbox gate прошла (unsandboxed renderer отказывает, exit 78). Следующее действие: план M1 (`docs/superpowers/plans/<date>-m1-static-pages.md`).
 
 **Продукт:** **ChromeLight** (ADR-0013, риск торговой марки принят владельцем). Лицензия **Apache-2.0 OR MIT** (ADR-0014).
 
-**Репозиторий:** GitHub https://github.com/maslakovSaveliy/chrome-light (public), default branch main; ветка m0-foundation → PR #1. `.planning/HANDOFF.json` — пустой чекпоинт GSD (в .gitignore).
+**Репозиторий:** GitHub https://github.com/maslakovSaveliy/chrome-light (public), default branch main; PR #1 (M0) смержен, ветка удалена; тег `m0` = c0b1244. `.planning/HANDOFF.json` — пустой чекпоинт GSD (в .gitignore).
 
 **Окружение владельца:** macOS 26.5.2, Apple Silicon (arm64), 16 ГБ RAM, 8 ядер, Xcode 26.6, **rustup установлен** (1.95.0, targets aarch64-apple-darwin/x86_64-pc-windows-msvc/x86_64-unknown-linux-gnu; cargo-deny/nextest/fuzz/insta есть). Внимание: неинтерактивные shell-ы не видят `~/.cargo/bin` — использовать `export PATH="$HOME/.cargo/bin:$PATH"`. cmake/ninja есть, docker есть, gh есть.
 
