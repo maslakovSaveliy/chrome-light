@@ -3,10 +3,15 @@
 //! with our [`crate::codec`], so `ipc-channel`'s own serializer only ever sees the bootstrap
 //! message.
 
-use std::{sync::mpsc, thread, time::Duration};
+use std::{
+    sync::mpsc,
+    thread,
+    time::{Duration, Instant},
+};
 
-use ipc_channel::ipc::{
-    IpcBytesReceiver, IpcBytesSender, IpcOneShotServer, IpcSender, bytes_channel,
+use ipc_channel::{
+    TryRecvError,
+    ipc::{IpcBytesReceiver, IpcBytesSender, IpcOneShotServer, IpcSender, bytes_channel},
 };
 use serde::{Deserialize, Serialize};
 
@@ -49,6 +54,28 @@ impl BrowserEndpoint {
     pub fn recv(&self) -> Result<ToBrowser, IpcError> {
         let bytes = self.rx.recv()?;
         Ok(codec::decode(&bytes)?)
+    }
+
+    /// Receive with a deadline. The browser must never block unboundedly on a child
+    /// (ADR-0005). M0-ONLY: implemented as a 1 ms `park_timeout` poll over `try_recv`; M1 replaces
+    /// this with a proper multiplexed wait (`IpcReceiverSet`) when the browser owns many children.
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<ToBrowser, IpcError> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.rx.try_recv() {
+                Ok(bytes) => return Ok(codec::decode(&bytes)?),
+                Err(TryRecvError::Empty) => {
+                    if Instant::now() >= deadline {
+                        return Err(IpcError::Transport(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "child did not answer in time",
+                        )));
+                    }
+                    std::thread::park_timeout(Duration::from_millis(1));
+                }
+                Err(TryRecvError::IpcError(e)) => return Err(IpcError::Channel(e.to_string())),
+            }
+        }
     }
 }
 

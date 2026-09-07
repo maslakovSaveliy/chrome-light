@@ -16,7 +16,6 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-thiserror.workspace = true
 tiny-skia.workspace = true
 
 [lints]

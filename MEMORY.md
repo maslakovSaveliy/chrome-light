@@ -8,7 +8,7 @@
 
 **Продукт:** **ChromeLight** (ADR-0013, риск торговой марки принят владельцем). Лицензия **Apache-2.0 OR MIT** (ADR-0014).
 
-**Репозиторий:** `git init -b main` 2026-09-07, ремоута нет. `.planning/HANDOFF.json` — пустой чекпоинт GSD (в .gitignore).
+**Репозиторий:** GitHub https://github.com/maslakovSaveliy/chrome-light (public), default branch main; ветка m0-foundation → PR #1. `.planning/HANDOFF.json` — пустой чекпоинт GSD (в .gitignore).
 
 **Окружение владельца:** macOS 26.5.2, Apple Silicon (arm64), 16 ГБ RAM, 8 ядер, Xcode 26.6, **rustup установлен** (1.95.0, targets aarch64-apple-darwin/x86_64-pc-windows-msvc/x86_64-unknown-linux-gnu; cargo-deny/nextest/fuzz/insta есть). Внимание: неинтерактивные shell-ы не видят `~/.cargo/bin` — использовать `export PATH="$HOME/.cargo/bin:$PATH"`. cmake/ninja есть, docker есть, gh есть.
 
@@ -33,14 +33,13 @@
 
 ## Открытые вопросы владельцу
 
-1. GitHub-ремоут: создать? (нужен для CI-матрицы Windows/Linux.)
-2. Chrome 153 baseline в `docs/history/bench-2026-09.md` — вручную измерить на машине владельца.
+1. Chrome 153 baseline в `docs/history/bench-2026-09.md` — вручную измерить на машине владельца.
 
 ## Известные долги после M0
 
 Деferred до M1+; не блокируют публичную бету:
 
-1. `BootstrapServer::accept_with_timeout` leaks один заблокированный accept-thread на каждый timeout — пересмотреть архитектуру handshake.
+1. `BootstrapServer::accept_with_timeout` заводит один blocked accept-thread на вызов, но утечка ограничена сроком жизни одного `spawn()` (thread живёт максимум до timeout или до подключения ребёнка), не сроком жизни процесса браузера — пересмотреть архитектуру handshake в M1 всё равно стоит.
 2. Release sandbox-refusal path занимает ~15 с (browser ждёт bootstrap timeout вместо poll на `try_wait` exit child) — оптимизация M1.
 3. `rustfmt.toml` использует nightly-only опции (`imports_granularity`, `group_imports`) — stable rustfmt warned, но CI пасс; переход на stable-compatible опции в M1.
 4. `cl-testshell` имеет неиспользуемую зависимость `thiserror` — cleanup.
@@ -48,6 +47,8 @@
 6. `BrowserEndpoint` и `ChildEndpoint` структурно идентичны — рассмотреть generic helper, но сейчас явность предпочтительна.
 7. Fuzz job в CI не имеет cache — добавить в M1.
 8. Малый дублированный cleanup в `spawn` и в test temp-dir boilerplate — minor refactor M1.
+9. browser-side recv_timeout — M0-ONLY poll через park_timeout(1 ms); M1: IpcReceiverSet/мультиплексированное ожидание.
+10. CI: fmt/clippy теперь и в 3-OS матрице (после финального ревью); deny/doc/скрипты — только ubuntu.
 
 ## Ключевые внешние факты (снимок 2026-09-07, детали — docs/RESEARCH-2026-09.md)
 
@@ -67,6 +68,7 @@
 - Измерения: idle RSS 4864 КБ (browser 2496, renderer 2368). Release sandbox gate PASS (unsandboxed exit 78). Fuzz run 60 s: 75.2M runs, 0 crashes.
 - Task 12: обновлены PLAN.md exit-criteria (5/6 тикнуты, Chrome baseline остаётся owner-action), MEMORY.md state/debts/log, ARCHITECTURE.md crate status.
 - Следующее действие: финальное ревью ветки → merge в main → тег `m0` → план M1 (`docs/superpowers/plans/<date>-m1-static-pages.md`).
+- Финальное ревью ветки (sonnet; opus дал 429): 0 Critical, 2 Important исправлены в фикс-волне (bounded recv, 3-OS lint), минорные долги сведены в список выше.
 
 ### 2026-09-07 — сессия 1: исследование + фундамент документации
 - Прочитан skill `browser-engine-research` (6 референсов, срез 2026-09-05).

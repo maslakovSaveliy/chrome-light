@@ -10,6 +10,7 @@ use tracing::info;
 use crate::args::Args;
 
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(15);
+const PING_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn run(args: &Args) -> anyhow::Result<()> {
     let exe = std::env::current_exe()?;
@@ -28,7 +29,7 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
     info!(pid = renderer.pid(), "renderer handshake complete");
 
     renderer.endpoint.send(&ToChild::Ping(1))?;
-    match renderer.endpoint.recv()? {
+    match renderer.endpoint.recv_timeout(PING_TIMEOUT)? {
         ToBrowser::Pong(1) => {}
         other => anyhow::bail!("expected Pong(1), got {other:?}"),
     }

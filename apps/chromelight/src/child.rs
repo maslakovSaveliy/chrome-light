@@ -6,7 +6,7 @@ use cl_ipc::{
     handshake,
     message::{ToBrowser, ToChild},
 };
-use cl_process::{Sandbox, SandboxError, SandboxPolicy};
+use cl_process::{Sandbox, SandboxPolicy};
 use tracing::{error, info};
 
 use crate::args::Args;
@@ -19,12 +19,8 @@ pub fn run(args: &Args) -> i32 {
     let policy: Box<dyn SandboxPolicy> = choose_policy(args.no_sandbox);
     let sandbox = match Sandbox::new().apply(policy.as_ref()) {
         Ok(s) => s,
-        Err(e @ SandboxError::NotImplemented) => {
-            error!(%e, "refusing to start {} without sandbox", args.process_type);
-            return EXIT_SANDBOX_UNAVAILABLE;
-        }
         Err(e) => {
-            error!(%e, "sandbox failed");
+            error!(%e, "sandbox unavailable for {}", args.process_type);
             return EXIT_SANDBOX_UNAVAILABLE;
         }
     };

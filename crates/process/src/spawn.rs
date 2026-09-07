@@ -60,8 +60,7 @@ pub fn spawn(
     let endpoint = match server.accept_with_timeout(timeout) {
         Ok(ep) => ep,
         Err(e) => {
-            let _ = child.kill();
-            let _ = child.wait();
+            kill_and_reap(&mut child);
             return Err(e.into());
         }
     };
@@ -69,11 +68,10 @@ pub fn spawn(
         expected_process_type: process_type,
         expected_pid: Some(pid),
     };
-    let hello = match handshake::browser_side(&endpoint, &ctx) {
+    let hello = match handshake::browser_side(&endpoint, &ctx, timeout) {
         Ok(h) => h,
         Err(e) => {
-            let _ = child.kill();
-            let _ = child.wait();
+            kill_and_reap(&mut child);
             return Err(e.into());
         }
     };
@@ -83,6 +81,13 @@ pub fn spawn(
         hello,
         child,
     })
+}
+
+/// Kill a child and reap it, ignoring failures: this runs on error paths where the process may
+/// already be gone, and there is nothing more useful to do with a second failure here.
+fn kill_and_reap(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 impl Drop for ChildProcess {
@@ -96,8 +101,7 @@ impl Drop for ChildProcess {
                     pid = self.child.id(),
                     "child still running at drop; killing"
                 );
-                let _ = self.child.kill();
-                let _ = self.child.wait();
+                kill_and_reap(&mut self.child);
             }
             Err(e) => tracing::warn!(pid = self.child.id(), error = %e, "try_wait failed at drop"),
         }

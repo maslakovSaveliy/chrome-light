@@ -1,5 +1,7 @@
 //! Hello / `HelloAck` exchange. The browser validates the child's claims against what it spawned.
 
+use std::time::Duration;
+
 use cl_platform::ProcessType;
 use tracing::warn;
 
@@ -11,9 +13,14 @@ use crate::{
 };
 
 /// Browser side: wait for `Hello`, validate, ack. On violation the child is told `accepted: false`
-/// and the error is returned so the caller kills the process.
-pub fn browser_side(ep: &BrowserEndpoint, ctx: &ReceiverCtx) -> Result<Hello, IpcError> {
-    let msg = ep.recv()?;
+/// and the error is returned so the caller kills the process. The browser must never block
+/// unboundedly on a hostile or hung child (ADR-0005); `timeout` bounds the wait.
+pub fn browser_side(
+    ep: &BrowserEndpoint,
+    ctx: &ReceiverCtx,
+    timeout: Duration,
+) -> Result<Hello, IpcError> {
+    let msg = ep.recv_timeout(timeout)?;
     let ToBrowser::Hello(hello) = msg else {
         ep.send(&ToChild::HelloAck { accepted: false })?;
         return Err(IpcError::UnexpectedMessage("expected Hello"));

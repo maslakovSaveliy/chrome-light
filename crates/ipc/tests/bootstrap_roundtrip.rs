@@ -35,7 +35,8 @@ fn child_should_connect_handshake_and_answer_ping() {
         expected_process_type: ProcessType::Renderer,
         expected_pid: Some(4242),
     };
-    let hello = handshake::browser_side(&ep, &ctx).expect("browser handshake");
+    let hello =
+        handshake::browser_side(&ep, &ctx, Duration::from_secs(10)).expect("browser handshake");
     assert_eq!(hello.pid, 4242);
 
     ep.send(&ToChild::Ping(77)).expect("send ping");
@@ -64,7 +65,7 @@ fn browser_should_reject_child_claiming_wrong_process_type() {
         expected_process_type: ProcessType::Renderer,
         expected_pid: Some(1),
     };
-    let err = handshake::browser_side(&ep, &ctx).expect_err("must reject");
+    let err = handshake::browser_side(&ep, &ctx, Duration::from_secs(10)).expect_err("must reject");
     assert!(matches!(err, cl_ipc::IpcError::Violation(_)), "got {err:?}");
     child.join().expect("child thread");
 }
@@ -77,4 +78,29 @@ fn accept_should_time_out_when_no_child_connects() {
         .accept_with_timeout(Duration::from_millis(200))
         .expect_err("must time out");
     assert!(matches!(err, cl_ipc::IpcError::Transport(_)), "got {err:?}");
+}
+
+#[test]
+#[allow(clippy::expect_used)]
+fn recv_timeout_should_time_out_when_child_stays_silent() {
+    let server = BootstrapServer::new().expect("server");
+    let name = server.name().to_owned();
+    let (stop_tx, stop_rx) = std::sync::mpsc::channel::<()>();
+    let child = thread::spawn(move || {
+        let _ep = connect_child(&name).expect("connect");
+        // Connected but never sends Hello; wait until told to exit.
+        let _ = stop_rx.recv();
+    });
+    let ep = server
+        .accept_with_timeout(Duration::from_secs(10))
+        .expect("accept");
+    let err = ep
+        .recv_timeout(Duration::from_millis(200))
+        .expect_err("must time out");
+    assert!(
+        matches!(err, cl_ipc::IpcError::Transport(ref e) if e.kind() == std::io::ErrorKind::TimedOut),
+        "got {err:?}"
+    );
+    let _ = stop_tx.send(());
+    child.join().expect("child thread");
 }
