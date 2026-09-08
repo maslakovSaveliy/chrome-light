@@ -125,7 +125,7 @@ ADR-0003 выбрал stylo как CSS-движок. Разведка (2026-09-0
 
 ```markdown
 Exit-критерии M1 (объединение M1a–M1e):
-- [ ] M1a: single-process pipeline; html5lib tree-construction ≥ 90% (0 panics), WPT `urltestdata.json` ≥ 95%, 20 reftests, 4 fuzz-targets, golden dumps 4 стадий — детальные критерии в `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
+- [ ] M1a: single-process pipeline; html5lib tree-construction ≥ 90% (0 panics), WPT `urltestdata.json` ≥ 92%, 20 reftests, 4 fuzz-targets, golden dumps 4 стадий — детальные критерии в `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
 - [ ] M1b: `chromelight file:///page.html` рендерит через renderer + GPU процессы (display list через shm).
 - [ ] M1c: sandbox renderer применяется на macOS и Linux; `--probe` тесты (open /etc/passwd, socket) → EPERM.
 - [ ] M1d: egui shell с одной вкладкой, `file://` и `http://localhost`.
@@ -828,7 +828,7 @@ Reftest pairs (each `<name>.html` and `<name>-ref.html`, all with `font-family: 
 1. `cargo run -p cl-testshell -- render tests/ref/text-basic.html --png /tmp/a.png` twice → `cmp /tmp/a.png /tmp/b.png` silent.
 2. `cargo run -p cl-testshell -- dump tests/ref/text-basic.html --stage fragments` shows Line/Text fragments with Ahem glyph advances = font size.
 3. `cargo run -p cl-testshell -- reftest` → 20/20 PASS on macOS; CI shows the same on Windows and Linux.
-4. `cargo test -p cl-html --test tree_construction` prints ≥ 90% and `cargo test -p cl-net --test urltestdata` prints ≥ 95%.
+4. `cargo test -p cl-html --test tree_construction` prints ≥ 90% and `cargo test -p cl-net --test urltestdata` prints ≥ 92% (measured `url`-crate ceiling; see SPEC_REGISTRY).
 5. `cd tools/fuzz && for t in html_parse css_stylesheet url_parse display_list_validate; do cargo +nightly fuzz run --fuzz-dir . $t -- -max_total_time=60; done` → no crashes.
 6. Smoke: 1 MB document < 5 s, peak RSS (via `/usr/bin/time -l`) < 300 MB, numbers recorded in `docs/history/`.
 7. Gates: `tools/check-unsafe-scope.sh`, `tools/check-stylo-scope.sh` green; `cargo tree -d` shows one `markup5ever`.

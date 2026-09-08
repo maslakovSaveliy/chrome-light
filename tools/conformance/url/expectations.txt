@@ -12,7 +12,9 @@
 # 1.1.0), which does not itself pass 100% of this corpus — these 65 cases are genuine `url`
 # crate gaps against the WHATWG URL Standard, not bugs introduced by this newtype. Cross-checked
 # against servo/rust-url's own tests/expected_failures.txt (github.com/servo/rust-url,
-# `url/tests/expected_failures.txt`): every category below has a corresponding entry there.
+# `url/tests/expected_failures.txt`): the file-url-slash-authority and opaque-percent-encoding
+# categories have verbatim counterparts there. The idna-punycode category does NOT appear in that
+# file — those 8 cases were verified only against the corpus itself and idna 1.1's own behaviour.
 # Three root-cause categories, see the repeated reason text on each line below:
 #   - file-url-slash-authority (47 cases): file: URLs / `///`-prefixed refs with irregular
 #     slash counts or a windows drive-letter (`C:`, `C|`) segment in the authority or path.
