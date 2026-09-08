@@ -27,3 +27,15 @@ this task specifically to see the 3-OS build result") это означает: �
 
 Полный `time` вывод и полный список скомпилированных крейтов — в отчёте task-2
 (`.superpowers/sdd/2026-09-07-m1a-static-pipeline/task-2-report.md`).
+
+## CI (GitHub Actions, run 34242985517, commit cbc0847, 2026-09-08)
+
+Полный workspace со stylo, холодный кэш (`Swatinem/rust-cache` промахнулся — `Cargo.lock` изменился), `python3` из `actions/setup-python@v5`:
+
+| Job | clippy (весь workspace) | build (весь workspace) | job целиком |
+|---|---|---|---|
+| ubuntu-24.04 | 36 с | 39 с | 2 м 47 с |
+| macos-14 | — | — | 3 м 34 с |
+| windows-2022 | 71 с | 71 с | 4 м 56 с |
+
+**Вывод:** локальные 18 м 37 с — артефакт измерения: замер шёл на машине, где параллельно работали несколько агентов с собственными `cargo`. Реальная холодная сборка stylo — порядка минуты на CI-раннере. Риск «stylo build time» из плана M1a закрыт; отдельная стратегия кэширования не нужна.
