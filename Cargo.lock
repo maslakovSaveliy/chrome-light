@@ -187,6 +187,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cl-dom"
+version = "0.0.1"
+dependencies = [
+ "markup5ever",
+ "proptest",
+ "thiserror",
+]
+
+[[package]]
 name = "cl-ipc"
 version = "0.0.1"
 dependencies = [
