@@ -209,6 +209,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cl-net"
+version = "0.0.1"
+dependencies = [
+ "proptest",
+ "thiserror",
+ "url",
+]
+
+[[package]]
 name = "cl-platform"
 version = "0.0.1"
 dependencies = [
