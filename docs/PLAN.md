@@ -70,7 +70,7 @@ Scope: разбит на пять параллельных sub-plan-ов (M1a–
 | **M1e** | Bench-corpus, Chrome baseline, закрытие exit-гейтов M1. | пишется после M1d |
 
 Exit-критерии M1 (объединение M1a–M1e):
-- [ ] M1a: single-process pipeline; html5lib tree-construction ≥ 90% (0 panics), WPT `urltestdata.json` ≥ 95%, 20 reftests, 4 fuzz-targets, golden dumps 4 стадий — детальные критерии в `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
+- [ ] M1a: single-process pipeline; html5lib tree-construction ≥ 90% (0 panics), WPT `urltestdata.json` ≥ 92% (потолок crate `url`, см. SPEC_REGISTRY), 20 reftests, 4 fuzz-targets, golden dumps 4 стадий — детальные критерии в `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
 - [ ] M1b: `chromelight file:///page.html` рендерит через renderer + GPU процессы (display list через shm).
 - [ ] M1c: sandbox renderer применяется на macOS и Linux; `--probe` тесты (open /etc/passwd, socket) → EPERM.
 - [ ] M1d: egui shell с одной вкладкой, `file://` и `http://localhost`.

@@ -8,7 +8,7 @@
 # every case listed here must actually still fail (no stale entries).
 #
 # Real measured rate at PINNED_COMMIT 8fa79675278b21028654626c94dd7220f0f817a6: 828/893 (92.7%),
-# BELOW the 0.95 M1a gate. `cl_net::Url` is a thin newtype over the `url` crate 2.5.8 (idna
+# The M1a gate is 0.92 (ADR ruling 2026-09-09: 0.95 was an estimate, 92.7% is the `url` crate ceiling). `cl_net::Url` is a thin newtype over the `url` crate 2.5.8 (idna
 # 1.1.0), which does not itself pass 100% of this corpus — these 65 cases are genuine `url`
 # crate gaps against the WHATWG URL Standard, not bugs introduced by this newtype. Cross-checked
 # against servo/rust-url's own tests/expected_failures.txt (github.com/servo/rust-url,

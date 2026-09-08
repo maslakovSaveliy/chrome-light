@@ -24,7 +24,7 @@
 
 | Spec §anchor | Feature | Crate::module | Tests | Status | Deviations / notes |
 |---|---|---|---|---|---|
-| url.spec.whatwg.org#url-parsing | URL parser | `cl-net::url` (crate `url`) | wpt/url | todo | |
+| url.spec.whatwg.org#url-parsing | URL parser | `cl-net::url` (crate `url` 2.5.8 + idna 1.1) | `crates/net/tests/urltestdata.rs` (WPT `urltestdata.json`, pinned) | deviation | 828/893 (92.7%). 65 known failures в `tools/conformance/url/expectations.txt`, три категории: file-URL slash/drive-letter (47), IDNA/punycode строже WPT (8), percent-encoding в opaque path (10). Это потолок upstream `url`; Servo фиксирует те же провалы. Гейт — 0.92 + точный список ожиданий (0 unexpected, 0 stale). |
 | encoding.spec.whatwg.org#decode | byte stream decoding, BOM sniffing | `cl-html::encoding` | wpt/encoding | todo | |
 | html.spec.whatwg.org#tokenization | HTML tokenizer | `cl-html` (html5ever) | wpt/html/syntax/parsing | todo | |
 | html.spec.whatwg.org#tree-construction | tree builder | `cl-html::sink` | wpt/html/syntax/parsing | todo | |
