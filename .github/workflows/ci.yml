@@ -75,4 +75,4 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
-      - run: for t in ipc_decode; do cargo +nightly fuzz run --fuzz-dir tools/fuzz --target x86_64-unknown-linux-gnu "$t" -- -max_total_time=45; done  # future targets: html_parse css_stylesheet url_parse display_list_validate (added by their tasks)
+      - run: for t in ipc_decode url_parse; do cargo +nightly fuzz run --fuzz-dir tools/fuzz --target x86_64-unknown-linux-gnu "$t" -- -max_total_time=45; done  # future targets: html_parse css_stylesheet display_list_validate (added by their tasks)

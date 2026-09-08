@@ -69,6 +69,7 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 | `thiserror`, `anyhow` | ошибки | низкий |
 | `clap` | CLI флаги | низкий |
 | `insta`, `proptest`, `arbitrary`, `libfuzzer-sys`, `criterion` | тесты | низкий |
+| `serde_json` | парсинг WPT/html5lib JSON/тест-фикстур в conformance-гарнесах (dev-dependency) | низкий |
 
 ## Bundled assets
 

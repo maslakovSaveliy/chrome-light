@@ -11,10 +11,18 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 cl-ipc = { path = "../../crates/ipc" }
+cl-net = { path = "../../crates/net" }
 
 [[bin]]
 name = "ipc_decode"
 path = "fuzz_targets/ipc_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "url_parse"
+path = "fuzz_targets/url_parse.rs"
 test = false
 doc = false
 bench = false
