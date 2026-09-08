@@ -196,6 +196,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cl-html"
+version = "0.0.1"
+dependencies = [
+ "encoding_rs",
+ "proptest",
+ "thiserror",
+]
+
+[[package]]
 name = "cl-ipc"
 version = "0.0.1"
 dependencies = [
