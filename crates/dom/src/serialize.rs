@@ -350,6 +350,35 @@ mod tests {
     }
 
     #[test]
+    fn nested_template_contents_should_double_nest() {
+        // Mirrors `tree-construction/template.dat`'s `<template><template>` case: each
+        // nesting level adds both a `content` line and the one-level-deeper element line,
+        // so two nested templates produce four extra indent levels in total.
+        let mut doc = Document::new("about:blank");
+        let root = doc.root();
+
+        let inner_contents = doc.create(NodeKind::DocumentFragment);
+        let inner_template = html_el(&mut doc, "template");
+        if let Some(NodeKind::Element(element)) = doc.get_mut(inner_template).map(|n| &mut n.kind) {
+            element.template_contents = Some(inner_contents);
+        }
+
+        let outer_contents = doc.create(NodeKind::DocumentFragment);
+        doc.append_child(outer_contents, inner_template)
+            .expect("inner template into outer contents");
+        let outer_template = html_el(&mut doc, "template");
+        if let Some(NodeKind::Element(element)) = doc.get_mut(outer_template).map(|n| &mut n.kind) {
+            element.template_contents = Some(outer_contents);
+        }
+
+        doc.append_child(root, outer_template).expect("template");
+        assert_eq!(
+            html5lib_tree(&doc),
+            "#document\n| <template>\n|   content\n|     <template>\n|       content"
+        );
+    }
+
+    #[test]
     fn attributes_should_be_sorted_by_name_regardless_of_insertion_order() {
         let mut doc = Document::new("about:blank");
         let root = doc.root();
