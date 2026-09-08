@@ -12,6 +12,8 @@
 4. Сначала вертикальный срез (одна страница end-to-end), потом ширина (feature matrix).
 5. Chrome-интероп (импорт, sync, расширения, DevTools) — после стабильного ядра, но API-границы под них (StorageKey, capability handles, isolated worlds) закладываются раньше.
 
+Python 3 — build-зависимость с M1a (stylo).
+
 ## 1. Карта milestone-ов
 
 ```
@@ -57,25 +59,23 @@ Exit-критерии:
 
 **Цель:** `chromelight file:///page.html` рендерит статичную страницу с CSS через настоящий pipeline в трёх процессах; reftests и WPT-подмножество живые.
 
-Scope по crate-ам:
-- `cl-net` (минимум): `file://` и `http://localhost` (hyper client без TLS) — только для тестов; URL через `url`; encoding sniffing (`encoding_rs`).
-- `cl-html`: html5ever `TreeSink` → `cl-dom` arena.
-- `cl-dom`: `NodeId` arena, Document/Element/Text/Comment, атрибуты (атомы), tree traversal, `querySelector` без JS (для тестов).
-- `cl-style`: stylo `TElement/TNode` impl, stylesheet loading (`<style>`, `<link>` через cl-net), cascade, computed style; `@media` базово.
-- `cl-layout`: box tree, block formatting context, inline formatting (parley), replaced elements (`<img>` через utility decode), positioned (`relative/absolute`), floats базово, overflow/scroll containers статично, `Au` единицы, fragment tree.
-- `cl-paint`: display list (background, border, text runs, images, clips, transforms 2D), hit-test структура.
-- `cl-compositor` (минимум): один layer, tiles не нужны; `cl-gfx`: CPU raster (tiny-skia) в GPU process; vello/wgpu путь за флагом.
-- `cl-shell-ui`: egui окно, адресная строка, одна вкладка, отображение кадра из GPU process (shm → texture).
-- `cl-process`: sandbox **macOS seatbelt** и **Linux namespaces+seccomp** для renderer; Windows — заглушка с явным отказом.
-- `cl-testshell`: настоящий рендер в PNG; reftest runner; WPT product adapter (`tools/wpt/`), директории `url`, `encoding`, `html/syntax`, `dom/nodes` (без скриптов — только парсер-тесты через testshell dump), `css/CSS2` reftests подмножество.
-- Fuzz: `html_tokenizer`, `css_stylesheet`, `url_parse`, `display_list_validate`.
+Scope: разбит на пять параллельных sub-plan-ов (M1a–M1e), каждый связан с одной критической системой.
 
-Exit-критерии:
-- [ ] 20 reftests (`tests/ref/`) зелёные на 3 ОС с bundled fonts.
-- [ ] WPT: `url` ≥ 95%, `encoding` ≥ 90%, `html/syntax/parsing` ≥ 90% (tree dump), `css/CSS2/normal-flow` ≥ 60% — числа фиксируются в дашборде, expected-fail с bug ID.
-- [ ] Sandbox renderer применяется на macOS и Linux; `tests/security/sandbox_fs.rs` (renderer не может открыть `/etc/passwd`) зелёный.
-- [ ] Бюджет: пустой браузер + пустая вкладка ≤ 120 МБ RSS суммарно (измерение, при провале — пересмотр ADR-0012 честными цифрами).
-- [ ] Chrome baseline на corpus записан (`docs/history/bench-2026-10.md`).
+| Sub-plan | Что делает | Детальный план |
+|---|---|---|
+| **M1a** | Single-process static pipeline: encoding sniff → html5ever → arena DOM → stylo cascade → block/inline layout (parley) → display list → CPU raster (tiny-skia). JS-free конформанс (html5lib-tests, WPT `urltestdata.json`), 20 reftests, 4 fuzz-target-а, golden dumps. | `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md` |
+| **M1b** | Renderer + GPU процессы: display list через shm, валидация на приёме, кадр в окно. | пишется после M1a |
+| **M1c** | Sandbox: macOS seatbelt, Linux Landlock + seccomp + `no_new_privs`; `--probe` тесты. | пишется после M1b |
+| **M1d** | egui shell: одна вкладка, адресная строка, `file://` и `http://localhost` через `cl-net`. | пишется после M1c |
+| **M1e** | Bench-corpus, Chrome baseline, закрытие exit-гейтов M1. | пишется после M1d |
+
+Exit-критерии M1 (объединение M1a–M1e):
+- [ ] M1a: single-process pipeline; html5lib tree-construction ≥ 90% (0 panics), WPT `urltestdata.json` ≥ 95%, 20 reftests, 4 fuzz-targets, golden dumps 4 стадий — детальные критерии в `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
+- [ ] M1b: `chromelight file:///page.html` рендерит через renderer + GPU процессы (display list через shm).
+- [ ] M1c: sandbox renderer применяется на macOS и Linux; `--probe` тесты (open /etc/passwd, socket) → EPERM.
+- [ ] M1d: egui shell с одной вкладкой, `file://` и `http://localhost`.
+- [ ] M1e: бюджет ≤ 120 МБ RSS (пустой браузер + пустая вкладка), Chrome baseline на corpus записан.
+- wptrunner product adapter перенесён в M2 (testharness.js требует JS; текущий wptrunner ожидает WebDriver classic от продукта).
 
 ### M2 — Secure + JS
 
@@ -159,7 +159,7 @@ Exit-критерии:
 
 | Риск | Сигнал | Действие |
 |---|---|---|
-| stylo-интеграция с arena-DOM не идёт | M1 spike > 2 недели без cascade | fallback: собственный selector matching + упрощённый cascade для M1, stylo в M3 |
+| stylo-интеграция с arena-DOM не идёт | M1 spike > 2 недели без cascade | fallback = ADR-0015 Option B |
 | V8 не укладывается в память | M2: idle renderer > 80 МБ | `--jitless`/snapshot/lazy; ADR-0004 revisit раньше |
 | Windows sandbox | M2 > 3 недель | Windows переводится в nightly-матрицу до M3, release для Windows блокируется |
 | vello на слабых GPU | M4 fps < 30 | CPU tiles + GPU composite |

@@ -10,9 +10,13 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 |---|---|---|---|---|
 | `html5ever`, `markup5ever` | HTML tokenizer/tree builder | spec-conformant, Servo, WPT-проверен, `Atom` | свой парсер | средний — API меняется |
 | `cssparser` | CSS tokenizer | требуется stylo | — | низкий |
-| `stylo` (+`stylo_atoms`, `stylo_dom`, `selectors`, `servo_arc`) | CSS cascade/computed style | Firefox-grade, параллельный, огромное покрытие | свой cascade (годы) | средний — тяжёлая интеграция трейтов `TElement`/`TNode`, breaking releases |
+| `stylo_traits`, `stylo_dom`, `stylo_atoms`, `stylo_static_prefs` | часть stylo | та же версия | — | низкий |
+| `selectors` | CSS селекторы | требуется stylo | — | низкий |
+| `stylo` (+`stylo_atoms`, `stylo_dom`, `selectors`, `servo_arc`) | CSS cascade/computed style | Firefox-grade, параллельный, огромное покрытие | свой cascade (годы) | высокий — unsafe в cl-style, Python 3 на сборке (ADR-0015) |
 | `taffy` | flex/grid/block math | CSS-корректный, используется Blitz/Bevy | свой | низкий |
 | `parley`, `swash`, `fontdb`, `skrifa` | text layout, shaping, fonts | Linebender-стек, чистый Rust | harfbuzz-rs (C), cosmic-text | средний — pre-1.0 |
+| `fontique` | font discovery | Linebender-стек | system fontconfig | низкий |
+| `tendril` | веб-строки (AtomicRefCell-обёртка) | Servo | — | низкий |
 | `vello`, `wgpu`, `peniko`, `kurbo` | 2D GPU raster, GPU abstraction | чистый Rust, Metal/DX12/Vulkan | skia-safe (C++), tiny-skia only | средний — wgpu breaking каждый релиз |
 | `tiny-skia` | CPU raster fallback, reftests | детерминизм | vello_cpu | низкий |
 | `winit` | окна, input | стандарт | tao | низкий |
@@ -64,6 +68,13 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 | `thiserror`, `anyhow` | ошибки | низкий |
 | `clap` | CLI флаги | низкий |
 | `insta`, `proptest`, `arbitrary`, `libfuzzer-sys`, `criterion` | тесты | низкий |
+
+## Bundled assets
+
+| Ресурс | Лицензия | Примечание |
+|---|---|---|
+| `Ahem.ttf` | CC0-1.0 | WPT fonts/Ahem.ttf |
+| `NotoSans-Regular.ttf` | OFL-1.1 | unmodified (Reserved Font Name clause не затрагивает) |
 
 ## Запрещено
 

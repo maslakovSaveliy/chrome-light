@@ -15,20 +15,45 @@ cl-platform = { path = "crates/platform", version = "0.0.1" }
 cl-ipc = { path = "crates/ipc", version = "0.0.1" }
 cl-process = { path = "crates/process", version = "0.0.1" }
 cl-testshell = { path = "crates/testshell", version = "0.0.1" }
+cl-net = { path = "crates/net", version = "0.0.1" }
+cl-dom = { path = "crates/dom", version = "0.0.1" }
+cl-html = { path = "crates/html", version = "0.0.1" }
+cl-style = { path = "crates/style", version = "0.0.1" }
+cl-fonts = { path = "crates/fonts", version = "0.0.1" }
+cl-layout = { path = "crates/layout", version = "0.0.1" }
+cl-paint = { path = "crates/paint", version = "0.0.1" }
+cl-gfx = { path = "crates/gfx", version = "0.0.1" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+cssparser = "0.37"
 directories = "6"
+encoding_rs = "0.8"
+fontique = "0.11"
+html5ever = "0.39"
+insta = { version = "1.48", features = ["yaml"] }
 ipc-channel = "0.23"
+markup5ever = "0.39"
+parley = "0.11"
 parking_lot = "0.12"
 postcard = { version = "1", features = ["use-std"] }
 proptest = "1"
+selectors = "0.40"
 serde = { version = "1", features = ["derive"] }
+skrifa = "0.46"
+smallvec = "1"
+stylo = { version = "0.20", default-features = false, features = ["servo"] }
+stylo_atoms = "0.20"
+stylo_dom = "0.20"
+stylo_traits = "0.20"
+swash = "0.2"
+tendril = "0.4"
 thiserror = "2"
 tiny-skia = "0.12"
 tracing = "0.1"
 tracing-chrome = "0.7"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2.5"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

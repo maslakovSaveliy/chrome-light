@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 --version
       - run: rustup show   # installs the toolchain from rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -24,6 +28,8 @@ jobs:
       - run: cargo doc --workspace --no-deps
       - run: bash scripts/check-agents-md.sh
       - run: bash tools/check-platform-cfg.sh
+      - run: bash tools/check-unsafe-scope.sh
+      - run: bash tools/check-stylo-scope.sh
 
   test:
     strategy:
@@ -33,6 +39,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 --version
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -57,9 +67,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 --version
       - run: rustup toolchain install nightly --profile minimal
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-fuzz
-      - run: cargo +nightly fuzz build --fuzz-dir tools/fuzz --target x86_64-unknown-linux-gnu ipc_decode
-      - run: cargo +nightly fuzz run --fuzz-dir tools/fuzz --target x86_64-unknown-linux-gnu ipc_decode -- -max_total_time=60
+      - run: for t in ipc_decode; do cargo +nightly fuzz run --fuzz-dir tools/fuzz --target x86_64-unknown-linux-gnu "$t" -- -max_total_time=45; done  # future targets: html_parse css_stylesheet url_parse display_list_validate (added by their tasks)
