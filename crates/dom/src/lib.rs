@@ -6,9 +6,10 @@
 //! document can nest arbitrarily far, and a recursive walk would be a stack-overflow
 //! `DoS` on that input.
 //!
-//! `document`, `element`, `node` and `error` are implemented here (Task 3 of the M1a
-//! plan). DOM-order traversal and HTML re-serialization are separate concerns added by
-//! Task 4, once `cl-html`'s tree builder exists to exercise them against.
+//! `document`, `element`, `node` and `error` were implemented in Task 3 of the M1a plan.
+//! `traverse` (iterative DOM-order traversal) and `serialize` (the html5lib
+//! tree-construction dump format Task 9's conformance harness diffs against) are Task 4's
+//! additions, ahead of `cl-html`'s tree builder that will exercise them for real.
 //!
 //! `QualName`, `LocalName`, `Namespace` (plus the `ns!`/`local_name!`/`namespace_url!`
 //! atom macros) and `StrTendril` are re-exported here from `markup5ever` so every
@@ -21,11 +22,14 @@ pub mod document;
 pub mod element;
 pub mod error;
 pub mod node;
+pub mod serialize;
+pub mod traverse;
 
 pub use document::{Document, QuirksMode};
 pub use element::{Attr, Element};
 pub use error::DomError;
 pub use node::{Doctype, Node, NodeId, NodeKind};
+pub use traverse::{Ancestors, Children, Descendants};
 
 /// A `Tendril` specialised for UTF-8 text: the string type used throughout the DOM for
 /// text nodes, comments, attribute values and processing-instruction data.
