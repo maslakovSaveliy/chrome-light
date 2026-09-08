@@ -17,7 +17,7 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 | `taffy` | flex/grid/block math | CSS-корректный, используется Blitz/Bevy | свой | низкий |
 | `parley`, `swash`, `fontdb`, `skrifa` | text layout, shaping, fonts | Linebender-стек, чистый Rust | harfbuzz-rs (C), cosmic-text | средний — pre-1.0 |
 | `fontique` | font discovery | Linebender-стек | system fontconfig | низкий |
-| `tendril` | веб-строки (AtomicRefCell-обёртка) | Servo | — | низкий |
+| `tendril` | веб-строки (rope/small-string для текстовых узлов) | Servo | — | низкий — **не прямая зависимость**: приходит через `markup5ever` и берётся как `markup5ever::tendril` (у markup5ever 0.39 это tendril 0.5; отдельный пин 0.4 дал бы два несовместимых `StrTendril`) |
 | `vello`, `wgpu`, `peniko`, `kurbo` | 2D GPU raster, GPU abstraction | чистый Rust, Metal/DX12/Vulkan | skia-safe (C++), tiny-skia only | средний — wgpu breaking каждый релиз |
 | `tiny-skia` | CPU raster fallback, reftests | детерминизм | vello_cpu | низкий |
 | `winit` | окна, input | стандарт | tao | низкий |
