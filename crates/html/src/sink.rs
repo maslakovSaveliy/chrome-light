@@ -1,14 +1,16 @@
 //! The `html5ever` `TreeSink` that turns tree-construction callbacks into mutations on a
 //! [`cl_dom::Document`].
 //!
-//! [`DomSink`] wraps the arena `Document` in a `RefCell` — the *only* `RefCell` anywhere in
-//! this pipeline (`docs/CODING_STANDARDS.md` §1 forbids `Rc`/`RefCell` everywhere else): every
+//! [`DomSink`] wraps its state in two `RefCell`s — the arena `Document` (`doc`) and the
+//! collected parse-error messages (`errors`) — the *only* `RefCell`s anywhere in this
+//! pipeline (`docs/CODING_STANDARDS.md` §1 forbids `Rc`/`RefCell` everywhere else): every
 //! `TreeSink` method takes `&self` (html5ever's own trait shape, not a choice we get to make —
 //! see the Task 8 report for the registry source this was verified against), so interior
-//! mutability is the only way to mutate the tree from behind that `&self`. It never escapes
+//! mutability is the only way to mutate either field from behind that `&self`. Neither escapes
 //! this module: [`DomSink::finish`] takes `self` by value (html5ever's `TreeSink::finish`
-//! signature, not `&self`) and unwraps the `RefCell` with `into_inner`, handing the caller a
-//! plain owned [`cl_dom::Document`].
+//! signature, not `&self`) and unwraps both `RefCell`s with `into_inner`, handing the caller a
+//! plain owned [`cl_dom::Document`] and `Vec<String>` of parse errors (wrapped together into
+//! [`ParseOutputInner`]).
 //!
 //! Every method here is written to never panic, even though several of the trait's own doc
 //! comments say "feel free to panic!" for cases html5ever promises never to trigger (e.g.
@@ -289,8 +291,10 @@ mod tests {
     use cl_dom::QuirksMode;
     use cl_dom::serialize::html5lib_tree;
     use encoding_rs::WINDOWS_1251;
+    use html5ever::Attribute;
     use html5ever::tendril::StrTendril;
-    use html5ever::tree_builder::{NodeOrText, TreeSink};
+    use html5ever::tree_builder::{ElementFlags, NodeOrText, TreeSink};
+    use markup5ever::{LocalName, QualName, ns};
     use proptest::prelude::*;
 
     use crate::sink::DomSink;
@@ -337,6 +341,73 @@ mod tests {
     }
 
     #[test]
+    fn append_before_sibling_text_should_merge_into_prev_text_sibling() {
+        // The sibling's previous sibling IS a text node: `append_before_sibling` must apply
+        // the same merge rule as `append` (markup5ever's trait docs require this symmetry)
+        // rather than creating a second, adjacent Text node.
+        let sink = DomSink::new("about:blank");
+        let root = sink.get_document();
+        sink.append(&root, NodeOrText::AppendText(StrTendril::from("a")));
+        let p = sink.create_element(
+            QualName::new(None, ns!(html), LocalName::from("p")),
+            Vec::new(),
+            ElementFlags::default(),
+        );
+        sink.append(&root, NodeOrText::AppendNode(p));
+
+        sink.append_before_sibling(&p, NodeOrText::AppendText(StrTendril::from("b")));
+
+        let output = sink.finish();
+        assert_eq!(
+            html5lib_tree(&output.document),
+            "#document\n| \"ab\"\n| <p>"
+        );
+    }
+
+    #[test]
+    fn append_before_sibling_text_should_create_new_node_when_prev_sibling_is_not_text() {
+        // Case A: the sibling's previous sibling exists but is not a text node (a comment)
+        // — no merge, a new Text node is inserted between the comment and the sibling.
+        let comment_sink = DomSink::new("about:blank");
+        let root = comment_sink.get_document();
+        let comment = comment_sink.create_comment(StrTendril::from("x"));
+        comment_sink.append(&root, NodeOrText::AppendNode(comment));
+        let p = comment_sink.create_element(
+            QualName::new(None, ns!(html), LocalName::from("p")),
+            Vec::new(),
+            ElementFlags::default(),
+        );
+        comment_sink.append(&root, NodeOrText::AppendNode(p));
+
+        comment_sink.append_before_sibling(&p, NodeOrText::AppendText(StrTendril::from("b")));
+
+        let with_comment = comment_sink.finish();
+        assert_eq!(
+            html5lib_tree(&with_comment.document),
+            "#document\n| <!-- x -->\n| \"b\"\n| <p>"
+        );
+
+        // Case B: the sibling has no previous sibling at all (it is the first child) — no
+        // merge, a new Text node is inserted as the new first child.
+        let first_child_sink = DomSink::new("about:blank");
+        let root = first_child_sink.get_document();
+        let p = first_child_sink.create_element(
+            QualName::new(None, ns!(html), LocalName::from("p")),
+            Vec::new(),
+            ElementFlags::default(),
+        );
+        first_child_sink.append(&root, NodeOrText::AppendNode(p));
+
+        first_child_sink.append_before_sibling(&p, NodeOrText::AppendText(StrTendril::from("b")));
+
+        let first_child = first_child_sink.finish();
+        assert_eq!(
+            html5lib_tree(&first_child.document),
+            "#document\n| \"b\"\n| <p>"
+        );
+    }
+
+    #[test]
     fn template_contents_should_be_stored_in_fragment() {
         let output = parse_document_str("<template><b>x</b></template>", &base()).expect("parses");
         let dump = html5lib_tree(&output.document);
@@ -345,11 +416,65 @@ mod tests {
     }
 
     #[test]
-    fn attributes_should_keep_first_occurrence() {
+    fn duplicate_attributes_in_one_tag_should_keep_the_first() {
+        // NOTE: this is an end-to-end regression test, not a unit test of
+        // `DomSink::add_attrs_if_missing`. html5ever's tokenizer deduplicates attributes
+        // within a single start tag before `create_element` is ever called
+        // (`finish_attribute`'s duplicate check, `html5ever::tokenizer`), so `<p a=1 a=2>`
+        // never reaches `add_attrs_if_missing` at all — it documents real tokenizer
+        // behaviour. See `add_attrs_if_missing_should_keep_first_value_and_add_new_names`
+        // below for a direct unit test of the sink method itself.
         let output = parse_document_str("<p a=1 a=2>", &base()).expect("parses");
         let dump = html5lib_tree(&output.document);
         assert!(dump.contains("a=\"1\""), "dump was:\n{dump}");
         assert!(!dump.contains("a=\"2\""), "dump was:\n{dump}");
+    }
+
+    #[test]
+    fn add_attrs_if_missing_should_keep_first_value_and_add_new_names() {
+        // Drives `DomSink::add_attrs_if_missing` directly, bypassing the tokenizer (which
+        // would never call this method with an attribute name the element already has —
+        // see the note on `duplicate_attributes_in_one_tag_should_keep_the_first` above).
+        // html5ever itself calls this method from the tree builder's "re-encountered
+        // <html>/<body> start tag" and similar attribute-copy-forward rules.
+        let sink = DomSink::new("about:blank");
+        let name_a = QualName::new(None, ns!(), LocalName::from("a"));
+        let name_b = QualName::new(None, ns!(), LocalName::from("b"));
+        let element = sink.create_element(
+            QualName::new(None, ns!(html), LocalName::from("p")),
+            vec![Attribute {
+                name: name_a.clone(),
+                value: StrTendril::from("1"),
+            }],
+            ElementFlags::default(),
+        );
+
+        // "a" already exists on the element: this call must NOT overwrite its value.
+        sink.add_attrs_if_missing(
+            &element,
+            vec![Attribute {
+                name: name_a,
+                value: StrTendril::from("2"),
+            }],
+        );
+        // "b" is a new name: this call must add it.
+        sink.add_attrs_if_missing(
+            &element,
+            vec![Attribute {
+                name: name_b,
+                value: StrTendril::from("3"),
+            }],
+        );
+
+        let output = sink.finish();
+        assert_eq!(
+            output.document.attr(element, &LocalName::from("a")),
+            Some("1")
+        );
+        assert_eq!(
+            output.document.attr(element, &LocalName::from("b")),
+            Some("3")
+        );
     }
 
     #[test]
