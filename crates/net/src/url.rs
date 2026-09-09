@@ -81,7 +81,18 @@ impl Url {
     /// remote-share semantics; see [`crate::file`] for how callers should report it.
     #[must_use]
     pub fn to_file_path(&self) -> Option<PathBuf> {
-        self.0.to_file_path().ok()
+        // A `file:` URL with a real host names a path on *another* machine. The `url` crate's
+        // answer here is platform-dependent: on Windows `file://server/share/x` maps to the UNC
+        // path `\\server\share\x`, while on Unix it is an error. ChromeLight refuses it on every
+        // platform, for two reasons: the same document must resolve identically on every machine
+        // the engine runs on (determinism is the point of M1a's testing story), and a document
+        // must not be able to turn a "local file" load into an SMB fetch that bypasses the
+        // network policy `load_file` does not have. `localhost` and the empty host both mean
+        // "this machine" per the URL Standard and are accepted.
+        match self.0.host_str() {
+            None | Some("" | "localhost") => self.0.to_file_path().ok(),
+            Some(_) => None,
+        }
     }
 
     /// Resolve `relative` against `self` (WHATWG "URL parser with base URL", base = `self`).
@@ -145,6 +156,15 @@ mod tests {
     fn to_file_path_should_be_none_for_http() {
         let url = Url::parse("http://example.com/a").expect("parses");
         assert_eq!(url.to_file_path(), None);
+    }
+
+    #[test]
+    fn to_file_path_should_accept_localhost_and_empty_host() {
+        // Both spell "this machine" per the URL Standard, so they must still resolve.
+        let empty = Url::parse("file:///tmp/a").expect("parses");
+        assert!(empty.to_file_path().is_some());
+        let local = Url::parse("file://localhost/tmp/a").expect("parses");
+        assert!(local.to_file_path().is_some());
     }
 
     #[test]
