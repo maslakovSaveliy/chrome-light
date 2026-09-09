@@ -431,6 +431,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::panic)]
     fn add_attrs_if_missing_should_keep_first_value_and_add_new_names() {
         // Drives `DomSink::add_attrs_if_missing` directly, bypassing the tokenizer (which
         // would never call this method with an attribute name the element already has —
@@ -474,6 +475,49 @@ mod tests {
         assert_eq!(
             output.document.attr(element, &LocalName::from("b")),
             Some("3")
+        );
+
+        // Verify the actual attribute list, not just `.attr()` lookup.
+        // This catches regressions that blindly append duplicates instead of skipping them.
+        let node = output
+            .document
+            .get(element)
+            .expect("Element node not found in document");
+        let cl_dom::NodeKind::Element(elem) = &node.kind else {
+            panic!("Expected element node, got different node kind")
+        };
+
+        // Should have exactly 2 attributes: the pre-existing "a" plus the new "b".
+        // A regression that appends "a" again would leave 3 attributes.
+        assert_eq!(
+            elem.attrs.len(),
+            2,
+            "Expected 2 attributes (a and b), got {len}",
+            len = elem.attrs.len()
+        );
+
+        // "a" should appear exactly once (not duplicated).
+        let name_a = LocalName::from("a");
+        let a_count = elem
+            .attrs
+            .iter()
+            .filter(|attr| attr.name.local == name_a)
+            .count();
+        assert_eq!(
+            a_count, 1,
+            "Attribute 'a' should occur exactly once, but occurs {a_count}"
+        );
+
+        // "b" should appear exactly once.
+        let name_b = LocalName::from("b");
+        let b_count = elem
+            .attrs
+            .iter()
+            .filter(|attr| attr.name.local == name_b)
+            .count();
+        assert_eq!(
+            b_count, 1,
+            "Attribute 'b' should occur exactly once, but occurs {b_count}"
         );
     }
 
