@@ -437,6 +437,8 @@ fn cascade_document(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_dom::{BASE_URL, find, parse};
+    use style::color::AbsoluteColor;
 
     #[test]
     #[allow(clippy::expect_used)]
@@ -454,5 +456,41 @@ mod tests {
         let mut engine = StyleEngine::new((800.0, 600.0), 1.0).expect("engine");
         let result = engine.add_author_sheet("p { color: red }", "not a url");
         assert!(matches!(result, Err(StyleError::Url(_))));
+    }
+
+    /// A [`StyledDocument`] must outlive the [`StyleEngine`] that produced it: Task 16
+    /// (`cl-layout`) holds one across calls, long after the engine that built it may have
+    /// gone away. `ComputedValues::rules` is a `StrongRuleNode`, a manually refcounted
+    /// pointer into the `Stylist`'s `RuleTree` (`stylo-0.20.0/rule_tree/core.rs`) — not a
+    /// borrow — and every node keeps its parent chain alive via its own strong reference,
+    /// independent of the `RuleTree` value that first created it. So the rule tree nodes
+    /// (and the `PropertyDeclarationBlock`s they point at) are expected to survive the
+    /// engine's drop. This test proves that with a real value, not just a type check: it
+    /// drops the engine and then reads back a *distinctive* color, so a use-after-free or
+    /// a silently wrong/garbage value would show up as a mismatch, not just a missing style.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn styled_document_should_survive_the_engine_that_produced_it() {
+        let doc = parse("<p>hi</p>");
+        let mut engine = StyleEngine::new((800.0, 600.0), 1.0).expect("engine");
+        engine.add_ua_sheet().expect("ua sheet");
+        engine
+            .add_author_sheet("p { color: rgb(1, 2, 3) }", BASE_URL)
+            .expect("author sheet");
+
+        let styled = engine.resolve(doc).expect("resolve");
+
+        // The engine — and with it the `Stylist`, the `RuleTree`, and every stylesheet —
+        // is gone from here on. Nothing below may borrow from it.
+        drop(engine);
+
+        let p = find(styled.document(), "p").expect("<p> in the parsed document");
+        let color = styled.computed(p).expect("styled <p>").clone_color();
+        assert_eq!(
+            color,
+            AbsoluteColor::srgb_legacy(1, 2, 3, 1.0),
+            "computed style must still hold the real cascaded value, not garbage or a \
+             coincidentally-matching default, after the engine that produced it is dropped"
+        );
     }
 }
