@@ -222,9 +222,9 @@ impl Element for ElementHandle<'_> {
 #[cfg(test)]
 mod tests {
     use super::{AtomIdent, Element, ElementHandle, NodeHandle};
-    use crate::handle::tests::{fixture, store};
-    use cl_dom::local_name;
-    use selectors::attr::CaseSensitivity::CaseSensitive;
+    use crate::handle::tests::{element as element_kind, fixture, store};
+    use cl_dom::{Document, NodeId, local_name};
+    use selectors::attr::CaseSensitivity::{AsciiCaseInsensitive, CaseSensitive};
     use selectors::context::{
         MatchingForInvalidation, MatchingMode, NeedsSelectorFlags, SelectorCaches,
     };
@@ -232,6 +232,51 @@ mod tests {
     use style::dom::TElement;
     use style::selector_parser::SelectorParser;
     use style::stylesheets::UrlExtraData;
+
+    /// Runs `selector` against `handle` through the real stylo parser and the real
+    /// `selectors` matching engine, in `quirks` mode.
+    #[allow(clippy::expect_used)]
+    fn matches_in(selector: &str, handle: ElementHandle<'_>, quirks: QuirksMode) -> bool {
+        let url_data = UrlExtraData::from(url::Url::parse("file:///test.html").expect("base url"));
+        let list = SelectorParser::parse_author_origin_no_namespace(selector, &url_data)
+            .expect("selector parses");
+        let mut caches = SelectorCaches::default();
+        let mut context = MatchingContext::new(
+            MatchingMode::Normal,
+            None,
+            &mut caches,
+            quirks,
+            NeedsSelectorFlags::No,
+            MatchingForInvalidation::No,
+        );
+        matches_selector_list(&list, &handle, &mut context)
+    }
+
+    /// `<html><a href="#x" id="Top" class="Nav Bar" title="Hello" lang="en-GB"
+    /// data-flag=""></a><a></a></html>` — everything the attribute and `:link` cases need,
+    /// kept out of [`fixture`] so its own shape assertions stay valid.
+    #[allow(clippy::expect_used)]
+    fn attr_doc() -> (Document, NodeId, NodeId) {
+        let mut doc = Document::new("file:///test.html");
+        let root = doc.root();
+        let html = doc.create(element_kind("html", &[]));
+        let link = doc.create(element_kind(
+            "a",
+            &[
+                ("href", "#x"),
+                ("id", "Top"),
+                ("class", "Nav Bar"),
+                ("title", "Hello"),
+                ("lang", "en-GB"),
+                ("data-flag", ""),
+            ],
+        ));
+        let anchor = doc.create(element_kind("a", &[]));
+        doc.append_child(root, html).expect("append html");
+        doc.append_child(html, link).expect("append link");
+        doc.append_child(html, anchor).expect("append anchor");
+        (doc, link, anchor)
+    }
 
     #[test]
     fn element_handle_should_expose_tag_id_and_classes() {
@@ -311,5 +356,97 @@ mod tests {
         assert!(matches(":is(p, div)", element(f.p)));
         assert!(matches(":where(.x)", element(f.p)));
         assert!(!matches("a:any-link", element(f.p)));
+    }
+
+    /// The one non-tree-structural pseudo-class M1a implements, from the matching side:
+    /// an `<a href>` must match `:link` *and* `:any-link` (it is always unvisited), and a
+    /// bare `<a>` must match neither.
+    #[test]
+    fn link_pseudo_classes_should_match_an_anchor_with_href() {
+        let (doc, link, anchor) = attr_doc();
+        let store = store(&doc);
+        let handle = |id| ElementHandle(NodeHandle::new(&doc, &store, id));
+
+        assert!(handle(link).is_link(), "<a href> is a link");
+        assert!(!handle(anchor).is_link(), "<a> without href is not");
+
+        for selector in ["a:link", "a:any-link", ":any-link"] {
+            assert!(
+                matches_in(selector, handle(link), QuirksMode::NoQuirks),
+                "{selector} should match <a href>"
+            );
+            assert!(
+                !matches_in(selector, handle(anchor), QuirksMode::NoQuirks),
+                "{selector} should not match a bare <a>"
+            );
+        }
+        // No history is kept, so a link is never visited — also the privacy-safe answer.
+        assert!(!matches_in("a:visited", handle(link), QuirksMode::NoQuirks));
+    }
+
+    /// `attr_matches` beyond `[id=a]`: the existence form and every operator `selectors`
+    /// can hand us, each with a matching and a non-matching case, plus the `i` flag.
+    #[test]
+    fn attr_matches_should_implement_every_operator() {
+        let (doc, link, _) = attr_doc();
+        let store = store(&doc);
+        let element = ElementHandle(NodeHandle::new(&doc, &store, link));
+        let hits = |selector: &str| matches_in(selector, element, QuirksMode::NoQuirks);
+
+        // Existence.
+        assert!(hits("[title]"));
+        assert!(hits("[data-flag]"), "an empty value still exists");
+        assert!(!hits("[data-missing]"));
+        // Exact.
+        assert!(hits("[title=Hello]"));
+        assert!(!hits("[title=Hell]"));
+        // ~= (whitespace-separated word).
+        assert!(hits("[class~=Nav]"));
+        assert!(hits("[class~=Bar]"));
+        assert!(!hits("[class~=Na]"), "~= matches whole words only");
+        // |= (exact, or followed by a hyphen).
+        assert!(hits("[lang|=en]"));
+        assert!(!hits("[lang|=e]"));
+        // ^= $= *=
+        assert!(hits("[title^=Hel]"));
+        assert!(!hits("[title^=ello]"));
+        assert!(hits("[title$=llo]"));
+        assert!(!hits("[title$=Hel]"));
+        assert!(hits("[title*=ell]"));
+        assert!(!hits("[title*=xyz]"));
+        // The `i` flag, against the same value that fails case-sensitively.
+        assert!(!hits("[title=hello]"));
+        assert!(hits("[title=hello i]"));
+    }
+
+    /// Quirks mode makes id and class matching ASCII-case-insensitive. Both the trait
+    /// methods and the whole selector path have to agree about that.
+    #[test]
+    fn has_id_and_has_class_should_follow_quirks_mode() {
+        let (doc, link, _) = attr_doc();
+        let store = store(&doc);
+        let element = ElementHandle(NodeHandle::new(&doc, &store, link));
+
+        assert!(element.has_id(&AtomIdent::from("Top"), CaseSensitive));
+        assert!(!element.has_id(&AtomIdent::from("top"), CaseSensitive));
+        assert!(element.has_id(&AtomIdent::from("top"), AsciiCaseInsensitive));
+
+        assert!(element.has_class(&AtomIdent::from("Nav"), CaseSensitive));
+        assert!(!element.has_class(&AtomIdent::from("nav"), CaseSensitive));
+        assert!(element.has_class(&AtomIdent::from("nav"), AsciiCaseInsensitive));
+
+        for selector in ["#top", ".nav"] {
+            assert!(
+                !matches_in(selector, element, QuirksMode::NoQuirks),
+                "{selector} is case-sensitive without quirks"
+            );
+            assert!(
+                matches_in(selector, element, QuirksMode::Quirks),
+                "{selector} is ASCII-case-insensitive in quirks mode"
+            );
+        }
+        // The exact-case selectors keep matching either way.
+        assert!(matches_in("#Top.Nav", element, QuirksMode::NoQuirks));
+        assert!(matches_in("#Top.Nav", element, QuirksMode::Quirks));
     }
 }

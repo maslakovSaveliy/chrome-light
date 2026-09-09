@@ -54,7 +54,22 @@ pub(crate) struct NodeHandle<'a> {
 
 impl<'a> NodeHandle<'a> {
     /// Builds a handle for `id` in `doc`, backed by `store`.
+    ///
+    /// # Panics
+    /// If `store` was not built for `doc` — i.e. `StyleStore::new` was given a length other
+    /// than this document's `len()`. This is a hard assert rather than a `debug_assert!`
+    /// because a store sized from a stale `Document::len()` silently collapses several real
+    /// elements onto the store's single scratch slot, and two live `ElementDataMut` on one
+    /// slot is undefined behaviour in a release build (`store.rs`'s `scratch` docs). Like
+    /// the store's owner-thread assert, it can only fire on a programming error inside this
+    /// crate — never on document content — and `new` runs once per pass, not per node
+    /// (every other handle comes from the `Copy` [`NodeHandle::with`]).
     pub(crate) fn new(doc: &'a Document, store: &'a StyleStore, id: NodeId) -> Self {
+        assert_eq!(
+            store.slot_count(),
+            doc.len(),
+            "StyleStore was built for a different document than the handle borrows"
+        );
         Self { doc, store, id }
     }
 
@@ -281,22 +296,27 @@ pub(crate) mod tests {
         pub span: NodeId,
     }
 
+    /// An HTML-namespace element node with `attrs` in no namespace.
+    ///
+    /// Shared with the `stylo_dom`/`stylo_selectors` test modules, which build their own
+    /// small documents (an `<a href>`, an attribute zoo, a comment-only element) rather than
+    /// bend [`fixture`] — every existing assertion about its shape would have to move.
+    pub(crate) fn element(name: &str, attrs: &[(&str, &str)]) -> NodeKind {
+        NodeKind::Element(Element {
+            name: QualName::new(None, ns!(html), LocalName::from(name)),
+            attrs: attrs
+                .iter()
+                .map(|(k, v)| Attr {
+                    name: QualName::new(None, ns!(), LocalName::from(*k)),
+                    value: StrTendril::from(*v),
+                })
+                .collect(),
+            template_contents: None,
+        })
+    }
+
     #[allow(clippy::expect_used)]
     pub(crate) fn fixture() -> Fixture {
-        fn element(name: &str, attrs: &[(&str, &str)]) -> NodeKind {
-            NodeKind::Element(Element {
-                name: QualName::new(None, ns!(html), LocalName::from(name)),
-                attrs: attrs
-                    .iter()
-                    .map(|(k, v)| Attr {
-                        name: QualName::new(None, ns!(), LocalName::from(*k)),
-                        value: StrTendril::from(*v),
-                    })
-                    .collect(),
-                template_contents: None,
-            })
-        }
-
         let mut doc = Document::new("file:///test.html");
         let root = doc.root();
         let html = doc.create(element("html", &[]));

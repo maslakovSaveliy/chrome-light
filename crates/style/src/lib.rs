@@ -18,8 +18,9 @@
 //! stylo 0.20 ships `style::data::ElementDataWrapper`, which already provides the interior
 //! mutability (and a debug-only borrow tracker) that `TElement::ensure_data` needs, so the
 //! side table is plain `Cell`s and safe borrows. The single-thread invariant the ADR asks
-//! for is still enforced by `debug_assert`s on the owning thread at every mutating entry
-//! point of [`store::StyleStore`]. See that module's docs for the full argument.
+//! for is enforced by a **hard** owning-thread `assert_eq!` at every mutating entry point of
+//! [`store::StyleStore`] — `!Sync` proves nothing here, because stylo's `SendNode`/
+//! `SendElement` are `Send` unconditionally. See that module's docs for the full argument.
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(clippy::undocumented_unsafe_blocks)]

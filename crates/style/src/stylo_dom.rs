@@ -16,16 +16,18 @@
 //!
 //! # Why this module opts out of `#![deny(unsafe_code)]`
 //!
-//! Six `TElement` methods are declared `unsafe fn` by stylo
-//! (`set_handled_snapshot`, `set_dirty_descendants`, `unset_dirty_descendants`,
-//! `set_animation_only_dirty_descendants`, `ensure_data`, `clear_data`) because Gecko
-//! implements them by mutating an element through a shared reference. *Implementing* an
-//! `unsafe fn` is itself `unsafe_code`, so this module needs the ADR-0015 §1 carve-out
-//! even though it contains no `unsafe` block and performs no unsafe operation: every one
-//! of those bodies is an ordinary safe call into [`crate::store::StyleStore`], whose
-//! `Cell`/`ElementDataWrapper` slots need no raw pointers. The obligation stylo places on
-//! the caller — exclusive access, one thread — is checked at those entry points by the
-//! store's owning-thread `debug_assert`s.
+//! `TElement` declares eight `unsafe fn` (`stylo-0.20.0/dom.rs`): `set_handled_snapshot`
+//! (648), `set_dirty_descendants` (675), `unset_dirty_descendants` (680), `ensure_data`
+//! (739) and `clear_data` (744) are required, while `set_animation_only_dirty_descendants`
+//! (692), `unset_animation_only_dirty_descendants` (697) and `clear_descendant_bits` (704)
+//! ship with defaults. This file implements the five required ones and takes the three
+//! defaults. They are `unsafe` because Gecko implements them by mutating an element through
+//! a shared reference. *Implementing* an `unsafe fn` is itself `unsafe_code`, so this module
+//! needs the ADR-0015 §1 carve-out even though it contains no `unsafe` block and performs no
+//! unsafe operation: every one of those bodies is an ordinary safe call into
+//! [`crate::store::StyleStore`], whose `Cell`/`ElementDataWrapper` slots need no raw
+//! pointers. The obligation stylo places on the caller — exclusive access, one thread — is
+//! checked at those entry points by the store's owning-thread `assert`s.
 #![allow(unsafe_code)]
 #![cfg_attr(not(test), allow(dead_code))]
 
@@ -35,13 +37,14 @@ use cl_dom::{NodeKind, QuirksMode as DomQuirksMode, local_name, ns};
 use selectors::matching::{ElementSelectorFlags, QuirksMode, VisitedHandlingMode};
 use selectors::sink::Push;
 use style::applicable_declarations::ApplicableDeclarationBlock;
-use style::context::SharedStyleContext;
+use style::context::{SharedStyleContext, ThreadLocalStyleContext};
 use style::data::{ElementDataMut, ElementDataRef};
 use style::dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot};
-use style::properties::PropertyDeclarationBlock;
+use style::properties::{PropertyDeclarationBlock, parse_style_attribute};
 use style::selector_parser::{AttrValue, Lang};
 use style::servo_arc::{Arc as StyloArc, ArcBorrow};
 use style::shared_lock::{Locked, SharedRwLock};
+use style::stylesheets::{CssRuleType, UrlExtraData};
 use style::stylist::CascadeData;
 use style::values::AtomIdent;
 use style::values::GenericAtomIdent;
@@ -51,6 +54,32 @@ use style::{Atom, LocalName as StyloLocalName, Namespace as StyloNamespace};
 use stylo_dom::ElementState;
 
 use crate::handle::{ChildHandles, DocumentHandle, ElementHandle, NodeHandle};
+
+/// stylo's sequential `traverse_dom` still parks its per-thread context in a
+/// `ScopedTLS<T: Send>` (`stylo-0.20.0/driver.rs:119`, `scoped_tls.rs:21`), so the gate for
+/// Task 13 is that `ThreadLocalStyleContext<ElementHandle>` is `Send` *without* the handle
+/// itself being `Send`. It is: every element stylo stores in there is wrapped in
+/// `SendElement`/`SendNode` (`stylo-0.20.0/dom.rs:1131..1156`). Asserting it at module
+/// scope — not inside `#[cfg(test)]` — means every build checks it, so Task 13 cannot be
+/// surprised by a missing `unsafe impl Send`.
+const _: fn() = || {
+    fn assert_send<T: Send>() {}
+    assert_send::<ThreadLocalStyleContext<ElementHandle<'static>>>();
+};
+
+/// Maps `cl-dom`'s quirks mode onto stylo's.
+///
+/// Shared by [`TDocument::quirks_mode`] and [`TElement::style_attribute`] — an inline
+/// `style="..."` must be parsed in the document's own quirks mode, exactly like a
+/// stylesheet, or a quirky unitless length (`style="width: 10"`) would be rejected in a
+/// quirks-mode document.
+fn quirks_mode(doc: &cl_dom::Document) -> QuirksMode {
+    match doc.quirks_mode() {
+        DomQuirksMode::NoQuirks => QuirksMode::NoQuirks,
+        DomQuirksMode::LimitedQuirks => QuirksMode::LimitedQuirks,
+        DomQuirksMode::Quirks => QuirksMode::Quirks,
+    }
+}
 
 /// An uninhabited stand-in for `TNode::ConcreteShadowRoot`.
 ///
@@ -84,11 +113,7 @@ impl<'a> TDocument for DocumentHandle<'a> {
     }
 
     fn quirks_mode(&self) -> QuirksMode {
-        match self.node().doc.quirks_mode() {
-            DomQuirksMode::NoQuirks => QuirksMode::NoQuirks,
-            DomQuirksMode::LimitedQuirks => QuirksMode::LimitedQuirks,
-            DomQuirksMode::Quirks => QuirksMode::Quirks,
-        }
+        quirks_mode(self.node().doc)
     }
 
     fn shared_lock(&self) -> &SharedRwLock {
@@ -212,11 +237,32 @@ impl<'a> TElement for ElementHandle<'a> {
     }
 
     fn style_attribute(&self) -> Option<ArcBorrow<'_, Locked<PropertyDeclarationBlock>>> {
-        // The `style="..."` attribute is not parsed in M1a: `cl-dom` keeps attributes as
-        // raw strings and there is nowhere to own the parsed block for the pass. Author
-        // sheets are the only declaration source, which is all Task 12's UA sheet and the
-        // M1a CSS subset need.
-        None
+        let node = self.node();
+        let element = *self;
+        // Parsed once per element per pass and owned by the store, because the trait hands
+        // back a *borrow* that has to outlive this call. The block is wrapped in the store's
+        // `SharedRwLock` — the same lock `TDocument::shared_lock` gives stylo — so the
+        // cascade reads it through the guard it already holds.
+        let block = node.store.style_attr(node.id, move || {
+            let css = element.attr(&local_name!("style"))?;
+            // `parse_style_attribute` needs a base URL to resolve `url()` against. A
+            // document whose own base URL is unparseable has no sound way to do that, so
+            // its inline styles are dropped rather than resolved against something wrong —
+            // the same "warn and carry on" posture `sheets.rs` takes for a bad `<link>`.
+            let base = url::Url::parse(node.doc.base_url()).ok()?;
+            // A malformed declaration is dropped by the parser, not reported: an invalid
+            // `style` attribute yields an empty block, never an error, so no document
+            // content can make this panic. `error_reporter = None` because M1a surfaces CSS
+            // parse errors nowhere yet (`sheets.rs` passes `None` for the same reason).
+            Some(parse_style_attribute(
+                css,
+                &UrlExtraData::from(base),
+                /* error_reporter = */ None,
+                quirks_mode(node.doc),
+                CssRuleType::Style,
+            ))
+        })?;
+        Some(block.borrow_arc())
     }
 
     fn animation_rule(
@@ -509,22 +555,11 @@ impl ElementHandle<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{NodeHandle, TElement, TNode};
+    use super::{ArcBorrow, NodeHandle, TElement, TNode};
     use crate::handle::ElementHandle;
-    use crate::handle::tests::{fixture, store};
-    use cl_dom::local_name;
-    use style::context::ThreadLocalStyleContext;
-
-    /// stylo's sequential `traverse_dom` still parks its per-thread context in a
-    /// `ScopedTLS<T: Send>` (`stylo-0.20.0/driver.rs:119`, `scoped_tls.rs:21`), so the gate
-    /// for Task 13 is that `ThreadLocalStyleContext<ElementHandle>` is `Send` *without* the
-    /// handle itself being `Send`. It is: every element stylo stores in there is wrapped in
-    /// `SendElement`/`SendNode` (`stylo-0.20.0/dom.rs:1131..1156`). Asserting it here means
-    /// Task 13 cannot be surprised by a missing `unsafe impl Send`.
-    const _: fn() = || {
-        fn assert_send<T: Send>() {}
-        assert_send::<ThreadLocalStyleContext<ElementHandle<'static>>>();
-    };
+    use crate::handle::tests::{element, fixture, store};
+    use cl_dom::{Document, NodeKind, StrTendril, local_name};
+    use style::properties::{LonghandId, PropertyDeclarationId};
 
     #[test]
     #[allow(clippy::expect_used)]
@@ -618,5 +653,106 @@ mod tests {
         assert_eq!(TElement::local_name(&element(f.p)), &local_name!("p"));
         assert!(TElement::is_html_element(&element(f.p)));
         assert!(!TElement::is_svg_element(&element(f.p)));
+    }
+
+    /// `:empty` counts element children and *non-empty* character data only: a comment must
+    /// not stop an element from matching, and whitespace-only text must
+    /// (<https://drafts.csswg.org/selectors-4/#the-empty-pseudo>, and what every engine
+    /// ships).
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn is_empty_should_ignore_comments_but_not_whitespace_text() {
+        let mut doc = Document::new("file:///test.html");
+        let root = doc.root();
+        let commented = doc.create(element("i", &[]));
+        let comment = doc.create(NodeKind::Comment(StrTendril::from(" note ")));
+        let spaced = doc.create(element("b", &[]));
+        let space = doc.create(NodeKind::Text(StrTendril::from("  \n\t")));
+        let bare = doc.create(element("u", &[]));
+        for (parent, child) in [
+            (root, commented),
+            (commented, comment),
+            (root, spaced),
+            (spaced, space),
+            (root, bare),
+        ] {
+            doc.append_child(parent, child).expect("append");
+        }
+
+        let store = store(&doc);
+        let handle = |id| ElementHandle(NodeHandle::new(&doc, &store, id));
+        assert!(
+            handle(commented).is_empty_element(),
+            "a comment child does not affect emptiness"
+        );
+        assert!(
+            !handle(spaced).is_empty_element(),
+            "whitespace-only text is still character data, so the element is not empty"
+        );
+        assert!(handle(bare).is_empty_element());
+    }
+
+    /// The inline `style="..."` attribute reaches the cascade as a real
+    /// `PropertyDeclarationBlock`, wrapped in the store's own `SharedRwLock` so the guard
+    /// stylo already holds can read it.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn style_attribute_should_parse_the_inline_declarations() {
+        let mut doc = Document::new("file:///test.html");
+        let root = doc.root();
+        let styled = doc.create(element("div", &[("style", "color: red")]));
+        let plain = doc.create(element("div", &[]));
+        doc.append_child(root, styled).expect("append styled");
+        doc.append_child(root, plain).expect("append plain");
+
+        let store = store(&doc);
+        let handle = |id| ElementHandle(NodeHandle::new(&doc, &store, id));
+
+        assert!(
+            TElement::style_attribute(&handle(plain)).is_none(),
+            "an element with no style attribute contributes no block"
+        );
+
+        // The trait ties the borrow to `&self`, so the handle has to outlive it.
+        let styled = handle(styled);
+        let block = TElement::style_attribute(&styled).expect("inline style block");
+        let guard = store.lock().read();
+        let block = block.get().read_with(&guard);
+
+        assert_eq!(
+            block.declarations().len(),
+            1,
+            "exactly the one declaration that was written"
+        );
+        let declaration = block.declarations().first().expect("one declaration");
+        assert_eq!(
+            declaration.id(),
+            PropertyDeclarationId::Longhand(LonghandId::Color),
+            "the declaration is `color`, not something the parser guessed"
+        );
+        let mut css = String::new();
+        block.to_css(&mut css).expect("serialize the block");
+        assert_eq!(css, "color: red;", "...and its value survived parsing");
+    }
+
+    /// Two calls must hand back the *same* allocation: the block is parsed once per element
+    /// per pass and cached in the store, which is what makes returning a borrow sound.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn style_attribute_should_be_parsed_once_per_element() {
+        let mut doc = Document::new("file:///test.html");
+        let root = doc.root();
+        let div = doc.create(element("div", &[("style", "width: 50%; margin: 0 auto")]));
+        doc.append_child(root, div).expect("append div");
+
+        let store = store(&doc);
+        let handle = ElementHandle(NodeHandle::new(&doc, &store, div));
+        let first = TElement::style_attribute(&handle).expect("inline style block");
+        let second = TElement::style_attribute(&handle).expect("inline style block");
+        assert!(ArcBorrow::ptr_eq(&first, &second));
+
+        // `margin: 0 auto` is a shorthand: four longhands plus `width` is five.
+        let guard = store.lock().read();
+        assert_eq!(first.get().read_with(&guard).declarations().len(), 5);
     }
 }
