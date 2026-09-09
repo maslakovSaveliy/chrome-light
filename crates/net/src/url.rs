@@ -160,11 +160,18 @@ mod tests {
 
     #[test]
     fn to_file_path_should_accept_localhost_and_empty_host() {
-        // Both spell "this machine" per the URL Standard, so they must still resolve.
-        let empty = Url::parse("file:///tmp/a").expect("parses");
+        // Built from a real local path so the test is meaningful on every platform: a
+        // Unix-shaped literal like `file:///tmp/a` is not a valid path on Windows, where
+        // `to_file_path` legitimately requires a drive letter.
+        let path = std::env::temp_dir().join("cl-net-host-test");
+        let empty = Url::from_file_path(&path).expect("temp dir is absolute");
         assert!(empty.to_file_path().is_some());
-        let local = Url::parse("file://localhost/tmp/a").expect("parses");
-        assert!(local.to_file_path().is_some());
+
+        // Same URL with an explicit `localhost` host: per the URL Standard it still means
+        // "this machine", so it must resolve to the same path.
+        let with_localhost = Url::parse(&empty.as_str().replacen("file://", "file://localhost", 1))
+            .expect("still a valid file URL");
+        assert_eq!(with_localhost.to_file_path(), empty.to_file_path());
     }
 
     #[test]
