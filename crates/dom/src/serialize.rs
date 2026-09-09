@@ -33,11 +33,16 @@ use crate::{Namespace, ns};
 ///   child of the document root is depth 1), then the node's own rendering.
 /// - An element renders as `<tag>`; an element in the SVG namespace as `<svg tag>`; in the
 ///   `MathML` namespace as `<math tag>`. Its attributes each get their own line, one level
-///   deeper than the element, sorted by `(namespace, local name)`. A plain attribute
-///   renders as `name="value"`; one with a namespace prefix (only possible for an "adjusted
-///   foreign attribute" inside SVG/`MathML` content — `xlink:href`, `xml:lang`, and the like)
-///   renders as `prefix local="value"` (space-separated, no colon) — see the module docs
-///   for the corpus example this is verified against.
+///   deeper than the element, sorted lexicographically by their *rendered* text (see below),
+///   not by `(namespace, local name)` — the corpus's own convention, since a plain attribute's
+///   local name can itself contain a literal colon (`xml:baaah`) that sorts differently than a
+///   namespaced attribute's rendered `prefix local` (space, not colon, between the two): ASCII
+///   `' '` (0x20) sorts before `':'` (0x3A), so `xml lang` sorts before `xml:base` as text even
+///   though `(namespace, local)` would not order them that way. A plain attribute renders as
+///   `name="value"`; one with a namespace prefix (only possible for an "adjusted foreign
+///   attribute" inside SVG/`MathML` content — `xlink:href`, `xml:lang`, and the like) renders
+///   as `prefix local="value"` (space-separated, no colon) — see the module docs for the
+///   corpus example this is verified against.
 /// - A text node renders as `"text"`; a comment as `<!-- text -->`. Neither escapes
 ///   characters in its content (including embedded `"`) — this matches the corpus, which
 ///   writes the raw source text back out unmodified.
@@ -132,11 +137,15 @@ fn push_node_lines(node: &Node, depth: usize, lines: &mut Vec<String>) {
                 tag_prefix(&element.name.ns),
                 element.name.local
             ));
-            let mut attrs: Vec<&Attr> = element.attrs.iter().collect();
-            attrs.sort_by(|a, b| (&a.name.ns, &a.name.local).cmp(&(&b.name.ns, &b.name.local)));
+            let mut attrs: Vec<(String, &Attr)> = element
+                .attrs
+                .iter()
+                .map(|attr| (format_attr(attr), attr))
+                .collect();
+            attrs.sort_by(|(a, _), (b, _)| a.cmp(b));
             let attr_indent = "  ".repeat(depth);
-            for attr in attrs {
-                lines.push(format!("| {attr_indent}{}", format_attr(attr)));
+            for (rendered, _) in attrs {
+                lines.push(format!("| {attr_indent}{rendered}"));
             }
         }
         NodeKind::Text(text) => lines.push(format!("| {indent}\"{text}\"")),
@@ -392,6 +401,51 @@ mod tests {
         assert_eq!(
             html5lib_tree(&doc),
             "#document\n| <div>\n|   apple=\"2\"\n|   mango=\"3\"\n|   zebra=\"1\""
+        );
+    }
+
+    #[test]
+    fn namespaced_and_plain_attributes_should_sort_by_rendered_name_text() {
+        // Mirrors `tree-construction/webkit02.dat` case 22:
+        // `<svg xml:base xml:lang xml:space xml:baaah definitionurl>`. `xml:lang`/`xml:space`
+        // are adjusted foreign attributes (rendered `xml lang=""`/`xml space=""`, with a
+        // space); `xml:base`/`xml:baaah`/`definitionurl` are not adjusted and keep their
+        // literal colon (or have none). The corpus sorts by the *rendered* attribute text, so
+        // `"xml "` (space, 0x20) sorts before `"xml:"` (colon, 0x3A), giving:
+        // `definitionurl, xml lang, xml space, xml:baaah, xml:base`. Sorting by `(namespace,
+        // local)` instead — the previous key — produces `definitionurl, xml:baaah, xml:base,
+        // xml lang, xml space`, which is wrong. Attributes are pushed in a shuffled order here
+        // to make sure the sort, not insertion order, produces the result.
+        let mut doc = Document::new("about:blank");
+        let root = doc.root();
+        let svg = el(&mut doc, ns!(svg), "svg");
+        let xml_ns = Namespace::from("http://www.w3.org/XML/1998/namespace");
+        let namespaced = |local: &str| Attr {
+            name: QualName::new(
+                Some(Prefix::from("xml")),
+                xml_ns.clone(),
+                LocalName::from(local),
+            ),
+            value: "".into(),
+        };
+        if let Some(NodeKind::Element(element)) = doc.get_mut(svg).map(|n| &mut n.kind) {
+            // Shuffled insertion order (not sorted, not reverse-sorted).
+            element.attrs.push(attr("xml:base", ""));
+            element.attrs.push(namespaced("space"));
+            element.attrs.push(attr("definitionurl", ""));
+            element.attrs.push(attr("xml:baaah", ""));
+            element.attrs.push(namespaced("lang"));
+        }
+        doc.append_child(root, svg).expect("svg");
+        assert_eq!(
+            html5lib_tree(&doc),
+            "#document\n\
+             | <svg svg>\n\
+             |   definitionurl=\"\"\n\
+             |   xml lang=\"\"\n\
+             |   xml space=\"\"\n\
+             |   xml:baaah=\"\"\n\
+             |   xml:base=\"\""
         );
     }
 
