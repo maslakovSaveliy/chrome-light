@@ -10,7 +10,11 @@ rust-version.workspace = true
 name = "cl_html"
 
 [dependencies]
+cl-dom.workspace = true
+cl-net.workspace = true
 encoding_rs.workspace = true
+html5ever.workspace = true
+markup5ever.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

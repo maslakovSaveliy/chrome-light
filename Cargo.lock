@@ -222,7 +222,11 @@ dependencies = [
 name = "cl-html"
 version = "0.0.1"
 dependencies = [
+ "cl-dom",
+ "cl-net",
  "encoding_rs",
+ "html5ever",
+ "markup5ever",
  "proptest",
  "thiserror",
 ]
@@ -800,6 +804,16 @@ name = "hermit-abi"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
+
+[[package]]
+name = "html5ever"
+version = "0.39.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46a1761807faccc9a19e86944bbf40610014066306f96edcdedc2fb714bcb7b8"
+dependencies = [
+ "log",
+ "markup5ever",
+]
 
 [[package]]
 name = "icu_collections"
