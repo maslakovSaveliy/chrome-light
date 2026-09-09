@@ -37,7 +37,7 @@ pub struct FontFace {
 /// installed on the host system.
 ///
 /// # Determinism
-/// Every reftest and text golden in ChromeLight depends on rendering the same way
+/// Every reftest and text golden in `ChromeLight` depends on rendering the same way
 /// on every machine that runs it -- the owner's laptop and CI alike. That is only
 /// true if text layout only ever sees these two fonts, never whatever happens to
 /// be installed on the host. [`FontDb::bundled`] is the only constructor, and it
@@ -76,7 +76,12 @@ impl FontDb {
 
         let mut faces = Vec::with_capacity(2);
         register_bundled_face(&mut collection, AHEM_BYTES, AHEM_FAMILY, &mut faces)?;
-        register_bundled_face(&mut collection, NOTO_SANS_BYTES, NOTO_SANS_FAMILY, &mut faces)?;
+        register_bundled_face(
+            &mut collection,
+            NOTO_SANS_BYTES,
+            NOTO_SANS_FAMILY,
+            &mut faces,
+        )?;
 
         Ok(FontDb {
             collection,
@@ -104,7 +109,7 @@ impl FontDb {
     ///
     /// Matches the family's exact bundled name first (`"Ahem"`, `"Noto Sans"`).
     /// Failing that, the M1a generic-family subset maps both `sans-serif` and
-    /// `monospace` to Noto Sans -- ChromeLight does not bundle a distinct
+    /// `monospace` to Noto Sans -- `ChromeLight` does not bundle a distinct
     /// monospace face yet, so the generic keyword still resolves to a real,
     /// deterministic face rather than falling through. Any other name (a system
     /// font, `serif`, `cursive`, `fantasy`, an unbundled web font) returns `None`;
@@ -155,7 +160,11 @@ fn register_bundled_face(
         });
     }
 
-    let (family_id, font_infos) = &registered[0];
+    let Some((family_id, font_infos)) = registered.first() else {
+        return Err(FontError::NoFacesRegistered {
+            name: expected_family,
+        });
+    };
     let actual_name = collection
         .family_name(*family_id)
         .map(str::to_owned)
@@ -229,7 +238,8 @@ mod tests {
         // which chains `self.data.family_names` with `self.system.family_names` only
         // when `self.system` is `Some`).
         let (collection, _source_cache) = db.fontique();
-        let collection_families: Vec<String> = collection.family_names().map(String::from).collect();
+        let collection_families: Vec<String> =
+            collection.family_names().map(String::from).collect();
         assert_eq!(
             collection_families.len(),
             2,
@@ -289,7 +299,7 @@ mod tests {
         assert!(collection.family_id(NOTO_SANS_FAMILY).is_some());
     }
 
-    /// The defining property of Ahem (https://web-platform-tests.org, and the W3C
+    /// The defining property of Ahem (<https://web-platform-tests.org>, and the W3C
     /// CSS test suite before it): every glyph is a solid box exactly one em
     /// square, so the advance width of any mapped character equals the font's
     /// `unitsPerEm`. This is what actually proves the embedded bytes are Ahem and
@@ -302,7 +312,9 @@ mod tests {
         use skrifa::{FontRef, MetadataProvider};
 
         let font = FontRef::new(AHEM_BYTES).expect("Ahem bytes parse as a font");
-        let units_per_em = font.metrics(Size::unscaled(), LocationRef::default()).units_per_em;
+        let units_per_em = font
+            .metrics(Size::unscaled(), LocationRef::default())
+            .units_per_em;
         let glyph_id = font
             .charmap()
             .map('x')
@@ -312,6 +324,12 @@ mod tests {
             .advance_width(glyph_id)
             .expect("advance width must be available for 'x'");
 
-        assert_eq!(advance, f32::from(units_per_em));
+        // Ahem's advances are exact integers in font units, so an exact-equality assertion is
+        // meaningful here; clippy's float_cmp lint is about accumulated error, which cannot arise
+        // from a single unscaled metric lookup.
+        assert!(
+            (advance - f32::from(units_per_em)).abs() < f32::EPSILON,
+            "Ahem advance {advance} != units_per_em {units_per_em}"
+        );
     }
 }

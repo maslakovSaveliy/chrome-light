@@ -526,7 +526,8 @@ mod tests {
         // Spec: "extract a character encoding from a meta element" returns nothing when the quoted
         // value has no closing quote. Taking the rest of the attribute would let malformed markup
         // choose the document's encoding.
-        let html = br#"<meta http-equiv='Content-Type' content='text/html; charset="windows-1251'>"#;
+        let html =
+            br#"<meta http-equiv='Content-Type' content='text/html; charset="windows-1251'>"#;
         assert_eq!(prescan_meta_charset(html), None);
     }
 
@@ -539,7 +540,8 @@ mod tests {
     #[test]
     fn matched_quote_in_content_charset_should_still_be_extracted() {
         // Guards the fix above against over-correction: a properly closed inner quote still works.
-        let html = br#"<meta http-equiv="content-type" content='text/html; charset="windows-1251"'>"#;
+        let html =
+            br#"<meta http-equiv="content-type" content='text/html; charset="windows-1251"'>"#;
         assert_eq!(prescan_meta_charset(html), Some(encoding_rs::WINDOWS_1251));
     }
 

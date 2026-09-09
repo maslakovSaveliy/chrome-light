@@ -1,6 +1,6 @@
 //! The bundled font bytes and the family names they are expected to register under.
 //!
-//! ChromeLight never reads fonts from the host system (see the crate-level docs on
+//! `ChromeLight` never reads fonts from the host system (see the crate-level docs on
 //! [`crate::FontDb::bundled`]): the only two fonts that exist to the engine are
 //! embedded into the binary at compile time from `assets/`. Provenance, licenses,
 //! and checksums for both files live in `assets/SHA256SUMS`, `assets/LICENSE-Ahem`,
