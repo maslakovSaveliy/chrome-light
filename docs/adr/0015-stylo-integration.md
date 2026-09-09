@@ -20,3 +20,28 @@ ADR-0003 выбрал stylo как CSS-движок. Разведка (2026-09-0
 - Легче: Firefox-grade cascade, selectors, @media, custom properties бесплатно.
 - Труднее: время сборки, Python в CI, unsafe-review для трёх модулей, Windows-сборка stylo.
 - Пересмотреть: при смене мажорной версии stylo или если Blitz#151 даст safe-паттерн — перейти на него.
+
+## Amendment 2026-09-09 (по итогам Task 11)
+
+Пункт 1 Decision исходил из того, что per-node хранилище `ElementData` придётся строить как
+`Box<[UnsafeCell<Option<ElementData>>]>`, потому что stylo вызывает `unsafe fn ensure_data(&self)`
+через `Copy`-хэндл. **Это оказалось неверно и, более того, неосуществимо** против stylo 0.20:
+`ElementDataMut`/`ElementDataRef` имеют приватные поля и создаются исключительно
+`ElementDataWrapper::{borrow, borrow_mut}` (`stylo-0.20.0/style/data.rs`), а сам `ElementDataWrapper`
+уже содержит нужную interior mutability (плюс debug-трекер `AtomicRefCell`). Собственный `UnsafeCell`
+здесь не только лишний — его нечем наполнить.
+
+Фактическая реализация: `StyleStore` — безопасные `Cell`-ы и один `ElementDataWrapper` на узел.
+**В продакшн-коде нет ни одного блока `unsafe`.** `store.rs` и `handle.rs` сохранили
+`#![deny(unsafe_code)]`; исключение `#![allow(unsafe_code)]` нужно только в `stylo_dom.rs`, и только
+потому, что *реализация* пяти `unsafe fn`-методов трейта `TElement` сама по себе считается
+`unsafe_code` — тел с `unsafe { }` нет. Инвариант одного потока сохранён как `debug_assert_eq!` по
+владеющему потоку на каждой мутирующей точке входа, `StyleStore` не `Sync`.
+
+Что это меняет:
+- Пункт 1 Decision читать как «хранилище per-pass, доступ только через API stylo; `unsafe` разрешён,
+  но по факту не понадобился».
+- Пункт 5 (невозможность `cargo miri`) остаётся в силе из-за `build.rs`-кодогенерации stylo, но
+  ценность miri для `cl-style` теперь околонулевая: проверять нечего.
+- Option B (пункт 6) **не активирован**: гейт `p_with_color_rule_should_resolve_to_red` ещё впереди
+  (Task 13), но трейты, матчинг селекторов и хранилище работают.
