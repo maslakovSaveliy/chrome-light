@@ -349,12 +349,29 @@ mod tests {
         assert!(!rel_has_stylesheet_token(""));
     }
 
+    /// Without the bundled UA sheet a `<div>` has no `display` rule anywhere and falls back
+    /// to `inline`; with it, the div is a block. This is the one test that proves
+    /// `add_ua_sheet` actually reaches the cascade rather than just parsing.
     #[test]
-    #[ignore = "needs StyleEngine::resolve() from Task 13; un-ignore there. Once resolve()  \
-                exists this becomes: parse `<div>hi</div>`, engine.add_ua_sheet(), \
-                engine.resolve(doc), find the <div> NodeId, and assert \
-                styled.computed(div).expect(\"styled div\").get_box().display == \
-                Display::Block — see lib.rs's gate_tests::p_with_color_rule_should_resolve_to_red \
-                for the same shape with an author rule instead of the UA sheet."]
-    fn div_should_be_display_block_without_author_css() {}
+    #[allow(clippy::expect_used)]
+    fn div_should_be_display_block_without_author_css() {
+        use crate::test_dom::{find, parse};
+        use style::values::specified::Display;
+
+        let doc = parse("<div>hi</div>");
+        let mut engine = StyleEngine::new((800.0, 600.0), 1.0).expect("engine");
+        engine.add_ua_sheet().expect("ua sheet");
+        assert_eq!(engine.author_rule_count(), 0, "no author CSS at all");
+
+        let styled = engine.resolve(doc).expect("resolve");
+        let div = find(styled.document(), "div").expect("<div>");
+        assert_eq!(
+            styled
+                .computed(div)
+                .expect("styled <div>")
+                .get_box()
+                .clone_display(),
+            Display::Block
+        );
+    }
 }

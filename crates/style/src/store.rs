@@ -49,10 +49,6 @@
 //! programming error inside this crate — passing a pool to `traverse_dom`, or handing a
 //! store to another thread — never on document content, so it costs no
 //! "panic on parser-reachable input".
-//!
-//! As in `handle.rs`, the store has no non-test constructor until Task 13's
-//! `StyleEngine::resolve()`, hence the scoped `dead_code` allow.
-#![cfg_attr(not(test), allow(dead_code))]
 
 use std::cell::{Cell, OnceCell};
 use std::thread::ThreadId;
@@ -140,7 +136,7 @@ pub(crate) struct StyleStore {
     /// at once they would alias one `ElementDataWrapper`, which is UB in release (the
     /// borrow tracker that catches it is `#[cfg(debug_assertions)]`). Two checks keep that
     /// unreachable — [`StyleStore::slot`] debug-asserts the index is in range, and
-    /// [`crate::handle::NodeHandle::new`] asserts the store was sized for the very document
+    /// [`crate::handle::NodeArena::new`] asserts the store was sized for the very document
     /// the handle borrows.
     scratch: Slot,
     /// The lock protecting every stylesheet reachable from the stylist, handed to stylo
@@ -159,7 +155,7 @@ impl StyleStore {
     /// Creates a store with `len` slots (use `Document::len()`), guarded by `lock`.
     ///
     /// `len` **must** be the `Document::len()` of the very document the pass will walk:
-    /// [`crate::handle::NodeHandle::new`] asserts it, because a store sized from a stale
+    /// [`crate::handle::NodeArena::new`] asserts it, because a store sized from a stale
     /// length collapses distinct elements onto [`StyleStore::scratch`].
     ///
     /// `lock` **must** be the engine's `SharedRwLock` — the one whose guards the cascade
@@ -184,7 +180,7 @@ impl StyleStore {
     /// How many slots this store was built for, i.e. the `Document::len()` passed to
     /// [`StyleStore::new`].
     ///
-    /// Exists so [`crate::handle::NodeHandle::new`] can check that a store and a document
+    /// Exists so [`crate::handle::NodeArena::new`] can check that a store and a document
     /// really belong together before any id is used to index the table.
     pub(crate) fn slot_count(&self) -> usize {
         self.slots.len()

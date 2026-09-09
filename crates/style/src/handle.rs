@@ -1,11 +1,38 @@
 //! The `Copy` handles stylo's DOM traits are implemented on.
 //!
 //! ADR-0015 §1 requires a borrow-based handle rather than Blitz's `*mut NodeTree`
-//! (DioxusLabs/blitz#151): a [`NodeHandle`] is the triple `(&Document, &StyleStore,
-//! NodeId)`, so the arena and the side table are borrow-checked for the whole style pass
-//! and the handle carries no pointer that could outlive them. Everything below is safe
-//! Rust — the handles exist precisely so that the interesting invariants are expressed as
-//! lifetimes instead of as `unsafe`.
+//! (DioxusLabs/blitz#151), and that is what this is — but it is **one machine word**, not
+//! the three-word `(&Document, &StyleStore, NodeId)` triple the ADR sketched.
+//!
+//! # Why the handle has to be pointer-sized (ADR-0015 §1 amendment, Task 13)
+//!
+//! stylo's style-sharing cache keeps its LRU allocation in a thread-local typed as
+//! `SharingCacheBase<FakeCandidate>` and `transmute`s it to `SharingCacheBase<
+//! StyleSharingCandidate<E>>` per element type. `FakeCandidate` declares the element field
+//! as a bare `usize` (registry `stylo-0.20.0/sharing/mod.rs:324`), and
+//! `StyleSharingCache::new` — which `ThreadLocalStyleContext::new` calls unconditionally,
+//! so *every* traversal hits it — opens with a hard
+//!
+//! ```text
+//! assert_eq!(mem::size_of::<SharingCache<E>>(), mem::size_of::<TypelessSharingCache>());
+//! ```
+//!
+//! (`sharing/mod.rs:611`). A 24-byte handle therefore aborts every style pass with
+//! `left: 10000, right: 9488` — 32 cache entries × the 16 bytes by which the triple
+//! overshoots a `usize`. **`size_of::<ElementHandle>() == size_of::<usize>()` is a hard
+//! requirement stylo 0.20 places on any embedder**, and it is why Blitz's handle is a raw
+//! pointer. The `const` assertion below pins it so the next change to these types fails to
+//! compile rather than at run time.
+//!
+//! The triple is still there; it just moved one level down. A style pass allocates one
+//! [`NodeArena`] holding a [`NodeSlot`] per arena node — that is where `(&Document,
+//! &StyleStore, NodeId)` lives — and a [`NodeHandle`] is a `&NodeSlot` into it. Tree
+//! navigation needs to reach *other* slots, so each slot also carries a shared reference to
+//! the whole slot array. That reference cannot exist when the array is built, hence the
+//! `Cell` in [`NodeSlot::siblings`] and [`NodeArena::link`]: interior mutability is what
+//! lets the array reference itself in **safe** Rust, where Blitz needs a raw pointer.
+//! Everything below is still safe Rust; the handles exist precisely so that the
+//! interesting invariants are expressed as lifetimes instead of as `unsafe`.
 //!
 //! [`ElementHandle`] and [`DocumentHandle`] are newtypes over `NodeHandle` because stylo
 //! wants three distinct types (`TElement`, `TDocument`, `TNode`) that can be converted
@@ -13,19 +40,24 @@
 //! the document — see [`NodeHandle::as_element`] / [`NodeHandle::as_document`], the only
 //! places they are constructed from a fresh id, and [`ElementHandle::element`], which is
 //! total and never panics.
-//!
-//! Until Task 13 adds `StyleEngine::resolve()`, nothing outside the tests constructs a
-//! handle, so a non-test build of the library sees every item here as unreachable. The
-//! `dead_code` allow below is scoped to that case and comes off with Task 13; test builds
-//! stay strict.
-#![cfg_attr(not(test), allow(dead_code))]
 
+use std::cell::Cell;
 use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 use std::sync::OnceLock;
 
 use cl_dom::{Document, Element, LocalName, Node, NodeId, NodeKind, QualName, ns};
 
 use crate::store::StyleStore;
+
+/// stylo requires element handles to be exactly pointer-sized — see the module docs for the
+/// `assert_eq!` in `StyleSharingCache::new` that enforces it at run time on every traversal.
+/// Checking it here turns that run-time abort into a compile error.
+const _: () = assert!(
+    size_of::<ElementHandle<'static>>() == size_of::<usize>(),
+    "stylo transmutes its style-sharing cache through a usize-sized element field \
+     (stylo-0.20.0/sharing/mod.rs:324,611); an element handle must stay one word wide"
+);
 
 /// The qualified name reported for a node that is not an element.
 ///
@@ -39,43 +71,118 @@ fn placeholder_name() -> &'static QualName {
     PLACEHOLDER.get_or_init(|| QualName::new(None, ns!(), LocalName::from("")))
 }
 
-/// A borrow-based handle to one arena node, for the duration of one style pass.
+/// The per-pass record for one arena node: the `(&Document, &StyleStore, NodeId)` triple
+/// ADR-0015 §1 specifies, plus the back-reference tree navigation needs.
 ///
-/// `Copy` (stylo requires `TNode: Copy`) and three words wide.
-#[derive(Clone, Copy)]
-pub(crate) struct NodeHandle<'a> {
+/// Lives in a [`NodeArena`], one slot per [`NodeId`], for exactly one style pass. It is
+/// never handled directly: a [`NodeHandle`] is a `&NodeSlot`, and the fields are read
+/// through that handle's [`Deref`].
+pub(crate) struct NodeSlot<'a> {
     /// The document this node lives in. Shared, hence immutable for the whole pass.
     pub doc: &'a Document,
     /// The side table holding this pass's `ElementData` and friends.
     pub store: &'a StyleStore,
     /// The node's arena index.
     pub id: NodeId,
+    /// Every slot of the [`NodeArena`] this slot belongs to, itself included — how
+    /// [`NodeHandle::with`] gets from one node to another.
+    ///
+    /// A `Cell` because an array cannot hold a reference to itself at the moment it is
+    /// built: [`NodeArena::link`] fills every slot in once the array exists. `None` only
+    /// between those two moments, which no handle can observe — [`NodeArena::node`] links
+    /// before it hands out its first handle.
+    siblings: Cell<Option<&'a [NodeSlot<'a>]>>,
 }
 
-impl<'a> NodeHandle<'a> {
-    /// Builds a handle for `id` in `doc`, backed by `store`.
+/// Every [`NodeSlot`] of one style pass, indexed by [`NodeId`].
+///
+/// Built once per `StyleEngine::resolve` alongside the [`StyleStore`] and dropped with it.
+/// Handles borrow from it, so it must outlive the traversal.
+pub(crate) struct NodeArena<'a> {
+    /// `slots[id.index()]` is the slot for node `id`.
+    slots: Box<[NodeSlot<'a>]>,
+    /// Whether [`NodeArena::link`] has already run.
+    linked: Cell<bool>,
+}
+
+impl<'a> NodeArena<'a> {
+    /// Builds one slot per node of `doc`, backed by `store`.
     ///
     /// # Panics
     /// If `store` was not built for `doc` — i.e. `StyleStore::new` was given a length other
     /// than this document's `len()`. This is a hard assert rather than a `debug_assert!`
     /// because a store sized from a stale `Document::len()` silently collapses several real
     /// elements onto the store's single scratch slot, and two live `ElementDataMut` on one
-    /// slot is undefined behaviour in a release build (`store.rs`'s `scratch` docs). Like
-    /// the store's owner-thread assert, it can only fire on a programming error inside this
-    /// crate — never on document content — and `new` runs once per pass, not per node
-    /// (every other handle comes from the `Copy` [`NodeHandle::with`]).
-    pub(crate) fn new(doc: &'a Document, store: &'a StyleStore, id: NodeId) -> Self {
+    /// slot is undefined behaviour in a release build (`store.rs`'s `scratch` docs). It can
+    /// only fire on a programming error inside this crate — never on document content — and
+    /// runs once per pass, not per node.
+    pub(crate) fn new(doc: &'a Document, store: &'a StyleStore) -> Self {
         assert_eq!(
             store.slot_count(),
             doc.len(),
-            "StyleStore was built for a different document than the handle borrows"
+            "StyleStore was built for a different document than the handles borrow"
         );
-        Self { doc, store, id }
+        let slots = (0..doc.len())
+            .map(|index| NodeSlot {
+                doc,
+                store,
+                id: NodeId::from_index(index),
+                siblings: Cell::new(None),
+            })
+            .collect();
+        Self {
+            slots,
+            linked: Cell::new(false),
+        }
     }
 
-    /// A handle to a *different* node of the same document and store.
-    pub(crate) fn with(self, id: NodeId) -> Self {
-        Self { id, ..self }
+    /// Points every slot at the whole array, so [`NodeHandle::with`] can navigate.
+    ///
+    /// Idempotent and O(n); runs on the first [`NodeArena::node`] call and never again.
+    fn link(&'a self) {
+        if self.linked.replace(true) {
+            return;
+        }
+        let all: &'a [NodeSlot<'a>] = &self.slots;
+        for slot in all {
+            slot.siblings.set(Some(all));
+        }
+    }
+
+    /// A handle to node `id`, or `None` if `id` is not a node of this arena's document.
+    pub(crate) fn node(&'a self, id: NodeId) -> Option<NodeHandle<'a>> {
+        self.link();
+        self.slots.get(id.index()).map(NodeHandle)
+    }
+
+    /// A handle to node `id` presented as an element, or `None` if `id` is unknown or is
+    /// not an element.
+    pub(crate) fn element(&'a self, id: NodeId) -> Option<ElementHandle<'a>> {
+        self.node(id).and_then(NodeHandle::as_element)
+    }
+}
+
+/// A borrow-based handle to one arena node, for the duration of one style pass.
+///
+/// `Copy` (stylo requires `TNode: Copy`) and exactly one machine word — see the module docs
+/// for why the width is not negotiable. Derefs to its [`NodeSlot`], so `handle.doc`,
+/// `handle.store` and `handle.id` read the triple straight through.
+#[derive(Clone, Copy)]
+pub(crate) struct NodeHandle<'a>(&'a NodeSlot<'a>);
+
+impl<'a> Deref for NodeHandle<'a> {
+    type Target = NodeSlot<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'a> NodeHandle<'a> {
+    /// A handle to a *different* node of the same document and store, or `None` if `id` is
+    /// not a node of that document.
+    pub(crate) fn with(self, id: NodeId) -> Option<Self> {
+        self.0.siblings.get()?.get(id.index()).map(NodeHandle)
     }
 
     /// The arena node, or `None` if the id is unknown (never in practice — see
@@ -116,35 +223,37 @@ impl<'a> NodeHandle<'a> {
 
     /// This node's parent.
     pub(crate) fn parent(self) -> Option<Self> {
-        self.node().and_then(Node::parent).map(|id| self.with(id))
+        self.node()
+            .and_then(Node::parent)
+            .and_then(|id| self.with(id))
     }
 
     /// This node's first child.
     pub(crate) fn first_child(self) -> Option<Self> {
         self.node()
             .and_then(Node::first_child)
-            .map(|id| self.with(id))
+            .and_then(|id| self.with(id))
     }
 
     /// This node's last child.
     pub(crate) fn last_child(self) -> Option<Self> {
         self.node()
             .and_then(Node::last_child)
-            .map(|id| self.with(id))
+            .and_then(|id| self.with(id))
     }
 
     /// The sibling immediately before this node.
     pub(crate) fn prev_sibling(self) -> Option<Self> {
         self.node()
             .and_then(Node::prev_sibling)
-            .map(|id| self.with(id))
+            .and_then(|id| self.with(id))
     }
 
     /// The sibling immediately after this node.
     pub(crate) fn next_sibling(self) -> Option<Self> {
         self.node()
             .and_then(Node::next_sibling)
-            .map(|id| self.with(id))
+            .and_then(|id| self.with(id))
     }
 
     /// This node's direct children, in document order.
@@ -204,7 +313,7 @@ impl<'a> Iterator for ChildHandles<'a> {
     type Item = NodeHandle<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.ids.next().map(|id| self.parent.with(id))
+        self.ids.next().and_then(|id| self.parent.with(id))
     }
 }
 
@@ -281,7 +390,7 @@ impl<'a> DocumentHandle<'a> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{ElementHandle, NodeHandle};
+    use super::{ElementHandle, NodeArena, NodeHandle};
     use crate::store::StyleStore;
     use cl_dom::{Attr, Document, Element, LocalName, NodeId, NodeKind, QualName, StrTendril, ns};
     use style::shared_lock::SharedRwLock;
@@ -344,29 +453,41 @@ pub(crate) mod tests {
         StyleStore::new(doc.len(), SharedRwLock::new())
     }
 
+    /// A node handle for `id` out of `arena`.
+    ///
+    /// Every test id comes from a fixture built against the same document the arena was
+    /// sized for, so the lookup cannot miss; `expect` documents that rather than forcing
+    /// every call site to unwrap.
+    #[allow(clippy::expect_used)]
+    pub(crate) fn node_handle<'a>(arena: &'a NodeArena<'a>, id: NodeId) -> NodeHandle<'a> {
+        arena
+            .node(id)
+            .expect("node id belongs to the arena's document")
+    }
+
+    /// The same node presented as an element — without checking that it *is* one, so tests
+    /// can also assert what a mis-constructed handle does.
+    pub(crate) fn element_handle<'a>(arena: &'a NodeArena<'a>, id: NodeId) -> ElementHandle<'a> {
+        ElementHandle(node_handle(arena, id))
+    }
+
     #[test]
     fn as_element_should_reject_non_elements() {
         let f = fixture();
         let store = store(&f.doc);
-        assert!(NodeHandle::new(&f.doc, &store, f.p).as_element().is_some());
-        assert!(
-            NodeHandle::new(&f.doc, &store, f.text)
-                .as_element()
-                .is_none()
-        );
-        assert!(
-            NodeHandle::new(&f.doc, &store, f.doc.root())
-                .as_document()
-                .is_some()
-        );
+        let arena = NodeArena::new(&f.doc, &store);
+        assert!(node_handle(&arena, f.p).as_element().is_some());
+        assert!(node_handle(&arena, f.text).as_element().is_none());
+        assert!(node_handle(&arena, f.doc.root()).as_document().is_some());
     }
 
     #[test]
     fn element_sibling_walks_should_skip_text_nodes() {
         let f = fixture();
         let store = store(&f.doc);
-        let p = ElementHandle(NodeHandle::new(&f.doc, &store, f.p));
-        let span = ElementHandle(NodeHandle::new(&f.doc, &store, f.span));
+        let arena = NodeArena::new(&f.doc, &store);
+        let p = element_handle(&arena, f.p);
+        let span = element_handle(&arena, f.span);
 
         assert_eq!(p.next_sibling_element(), Some(span));
         assert_eq!(span.prev_sibling_element(), Some(p));
@@ -374,7 +495,7 @@ pub(crate) mod tests {
         assert_eq!(span.next_sibling_element(), None);
         // <p>'s only child is a text node, so it has no element children.
         assert_eq!(p.first_element_child(), None);
-        let body = ElementHandle(NodeHandle::new(&f.doc, &store, f.body));
+        let body = element_handle(&arena, f.body);
         assert_eq!(body.first_element_child(), Some(p));
         let _ = f.html;
     }
@@ -383,9 +504,10 @@ pub(crate) mod tests {
     fn handles_for_the_same_node_should_compare_equal() {
         let f = fixture();
         let store = store(&f.doc);
-        let a = NodeHandle::new(&f.doc, &store, f.p);
-        let b = NodeHandle::new(&f.doc, &store, f.p);
-        let c = NodeHandle::new(&f.doc, &store, f.span);
+        let arena = NodeArena::new(&f.doc, &store);
+        let a = node_handle(&arena, f.p);
+        let b = node_handle(&arena, f.p);
+        let c = node_handle(&arena, f.span);
         assert_eq!(a, b);
         assert_ne!(a, c);
     }

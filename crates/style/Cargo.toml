@@ -25,6 +25,7 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+cl-html.workspace = true
 insta.workspace = true
 
 [lints]

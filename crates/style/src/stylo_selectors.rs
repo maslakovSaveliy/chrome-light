@@ -221,8 +221,9 @@ impl Element for ElementHandle<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AtomIdent, Element, ElementHandle, NodeHandle};
-    use crate::handle::tests::{element as element_kind, fixture, store};
+    use super::{AtomIdent, Element, ElementHandle};
+    use crate::handle::NodeArena;
+    use crate::handle::tests::{element as element_kind, element_handle, fixture, store};
     use cl_dom::{Document, NodeId, local_name};
     use selectors::attr::CaseSensitivity::{AsciiCaseInsensitive, CaseSensitive};
     use selectors::context::{
@@ -282,7 +283,8 @@ mod tests {
     fn element_handle_should_expose_tag_id_and_classes() {
         let f = fixture();
         let store = store(&f.doc);
-        let p = ElementHandle(NodeHandle::new(&f.doc, &store, f.p));
+        let arena = NodeArena::new(&f.doc, &store);
+        let p = element_handle(&arena, f.p);
 
         assert_eq!(TElement::local_name(&p), &local_name!("p"));
         assert!(p.has_local_name(&local_name!("p")));
@@ -300,7 +302,8 @@ mod tests {
     fn structural_pseudo_classes_should_follow_the_dom() {
         let f = fixture();
         let store = store(&f.doc);
-        let element = |id| ElementHandle(NodeHandle::new(&f.doc, &store, id));
+        let arena = NodeArena::new(&f.doc, &store);
+        let element = |id| element_handle(&arena, id);
 
         assert!(element(f.html).is_root());
         assert!(!element(f.body).is_root());
@@ -319,7 +322,8 @@ mod tests {
     fn stylo_parsed_selectors_should_match_through_the_handle() {
         let f = fixture();
         let store = store(&f.doc);
-        let element = |id| ElementHandle(NodeHandle::new(&f.doc, &store, id));
+        let arena = NodeArena::new(&f.doc, &store);
+        let element = |id| element_handle(&arena, id);
         let url_data = UrlExtraData::from(url::Url::parse("file:///test.html").expect("base url"));
 
         let mut caches = SelectorCaches::default();
@@ -365,7 +369,8 @@ mod tests {
     fn link_pseudo_classes_should_match_an_anchor_with_href() {
         let (doc, link, anchor) = attr_doc();
         let store = store(&doc);
-        let handle = |id| ElementHandle(NodeHandle::new(&doc, &store, id));
+        let arena = NodeArena::new(&doc, &store);
+        let handle = |id| element_handle(&arena, id);
 
         assert!(handle(link).is_link(), "<a href> is a link");
         assert!(!handle(anchor).is_link(), "<a> without href is not");
@@ -390,7 +395,8 @@ mod tests {
     fn attr_matches_should_implement_every_operator() {
         let (doc, link, _) = attr_doc();
         let store = store(&doc);
-        let element = ElementHandle(NodeHandle::new(&doc, &store, link));
+        let arena = NodeArena::new(&doc, &store);
+        let element = element_handle(&arena, link);
         let hits = |selector: &str| matches_in(selector, element, QuirksMode::NoQuirks);
 
         // Existence.
@@ -425,7 +431,8 @@ mod tests {
     fn has_id_and_has_class_should_follow_quirks_mode() {
         let (doc, link, _) = attr_doc();
         let store = store(&doc);
-        let element = ElementHandle(NodeHandle::new(&doc, &store, link));
+        let arena = NodeArena::new(&doc, &store);
+        let element = element_handle(&arena, link);
 
         assert!(element.has_id(&AtomIdent::from("Top"), CaseSensitive));
         assert!(!element.has_id(&AtomIdent::from("top"), CaseSensitive));

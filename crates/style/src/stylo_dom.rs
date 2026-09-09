@@ -29,7 +29,6 @@
 //! pointers. The obligation stylo places on the caller — exclusive access, one thread — is
 //! checked at those entry points by the store's owning-thread `assert`s.
 #![allow(unsafe_code)]
-#![cfg_attr(not(test), allow(dead_code))]
 
 use std::marker::PhantomData;
 
@@ -157,7 +156,12 @@ impl<'a> TNode for NodeHandle<'a> {
     }
 
     fn owner_doc(&self) -> Self::ConcreteDocument {
-        DocumentHandle(self.with(self.doc.root()))
+        // Total by contract, so it cannot return `Option`. Every document has a root at
+        // arena index 0 and the arena has a slot for it, so the fallback is unreachable; if
+        // it were ever reached, a handle to *this* node still answers `shared_lock` and
+        // `quirks_mode` correctly (both read through `doc`/`store`, not through the id),
+        // which is all `TDocument` is used for.
+        DocumentHandle(self.with(self.doc.root()).unwrap_or(*self))
     }
 
     fn is_in_document(&self) -> bool {
@@ -555,9 +559,9 @@ impl ElementHandle<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ArcBorrow, NodeHandle, TElement, TNode};
-    use crate::handle::ElementHandle;
-    use crate::handle::tests::{element, fixture, store};
+    use super::{ArcBorrow, TElement, TNode};
+    use crate::handle::NodeArena;
+    use crate::handle::tests::{element, element_handle, fixture, node_handle, store};
     use cl_dom::{Document, NodeKind, StrTendril, local_name};
     use style::properties::{LonghandId, PropertyDeclarationId};
 
@@ -566,7 +570,8 @@ mod tests {
     fn node_handle_should_walk_tree_links() {
         let f = fixture();
         let store = store(&f.doc);
-        let handle = |id| NodeHandle::new(&f.doc, &store, id);
+        let arena = NodeArena::new(&f.doc, &store);
+        let handle = |id| node_handle(&arena, id);
 
         let body = handle(f.body);
         let p = handle(f.p);
@@ -609,7 +614,8 @@ mod tests {
     fn traversal_children_should_yield_elements_and_text_only() {
         let f = fixture();
         let store = store(&f.doc);
-        let body = ElementHandle(NodeHandle::new(&f.doc, &store, f.body));
+        let arena = NodeArena::new(&f.doc, &store);
+        let body = element_handle(&arena, f.body);
         let ids: Vec<_> = TElement::traversal_children(&body).map(|n| n.id).collect();
         assert_eq!(ids, vec![f.p, f.span]);
     }
@@ -618,7 +624,8 @@ mod tests {
     fn element_data_should_start_absent_and_survive_ensure() {
         let f = fixture();
         let store = store(&f.doc);
-        let p = ElementHandle(NodeHandle::new(&f.doc, &store, f.p));
+        let arena = NodeArena::new(&f.doc, &store);
+        let p = element_handle(&arena, f.p);
 
         assert!(!TElement::has_data(&p));
         assert!(TElement::borrow_data(&p).is_none());
@@ -640,7 +647,8 @@ mod tests {
     fn structural_predicates_should_match_the_dom() {
         let f = fixture();
         let store = store(&f.doc);
-        let element = |id| ElementHandle(NodeHandle::new(&f.doc, &store, id));
+        let arena = NodeArena::new(&f.doc, &store);
+        let element = |id| element_handle(&arena, id);
 
         assert!(element(f.html).is_root_element());
         assert!(!element(f.body).is_root_element());
@@ -680,7 +688,9 @@ mod tests {
         }
 
         let store = store(&doc);
-        let handle = |id| ElementHandle(NodeHandle::new(&doc, &store, id));
+
+        let arena = NodeArena::new(&doc, &store);
+        let handle = |id| element_handle(&arena, id);
         assert!(
             handle(commented).is_empty_element(),
             "a comment child does not affect emptiness"
@@ -706,7 +716,9 @@ mod tests {
         doc.append_child(root, plain).expect("append plain");
 
         let store = store(&doc);
-        let handle = |id| ElementHandle(NodeHandle::new(&doc, &store, id));
+
+        let arena = NodeArena::new(&doc, &store);
+        let handle = |id| element_handle(&arena, id);
 
         assert!(
             TElement::style_attribute(&handle(plain)).is_none(),
@@ -746,7 +758,9 @@ mod tests {
         doc.append_child(root, div).expect("append div");
 
         let store = store(&doc);
-        let handle = ElementHandle(NodeHandle::new(&doc, &store, div));
+
+        let arena = NodeArena::new(&doc, &store);
+        let handle = element_handle(&arena, div);
         let first = TElement::style_attribute(&handle).expect("inline style block");
         let second = TElement::style_attribute(&handle).expect("inline style block");
         assert!(ArcBorrow::ptr_eq(&first, &second));
