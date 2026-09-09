@@ -279,6 +279,8 @@ dependencies = [
 name = "cl-style"
 version = "0.0.1"
 dependencies = [
+ "cl-dom",
+ "cl-net",
  "cssparser",
  "euclid",
  "insta",

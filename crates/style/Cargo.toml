@@ -10,8 +10,8 @@ rust-version.workspace = true
 name = "cl_style"
 
 [dependencies]
-# cl-dom.workspace = true        # added in Task 11; until then commented out
-# cl-net.workspace = true        # idem
+cl-dom.workspace = true
+cl-net.workspace = true
 cssparser.workspace = true
 euclid.workspace = true
 markup5ever.workspace = true
