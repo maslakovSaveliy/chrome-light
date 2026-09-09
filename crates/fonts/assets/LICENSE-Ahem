@@ -1,0 +1,36 @@
+Ahem.ttf -- public domain (CC0)
+================================
+
+Provenance
+----------
+Source:  https://github.com/web-platform-tests/wpt
+File:    fonts/Ahem.ttf
+Pinned commit: 986881aaf27ffc441f67dd9e5595e797141b1f40
+              ("Update Ahem to latest from AhemMaker", 2017-09-18,
+              built from https://github.com/litherum/AhemMaker
+              revision d06af356353)
+Fetched: https://raw.githubusercontent.com/web-platform-tests/wpt/986881aaf27ffc441f67dd9e5595e797141b1f40/fonts/Ahem.ttf
+sha256:  see ../assets/SHA256SUMS
+
+License statement
+------------------
+The following text is copied verbatim from the font's own `name` table
+(nameID 0, copyright/license notice) and nameID 14 (license URL), which is
+also how the WPT project (the immediate upstream of this copy) describes
+the font's status:
+
+    The Ahem font belongs to the public domain. In jurisdictions that do
+    not recognize public domain ownership of these files, the following
+    Creative Commons Zero declaration applies:
+    http://labs.creativecommons.org/licenses/zero-waive/1.0/us/legalcode
+
+    License URL (embedded in the font): http://dev.w3.org/CSS/fonts/ahem/COPYING
+
+Ahem was created by Todd Fahrner for cross-implementation CSS testing
+(fixed 1em x 1em glyph metrics; see the W3C's description of the font at
+https://www.w3.org/Style/CSS/Test/Fonts/Ahem/) and has been distributed as
+public-domain/CC0 by the Web Platform Tests project (of which this file is
+an unmodified copy) for that purpose ever since.
+
+This file is bundled unmodified, byte-for-byte identical to the pinned
+WPT commit above (see SHA256SUMS).

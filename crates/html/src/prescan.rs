@@ -312,11 +312,21 @@ fn extract_encoding_from_meta_content(content: &[u8]) -> Option<&'static Encodin
         Some(quote @ (b'"' | b'\'')) => {
             let start = p.saturating_add(1);
             let mut end = start;
+            // The spec's "extract a character encoding from a meta element" requires a *matching*
+            // closing quote: "if the next character is not present, return nothing". Running off the
+            // end of `content` is therefore not "take everything up to EOF" — it is a hard failure,
+            // and the whole meta element yields no encoding. Real browsers agree; treating an
+            // unterminated quote as a valid label would let malformed markup pick our encoding.
+            let mut closed = false;
             while let Some(b) = byte(content, end) {
                 if b == quote {
+                    closed = true;
                     break;
                 }
                 end = end.saturating_add(1);
+            }
+            if !closed {
+                return None;
             }
             content.get(start..end)?
         }
@@ -509,6 +519,28 @@ mod tests {
         // attribute"), so as long as it's separated from the value by real whitespace it's
         // harmless.
         assert_eq!(scan(b"<meta charset=windows-1251 />"), Some("windows-1251"));
+    }
+
+    #[test]
+    fn unmatched_double_quote_in_content_charset_should_yield_nothing() {
+        // Spec: "extract a character encoding from a meta element" returns nothing when the quoted
+        // value has no closing quote. Taking the rest of the attribute would let malformed markup
+        // choose the document's encoding.
+        let html = br#"<meta http-equiv='Content-Type' content='text/html; charset="windows-1251'>"#;
+        assert_eq!(prescan_meta_charset(html), None);
+    }
+
+    #[test]
+    fn unmatched_single_quote_in_content_charset_should_yield_nothing() {
+        let html = br#"<meta http-equiv="content-type" content='charset="shift_jis'>"#;
+        assert_eq!(prescan_meta_charset(html), None);
+    }
+
+    #[test]
+    fn matched_quote_in_content_charset_should_still_be_extracted() {
+        // Guards the fix above against over-correction: a properly closed inner quote still works.
+        let html = br#"<meta http-equiv="content-type" content='text/html; charset="windows-1251"'>"#;
+        assert_eq!(prescan_meta_charset(html), Some(encoding_rs::WINDOWS_1251));
     }
 
     #[test]
