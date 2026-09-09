@@ -1,0 +1,68 @@
+/* ChromeLight user-agent stylesheet (M1a).
+ *
+ * Written from scratch against the HTML Standard's Rendering section
+ * (https://html.spec.whatwg.org/multipage/rendering.html) — our own selector groupings,
+ * comments and formatting, not copied from any other engine's UA sheet.
+ *
+ * Restricted to the CSS property subset `cl_layout::LayoutStyle` actually reads (M1a
+ * plan, "Global Constraints"): display; margin/padding/border-*; color/background-color;
+ * font-family/size/weight/style; line-height; white-space. Loaded once per `StyleEngine`
+ * at `Origin::UserAgent` (`StyleEngine::add_ua_sheet`), so every author rule always wins
+ * the cascade over what is below, regardless of specificity or source order.
+ *
+ * Deliberately left out, because M1a's layout/selector subset cannot honour it and a rule
+ * here would just be dead weight: list markers (`list-style`, `li` stays `display:block`
+ * rather than `list-item`), table display types, `<hr>`'s border/height, `<fieldset>`'s
+ * border/padding, `<dd>`'s indent, form control widgets, `<base>`/`<noscript>`'s
+ * `display:none`, and `:visited` (Task 11 implements only `:link`/`:any-link`).
+ */
+
+/* The two elements every real page always needs box generation for. */
+html, body { display: block; }
+
+html {
+  font-family: sans-serif;
+  font-size: 16px;
+  color: #000;
+}
+
+body { margin: 8px; }
+
+/* Never rendered in their own box, plus the `hidden` attribute (HTML §15.3). */
+head, script, style, title, meta, link, template, [hidden] { display: none; }
+
+/* The rest of the block-level elements M1a's layout supports. No `list-item`, no table
+ * display types, no flex/grid — those aren't implemented yet, so `ul`/`ol`/`li` fall back
+ * to plain blocks rather than claiming a marker box we cannot draw. */
+address, article, aside, blockquote, div, dl, dd, dt, fieldset, figure, figcaption,
+footer, form, h1, h2, h3, h4, h5, h6, header, hr, main, nav, ol, p, pre, section, ul, li {
+  display: block;
+}
+
+/* Default vertical rhythm: one line of blank space above and below, collapsing with a
+ * neighbouring block's margin the way any other block margin does. */
+p, blockquote, ul, ol, dl, pre, h1, h2, h3, h4, h5, h6 { margin: 1em 0; }
+
+/* A blockquote additionally indents from both edges to set it off from surrounding text. */
+blockquote { margin: 1em 40px; }
+
+/* Heading sizes step down from 2em (h1) to 0.67em (h6); each heading's own vertical
+ * margin grows the opposite way, so consecutive headings and body text keep roughly the
+ * same visual spacing regardless of level. */
+h1 { font-size: 2em;    margin: 0.67em 0; }
+h2 { font-size: 1.5em;  margin: 0.83em 0; }
+h3 { font-size: 1.17em; margin: 1em 0; }
+h4 { font-size: 1em;    margin: 1.33em 0; }
+h5 { font-size: 0.83em; margin: 1.67em 0; }
+h6 { font-size: 0.67em; margin: 2.33em 0; }
+
+/* Preformatted text keeps its source whitespace and renders in the browser's monospace
+ * font rather than the page's default sans-serif. */
+pre { white-space: pre; font-family: monospace; }
+
+b, strong { font-weight: bolder; }
+i, em { font-style: italic; }
+
+/* Unvisited links only — M1a's selector matching implements `:link`/`:any-link` but not
+ * `:visited` (Task 11), so a `:visited` rule here could never match anything. */
+a:link { color: #0000ee; }

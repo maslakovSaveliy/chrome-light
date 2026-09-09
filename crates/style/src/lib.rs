@@ -10,6 +10,9 @@
 //! * [`stylo_dom`] — `TDocument`/`TNode`/`NodeInfo`/`TShadowRoot`/`TElement`;
 //! * [`stylo_selectors`] — `selectors::Element`.
 //!
+//! Task 12 adds [`sheets`]: the bundled user-agent stylesheet (`assets/ua.css`) and the
+//! walk that turns a document's `<style>`/`<link>` elements into author stylesheets.
+//!
 //! ADR-0015 §1 carved out `store.rs`, `handle.rs` and `stylo_dom.rs` as the three modules
 //! allowed to opt out of `#![deny(unsafe_code)]`. **None of them ended up needing it**:
 //! stylo 0.20 ships `style::data::ElementDataWrapper`, which already provides the interior
@@ -25,12 +28,14 @@
 pub mod engine;
 pub mod error;
 pub(crate) mod handle;
+pub mod sheets;
 pub(crate) mod store;
 pub(crate) mod stylo_dom;
 pub(crate) mod stylo_selectors;
 
 pub use engine::StyleEngine;
 pub use error::StyleError;
+pub use sheets::SheetWarning;
 
 #[cfg(test)]
 mod gate_tests {

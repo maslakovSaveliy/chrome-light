@@ -45,12 +45,19 @@ impl FontMetricsProvider for NullFontMetricsProvider {
 }
 
 /// Owns one document's stylo `Stylist`: the `Device` (viewport, media type, font metrics),
-/// the `SharedRwLock` protecting every stylesheet reachable from it, and the author
-/// stylesheets appended so far (tracked manually, mirroring Blitz rather than stylo's
-/// `DocumentStylesheetSet`).
+/// the `SharedRwLock` protecting every stylesheet reachable from it, and the user-agent
+/// and author stylesheets appended so far (tracked manually, mirroring Blitz rather than
+/// stylo's `DocumentStylesheetSet`).
 pub struct StyleEngine {
     lock: SharedRwLock,
     stylist: Stylist,
+    /// `Origin::UserAgent` sheets, in the order they were appended. Populated by
+    /// `add_ua_sheet` (`sheets.rs`).
+    ua: Vec<DocumentStyleSheet>,
+    /// `Origin::Author` sheets, in the order they were appended: author stylesheets from
+    /// [`StyleEngine::add_author_sheet`] plus, once collected, every `<style>`/`<link>`
+    /// sheet `collect_document_sheets` (`sheets.rs`) finds in a document, in document
+    /// order.
     author: Vec<DocumentStyleSheet>,
 }
 
@@ -91,6 +98,7 @@ impl StyleEngine {
         Ok(Self {
             lock: SharedRwLock::new(),
             stylist,
+            ua: Vec::new(),
             author: Vec::new(),
         })
     }
@@ -101,13 +109,45 @@ impl StyleEngine {
     /// # Errors
     /// Returns [`StyleError::Url`] if `base` cannot be parsed as an absolute URL.
     pub fn add_author_sheet(&mut self, css: &str, base: &str) -> Result<(), StyleError> {
+        let sheet = self.build_and_append(css, base, Origin::Author)?;
+        self.author.push(sheet);
+        Ok(())
+    }
+
+    /// Parse `css` as a user-agent-origin stylesheet resolved against base URL `base`, and
+    /// append it to the stylist. `pub(crate)`: `sheets.rs`'s public `add_ua_sheet` is the
+    /// real entry point (it always passes the bundled `assets/ua.css`); this exists so that
+    /// code lives in `sheets.rs` per the task brief while still reaching the private
+    /// `stylist`/`lock`/`ua` fields declared here.
+    ///
+    /// # Errors
+    /// Returns [`StyleError::Url`] if `base` cannot be parsed as an absolute URL.
+    pub(crate) fn add_ua_sheet_from(&mut self, css: &str, base: &str) -> Result<(), StyleError> {
+        let sheet = self.build_and_append(css, base, Origin::UserAgent)?;
+        self.ua.push(sheet);
+        Ok(())
+    }
+
+    /// Parses `css` as a stylesheet of the given `origin` resolved against base URL `base`,
+    /// and appends it to the stylist. Shared by [`StyleEngine::add_author_sheet`] and
+    /// [`StyleEngine::add_ua_sheet_from`], which differ only in `origin` and which
+    /// per-origin list they push the returned handle onto.
+    ///
+    /// # Errors
+    /// Returns [`StyleError::Url`] if `base` cannot be parsed as an absolute URL.
+    fn build_and_append(
+        &mut self,
+        css: &str,
+        base: &str,
+        origin: Origin,
+    ) -> Result<DocumentStyleSheet, StyleError> {
         let base_url = url::Url::parse(base).map_err(|e| StyleError::Url(e.to_string()))?;
         let url_data = UrlExtraData::from(base_url);
 
         let sheet = Stylesheet::from_str(
             css,
             url_data,
-            Origin::Author,
+            origin,
             StyloArc::new(self.lock.wrap(MediaList::empty())),
             self.lock.clone(),
             /* stylesheet_loader = */ None,
@@ -119,15 +159,36 @@ impl StyleEngine {
 
         self.stylist
             .append_stylesheet(sheet.clone(), &self.lock.read());
-        self.author.push(sheet);
 
-        Ok(())
+        Ok(sheet)
     }
 
-    /// Total number of top-level CSS rules across every author stylesheet appended so far.
+    /// Total number of top-level CSS rules across every author stylesheet appended so far
+    /// (via [`StyleEngine::add_author_sheet`] or `sheets.rs`'s `collect_document_sheets`).
     pub fn author_rule_count(&self) -> usize {
+        self.rule_counts(&self.author).iter().sum()
+    }
+
+    /// Per-sheet top-level CSS rule counts of every author stylesheet, in the order the
+    /// sheets were appended.
+    ///
+    /// Exists so callers (mainly tests) can confirm sheets were appended in a particular
+    /// order — e.g. document order, for `collect_document_sheets` — without needing the
+    /// cascade itself to observe the effect.
+    pub fn author_rule_counts(&self) -> Vec<usize> {
+        self.rule_counts(&self.author)
+    }
+
+    /// Total number of top-level CSS rules across every user-agent stylesheet appended so
+    /// far (in practice, just the one bundled `assets/ua.css`).
+    pub fn ua_rule_count(&self) -> usize {
+        self.rule_counts(&self.ua).iter().sum()
+    }
+
+    /// Per-sheet top-level CSS rule counts of `sheets`, in order.
+    fn rule_counts(&self, sheets: &[DocumentStyleSheet]) -> Vec<usize> {
         let guard = self.lock.read();
-        self.author
+        sheets
             .iter()
             .map(|sheet| {
                 sheet
@@ -139,7 +200,7 @@ impl StyleEngine {
                     .0
                     .len()
             })
-            .sum()
+            .collect()
     }
 }
 
