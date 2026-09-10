@@ -1,0 +1,25 @@
+[package]
+name = "cl-layout"
+description = "ChromeLight layout: app units, geometry, the ComputedValues adapter, and the box tree"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_layout"
+
+[dependencies]
+cl-dom.workspace = true
+cl-style.workspace = true
+stylo.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+cl-html.workspace = true
+cl-net.workspace = true
+insta.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true
