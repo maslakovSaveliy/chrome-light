@@ -1,0 +1,157 @@
+---
+source: crates/style/tests/computed_style_goldens.rs
+expression: "dump(include_str!(\"golden/nested-divs.html\"))"
+---
+#document
+| <html>
+|   display: block
+|   position: static
+|   width: auto
+|   height: auto
+|   margin-top: 0px
+|   margin-right: 0px
+|   margin-bottom: 0px
+|   margin-left: 0px
+|   padding-top: 0px
+|   padding-right: 0px
+|   padding-bottom: 0px
+|   padding-left: 0px
+|   border-top-width: 3px
+|   border-right-width: 3px
+|   border-bottom-width: 3px
+|   border-left-width: 3px
+|   color: rgb(0, 0, 0)
+|   background-color: rgba(0, 0, 0, 0)
+|   font-size: 16px
+|   font-weight: 400
+|   line-height: normal
+|   text-align: start
+|   white-space-collapse: collapse
+|   text-wrap-mode: wrap
+|   <head>
+|     display: none
+|     position: static
+|     width: auto
+|     height: auto
+|     margin-top: 0px
+|     margin-right: 0px
+|     margin-bottom: 0px
+|     margin-left: 0px
+|     padding-top: 0px
+|     padding-right: 0px
+|     padding-bottom: 0px
+|     padding-left: 0px
+|     border-top-width: 3px
+|     border-right-width: 3px
+|     border-bottom-width: 3px
+|     border-left-width: 3px
+|     color: rgb(0, 0, 0)
+|     background-color: rgba(0, 0, 0, 0)
+|     font-size: 16px
+|     font-weight: 400
+|     line-height: normal
+|     text-align: start
+|     white-space-collapse: collapse
+|     text-wrap-mode: wrap
+|     <style>
+|       (no computed style)
+|   <body>
+|     display: block
+|     position: static
+|     width: auto
+|     height: auto
+|     margin-top: 8px
+|     margin-right: 8px
+|     margin-bottom: 8px
+|     margin-left: 8px
+|     padding-top: 0px
+|     padding-right: 0px
+|     padding-bottom: 0px
+|     padding-left: 0px
+|     border-top-width: 3px
+|     border-right-width: 3px
+|     border-bottom-width: 3px
+|     border-left-width: 3px
+|     color: rgb(0, 0, 0)
+|     background-color: rgba(0, 0, 0, 0)
+|     font-size: 16px
+|     font-weight: 400
+|     line-height: normal
+|     text-align: start
+|     white-space-collapse: collapse
+|     text-wrap-mode: wrap
+|     <div>
+|       display: block
+|       position: static
+|       width: 400px
+|       height: auto
+|       margin-top: 20px
+|       margin-right: 10px
+|       margin-bottom: 20px
+|       margin-left: 10px
+|       padding-top: 5px
+|       padding-right: 5px
+|       padding-bottom: 5px
+|       padding-left: 5px
+|       border-top-width: 2px
+|       border-right-width: 2px
+|       border-bottom-width: 2px
+|       border-left-width: 2px
+|       color: rgb(0, 0, 0)
+|       background-color: rgba(0, 0, 0, 0)
+|       font-size: 16px
+|       font-weight: 400
+|       line-height: normal
+|       text-align: start
+|       white-space-collapse: collapse
+|       text-wrap-mode: wrap
+|       <div>
+|         display: block
+|         position: static
+|         width: auto
+|         height: 50px
+|         margin-top: 16px
+|         margin-right: 0px
+|         margin-bottom: 0px
+|         margin-left: 0px
+|         padding-top: 0px
+|         padding-right: 0px
+|         padding-bottom: 0px
+|         padding-left: 3px
+|         border-top-width: 3px
+|         border-right-width: 3px
+|         border-bottom-width: 3px
+|         border-left-width: 3px
+|         color: rgb(0, 0, 0)
+|         background-color: rgba(0, 0, 0, 0)
+|         font-size: 16px
+|         font-weight: 400
+|         line-height: normal
+|         text-align: start
+|         white-space-collapse: collapse
+|         text-wrap-mode: wrap
+|       <div>
+|         display: block
+|         position: static
+|         width: auto
+|         height: 50px
+|         margin-top: 16px
+|         margin-right: 0px
+|         margin-bottom: 0px
+|         margin-left: 0px
+|         padding-top: 0px
+|         padding-right: 0px
+|         padding-bottom: 0px
+|         padding-left: 3px
+|         border-top-width: 3px
+|         border-right-width: 3px
+|         border-bottom-width: 3px
+|         border-left-width: 3px
+|         color: rgb(0, 0, 0)
+|         background-color: rgba(0, 0, 0, 0)
+|         font-size: 16px
+|         font-weight: 400
+|         line-height: normal
+|         text-align: start
+|         white-space-collapse: collapse
+|         text-wrap-mode: wrap

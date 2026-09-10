@@ -1,0 +1,24 @@
+[package]
+name = "cl-html"
+description = "ChromeLight HTML pipeline (M1a subset): encoding sniffing (BOM, transport label, meta prescan)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_html"
+
+[dependencies]
+cl-dom.workspace = true
+cl-net.workspace = true
+encoding_rs.workspace = true
+html5ever.workspace = true
+markup5ever.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

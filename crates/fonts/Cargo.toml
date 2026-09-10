@@ -1,0 +1,20 @@
+[package]
+name = "cl-fonts"
+description = "ChromeLight bundled font database: Ahem + Noto Sans, no system font enumeration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_fonts"
+
+[dependencies]
+fontique.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+skrifa.workspace = true
+
+[lints]
+workspace = true

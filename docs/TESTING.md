@@ -22,10 +22,13 @@ Pass rate — не единственный KPI. Unsupported, timeout, crash и 
 ## 2. Детерминизм
 
 - Фиксированные шрифты в testshell (bundled test fonts, никаких системных), DPR=1, viewport 800×600, отключены анимации, фиксированный `Clock`, фиксированный RNG seed, `Math.random` детерминирован в test mode.
-- `cl-testshell` — один процесс? **Нет:** multiprocess по умолчанию даже в тестах, чтобы ловить IPC-баги; `--single-process` только для отладки.
+- `cl-testshell` — один процесс? **Нет:** multiprocess по умолчанию даже в тестах, чтобы ловить IPC-баги; `--single-process` только для отладки. Исключение M1a: `cl-testshell` рендерит в одном процессе (`// M1a-ONLY`), multiprocess testshell — M1b.
 
-## 3. WPT интеграция
+## 3. WPT интеграция (M2+)
 
+В M1 — JS-free корпуса: html5lib-tests tree-construction (`tools/conformance/html5lib/`), WPT `urltestdata.json` (`tools/conformance/url/`), запускаются как `cargo test`.
+
+Полная интеграция wptrunner:
 1. Product adapter: запуск бинарника, профиль во временной директории, порты/сертификаты WPT, таймауты, cleanup, детекция crash по exit code и dump.
 2. Порядок включения директорий: `url`, `encoding`, `dom`, `html/syntax`, `css/css-cascade`, `css/CSS2`, `fetch`, `xhr`, `html/webappapis`, затем `css/css-flexbox`, `css/css-grid`, `css/css-text`, `workers`, `IndexedDB`, `service-workers`…
 3. Expected failures — versioned metadata `tools/wpt/expectations/**/*.ini` с bug ID и датой пересмотра. Переписывать expectation для скрытия регрессии запрещено.

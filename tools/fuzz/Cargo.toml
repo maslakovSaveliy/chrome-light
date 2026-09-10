@@ -10,11 +10,36 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+cl-dom = { path = "../../crates/dom" }
+cl-html = { path = "../../crates/html" }
 cl-ipc = { path = "../../crates/ipc" }
+cl-net = { path = "../../crates/net" }
+cl-style = { path = "../../crates/style" }
 
 [[bin]]
 name = "ipc_decode"
 path = "fuzz_targets/ipc_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "url_parse"
+path = "fuzz_targets/url_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "html_parse"
+path = "fuzz_targets/html_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "css_stylesheet"
+path = "fuzz_targets/css_stylesheet.rs"
 test = false
 doc = false
 bench = false

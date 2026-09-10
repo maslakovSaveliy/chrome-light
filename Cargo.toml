@@ -1,7 +1,10 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*"]
-exclude = ["tools/fuzz"]
+# crates/layout is parked: Task 16 of the M1a plan was interrupted mid-edit and the crate does
+# not compile (the border-width/border-style extraction in style_adapt.rs is unfinished).
+# The work is committed so it is not lost; re-add it to the members glob when Task 16 resumes.
+exclude = ["tools/fuzz", "crates/layout"]
 
 [workspace.package]
 version = "0.0.1"
@@ -15,20 +18,52 @@ cl-platform = { path = "crates/platform", version = "0.0.1" }
 cl-ipc = { path = "crates/ipc", version = "0.0.1" }
 cl-process = { path = "crates/process", version = "0.0.1" }
 cl-testshell = { path = "crates/testshell", version = "0.0.1" }
+cl-net = { path = "crates/net", version = "0.0.1" }
+cl-dom = { path = "crates/dom", version = "0.0.1" }
+cl-html = { path = "crates/html", version = "0.0.1" }
+cl-style = { path = "crates/style", version = "0.0.1" }
+cl-fonts = { path = "crates/fonts", version = "0.0.1" }
+cl-layout = { path = "crates/layout", version = "0.0.1" }
+cl-paint = { path = "crates/paint", version = "0.0.1" }
+cl-gfx = { path = "crates/gfx", version = "0.0.1" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+cssparser = "0.37"
 directories = "6"
+encoding_rs = "0.8"
+euclid = "0.22"
+# `system` (a default feature) links the platform font backends: fontconfig (C library) on
+# Linux/FreeBSD, DirectWrite on Windows, CoreText on Apple. ChromeLight bundles its own fonts and
+# must never read the host's (determinism of every reftest), so the backends are switched off at
+# compile time rather than at runtime — and the Linux build stops needing libfontconfig-dev.
+fontique = { version = "0.11", default-features = false, features = ["std"] }
+html5ever = "0.39"
+insta = { version = "1.48", features = ["yaml"] }
 ipc-channel = "0.23"
+markup5ever = "0.39"
+# Same reasoning as fontique: parley/system re-enables fontique/system transitively.
+# `complex-scripts` (dictionary line breaking for CJK/Thai/Khmer/Lao/Myanmar) is a Task 18 decision.
+parley = { version = "0.11", default-features = false, features = ["std"] }
 parking_lot = "0.12"
 postcard = { version = "1", features = ["use-std"] }
 proptest = "1"
+selectors = "0.40"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+skrifa = "0.46"
+smallvec = "1"
+stylo = { version = "0.20", default-features = false, features = ["servo"] }
+stylo_atoms = "0.20"
+stylo_dom = "0.20"
+stylo_traits = "0.20"
+swash = "0.2"
 thiserror = "2"
 tiny-skia = "0.12"
 tracing = "0.1"
 tracing-chrome = "0.7"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2.5"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
