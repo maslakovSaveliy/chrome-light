@@ -31,7 +31,7 @@
 | dom.spec.whatwg.org#nodes | Node, Element, Text, Document | `cl-dom::node` | wpt/dom/nodes | todo | |
 | dom.spec.whatwg.org#events | EventTarget, dispatch | `cl-dom::events` | wpt/dom/events | todo | |
 | css-cascade-5, css-syntax-3, selectors-4 | cascade, parsing, selectors | `cl-style` (stylo) | wpt/css/css-cascade, css-syntax, selectors | todo | stylo deviations tracked upstream |
-| css-display-3, CSS2 §9–10 | block/inline formatting | `cl-layout::block`, `::inline` | wpt/css/CSS2, css-display | todo | |
+| css-display-3, CSS2 §9–10 | block/inline formatting | `cl-layout::block`, `::inline` | wpt/css/CSS2, css-display | todo | M1a: block-in-inline блокифицируется (инлайновый контейнер становится блочным боксом) вместо сплита по CSS 2.1 §9.2.1.1; тест `box_tree_should_blockify_inline_with_block_child`. |
 | css-text-3/4 | line breaking, white-space | `cl-layout::text` (parley) | wpt/css/css-text | todo | |
 | css-flexbox-1 | flex | `cl-layout::flex` (taffy) | wpt/css/css-flexbox | todo | |
 | css-grid-2 | grid | `cl-layout::grid` (taffy) | wpt/css/css-grid | todo | |

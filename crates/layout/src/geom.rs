@@ -356,4 +356,33 @@ impl LayoutStyle {
             ..LayoutStyle::initial()
         }
     }
+
+    /// The style an `InlineText` box takes from the element that generates it (used by
+    /// `crate::box_tree`'s private `classify_child`: a text node has no `ComputedValues` of
+    /// its own in stylo, so its box borrows its container's style instead).
+    ///
+    /// A text run is not a real CSS box with its own declarations — only the properties CSS
+    /// actually defines as *inherited* reach it (`color`, the font fields, `line-height`,
+    /// `text-align`, `white-space`); every non-inherited property (`margin`, `padding`,
+    /// `border-*`, `width`/`height` and friends, `position`, `overflow`, `background-color`,
+    /// …) takes its initial value, exactly as it would for a real anonymous inline box. Before
+    /// this method existed, `classify_child` cloned the container's *entire* `LayoutStyle`
+    /// (including margin/border/width), which is wrong: those fields belong to the container's
+    /// own box, not to the text run, and a caller reading them off an `InlineText` box would
+    /// see meaningless values (see [`crate::box_tree::LayoutBox::style`]'s docs).
+    #[must_use]
+    pub fn inherited_text_style(&self) -> LayoutStyle {
+        LayoutStyle {
+            display: Display::Inline,
+            color: self.color,
+            font_family: self.font_family.clone(),
+            font_size: self.font_size,
+            font_weight: self.font_weight,
+            font_italic: self.font_italic,
+            line_height: self.line_height,
+            text_align: self.text_align,
+            white_space: self.white_space,
+            ..LayoutStyle::initial()
+        }
+    }
 }

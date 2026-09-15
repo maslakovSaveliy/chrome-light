@@ -56,7 +56,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |     text-align: left
 |     white-space: normal
 |     InlineText node=8
-|       display: block
+|       display: inline
 |       position: static
 |       width: auto
 |       height: auto
@@ -134,7 +134,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |       text-align: left
 |       white-space: normal
 |       InlineText node=10
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -142,7 +142,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
@@ -186,7 +186,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |       text-align: left
 |       white-space: normal
 |       InlineText node=12
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -194,10 +194,10 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 20px 0px 20px 0px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
-|         border-color: rgba(0, 0, 128, 255) rgba(0, 0, 128, 255) rgba(0, 0, 128, 255) rgba(0, 0, 128, 255)
+|         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
 |         border-solid: false false false false
 |         box-sizing: content-box
 |         overflow: visible
@@ -249,7 +249,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |           margin: 0px 0px 0px 0px
 |           padding: 0px 0px 0px 0px
 |           border-width: 0px 0px 0px 0px
-|           border-color: rgba(0, 0, 128, 255) rgba(0, 0, 128, 255) rgba(0, 0, 128, 255) rgba(0, 0, 128, 255)
+|           border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
 |           border-solid: false false false false
 |           box-sizing: content-box
 |           overflow: visible
@@ -264,7 +264,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |           text-align: left
 |           white-space: normal
 |       InlineText node=15
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -272,10 +272,10 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 20px 0px 20px 0px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
-|         border-color: rgba(0, 0, 128, 255) rgba(0, 0, 128, 255) rgba(0, 0, 128, 255) rgba(0, 0, 128, 255)
+|         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
 |         border-solid: false false false false
 |         box-sizing: content-box
 |         overflow: visible
@@ -327,13 +327,13 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |           margin: 0px 0px 0px 0px
 |           padding: 0px 0px 0px 0px
 |           border-width: 0px 0px 0px 0px
-|           border-color: rgba(0, 0, 128, 255) rgba(0, 0, 128, 255) rgba(0, 0, 128, 255) rgba(0, 0, 128, 255)
+|           border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
 |           border-solid: false false false false
 |           box-sizing: content-box
 |           overflow: visible
 |           offset: auto auto auto auto
 |           color: rgba(0, 0, 128, 255)
-|           background: rgba(255, 255, 0, 255)
+|           background: rgba(0, 0, 0, 0)
 |           font-family: sans-serif
 |           font-size: 20px
 |           font-weight: 700
@@ -368,7 +368,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |       text-align: left
 |       white-space: normal
 |       InlineText node=18
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -376,7 +376,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)

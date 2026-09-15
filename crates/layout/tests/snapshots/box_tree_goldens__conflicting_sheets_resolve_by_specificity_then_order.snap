@@ -56,7 +56,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |     text-align: left
 |     white-space: normal
 |     InlineText node=11
-|       display: block
+|       display: inline
 |       position: static
 |       width: auto
 |       height: auto
@@ -134,7 +134,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |       text-align: left
 |       white-space: normal
 |       InlineText node=13
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -142,7 +142,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
@@ -186,7 +186,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |       text-align: left
 |       white-space: normal
 |       InlineText node=15
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -194,10 +194,10 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 16px 0px 16px 0px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
-|         border-color: rgba(0, 0, 255, 255) rgba(0, 0, 255, 255) rgba(0, 0, 255, 255) rgba(0, 0, 255, 255)
+|         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
 |         border-solid: false false false false
 |         box-sizing: content-box
 |         overflow: visible
@@ -238,7 +238,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |       text-align: left
 |       white-space: normal
 |       InlineText node=16
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -246,7 +246,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
@@ -290,7 +290,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |       text-align: center
 |       white-space: normal
 |       InlineText node=18
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -298,10 +298,10 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 22px 0px 22px 0px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
-|         border-color: rgba(0, 128, 0, 255) rgba(0, 128, 0, 255) rgba(0, 128, 0, 255) rgba(0, 128, 0, 255)
+|         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
 |         border-solid: false false false false
 |         box-sizing: content-box
 |         overflow: visible
@@ -342,7 +342,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |       text-align: left
 |       white-space: normal
 |       InlineText node=19
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -350,7 +350,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)

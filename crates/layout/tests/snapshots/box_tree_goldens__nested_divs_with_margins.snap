@@ -56,7 +56,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |     text-align: left
 |     white-space: normal
 |     InlineText node=8
-|       display: block
+|       display: inline
 |       position: static
 |       width: auto
 |       height: auto
@@ -134,7 +134,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |       text-align: left
 |       white-space: normal
 |       InlineText node=10
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -142,7 +142,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
@@ -212,19 +212,19 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |         text-align: left
 |         white-space: normal
 |         InlineText node=12
-|           display: block
+|           display: inline
 |           position: static
-|           width: 400px
+|           width: auto
 |           height: auto
 |           min-width: auto
 |           max-width: none
 |           min-height: auto
 |           max-height: none
-|           margin: 20px 10px 20px 10px
-|           padding: 5px 5px 5px 5px
-|           border-width: 2px 2px 2px 2px
+|           margin: 0px 0px 0px 0px
+|           padding: 0px 0px 0px 0px
+|           border-width: 0px 0px 0px 0px
 |           border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
-|           border-solid: true true true true
+|           border-solid: false false false false
 |           box-sizing: content-box
 |           overflow: visible
 |           offset: auto auto auto auto
@@ -264,16 +264,16 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |         text-align: left
 |         white-space: normal
 |         InlineText node=14
-|           display: block
+|           display: inline
 |           position: static
 |           width: auto
-|           height: 50px
+|           height: auto
 |           min-width: auto
 |           max-width: none
 |           min-height: auto
 |           max-height: none
-|           margin: 16px 0px 0px 0px
-|           padding: 0px 0px 0px 3px
+|           margin: 0px 0px 0px 0px
+|           padding: 0px 0px 0px 0px
 |           border-width: 0px 0px 0px 0px
 |           border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
 |           border-solid: false false false false
@@ -316,19 +316,19 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |         text-align: left
 |         white-space: normal
 |         InlineText node=15
-|           display: block
+|           display: inline
 |           position: static
-|           width: 400px
+|           width: auto
 |           height: auto
 |           min-width: auto
 |           max-width: none
 |           min-height: auto
 |           max-height: none
-|           margin: 20px 10px 20px 10px
-|           padding: 5px 5px 5px 5px
-|           border-width: 2px 2px 2px 2px
+|           margin: 0px 0px 0px 0px
+|           padding: 0px 0px 0px 0px
+|           border-width: 0px 0px 0px 0px
 |           border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
-|           border-solid: true true true true
+|           border-solid: false false false false
 |           box-sizing: content-box
 |           overflow: visible
 |           offset: auto auto auto auto
@@ -368,16 +368,16 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |         text-align: left
 |         white-space: normal
 |         InlineText node=17
-|           display: block
+|           display: inline
 |           position: static
 |           width: auto
-|           height: 50px
+|           height: auto
 |           min-width: auto
 |           max-width: none
 |           min-height: auto
 |           max-height: none
-|           margin: 16px 0px 0px 0px
-|           padding: 0px 0px 0px 3px
+|           margin: 0px 0px 0px 0px
+|           padding: 0px 0px 0px 0px
 |           border-width: 0px 0px 0px 0px
 |           border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
 |           border-solid: false false false false
@@ -420,19 +420,19 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |         text-align: left
 |         white-space: normal
 |         InlineText node=18
-|           display: block
+|           display: inline
 |           position: static
-|           width: 400px
+|           width: auto
 |           height: auto
 |           min-width: auto
 |           max-width: none
 |           min-height: auto
 |           max-height: none
-|           margin: 20px 10px 20px 10px
-|           padding: 5px 5px 5px 5px
-|           border-width: 2px 2px 2px 2px
+|           margin: 0px 0px 0px 0px
+|           padding: 0px 0px 0px 0px
+|           border-width: 0px 0px 0px 0px
 |           border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
-|           border-solid: true true true true
+|           border-solid: false false false false
 |           box-sizing: content-box
 |           overflow: visible
 |           offset: auto auto auto auto
@@ -472,7 +472,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |       text-align: left
 |       white-space: normal
 |       InlineText node=19
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -480,7 +480,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)

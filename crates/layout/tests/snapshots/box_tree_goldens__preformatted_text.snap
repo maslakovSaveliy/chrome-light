@@ -56,7 +56,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
 |     text-align: left
 |     white-space: normal
 |     InlineText node=6
-|       display: block
+|       display: inline
 |       position: static
 |       width: auto
 |       height: auto
@@ -134,7 +134,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
 |       text-align: left
 |       white-space: normal
 |       InlineText node=8
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -142,7 +142,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
@@ -186,7 +186,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
 |       text-align: left
 |       white-space: pre
 |       InlineText node=10
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -194,8 +194,8 @@ expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 16px 0px 16px 0px
-|         padding: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
+|         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
 |         border-solid: false false false false
@@ -238,7 +238,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
 |       text-align: left
 |       white-space: normal
 |       InlineText node=11
-|         display: block
+|         display: inline
 |         position: static
 |         width: auto
 |         height: auto
@@ -246,7 +246,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
 |         max-width: none
 |         min-height: auto
 |         max-height: none
-|         margin: 8px 8px 8px 8px
+|         margin: 0px 0px 0px 0px
 |         padding: 0px 0px 0px 0px
 |         border-width: 0px 0px 0px 0px
 |         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
