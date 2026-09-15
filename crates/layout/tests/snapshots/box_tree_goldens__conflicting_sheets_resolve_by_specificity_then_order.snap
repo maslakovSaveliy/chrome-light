@@ -1,0 +1,369 @@
+---
+source: crates/layout/tests/box_tree_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\"))"
+---
+#boxtree
+| Block node=2
+|   display: block
+|   position: static
+|   width: auto
+|   height: auto
+|   min-width: auto
+|   max-width: none
+|   min-height: auto
+|   max-height: none
+|   margin: 0px 0px 0px 0px
+|   padding: 0px 0px 0px 0px
+|   border-width: 0px 0px 0px 0px
+|   border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|   border-solid: false false false false
+|   box-sizing: content-box
+|   overflow: visible
+|   offset: auto auto auto auto
+|   color: rgba(0, 0, 0, 255)
+|   background: rgba(0, 0, 0, 0)
+|   font-family: sans-serif
+|   font-size: 16px
+|   font-weight: 400
+|   font-italic: false
+|   line-height: 19.2px
+|   text-align: left
+|   white-space: normal
+|   AnonymousBlock
+|     display: block
+|     position: static
+|     width: auto
+|     height: auto
+|     min-width: auto
+|     max-width: none
+|     min-height: auto
+|     max-height: none
+|     margin: 0px 0px 0px 0px
+|     padding: 0px 0px 0px 0px
+|     border-width: 0px 0px 0px 0px
+|     border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|     border-solid: false false false false
+|     box-sizing: content-box
+|     overflow: visible
+|     offset: auto auto auto auto
+|     color: rgba(0, 0, 0, 255)
+|     background: rgba(0, 0, 0, 0)
+|     font-family: sans-serif
+|     font-size: 16px
+|     font-weight: 400
+|     font-italic: false
+|     line-height: 19.2px
+|     text-align: left
+|     white-space: normal
+|     InlineText node=11
+|       display: block
+|       position: static
+|       width: auto
+|       height: auto
+|       min-width: auto
+|       max-width: none
+|       min-height: auto
+|       max-height: none
+|       margin: 0px 0px 0px 0px
+|       padding: 0px 0px 0px 0px
+|       border-width: 0px 0px 0px 0px
+|       border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|       border-solid: false false false false
+|       box-sizing: content-box
+|       overflow: visible
+|       offset: auto auto auto auto
+|       color: rgba(0, 0, 0, 255)
+|       background: rgba(0, 0, 0, 0)
+|       font-family: sans-serif
+|       font-size: 16px
+|       font-weight: 400
+|       font-italic: false
+|       line-height: 19.2px
+|       text-align: left
+|       white-space: normal
+|   Block node=12
+|     display: block
+|     position: static
+|     width: auto
+|     height: auto
+|     min-width: auto
+|     max-width: none
+|     min-height: auto
+|     max-height: none
+|     margin: 8px 8px 8px 8px
+|     padding: 0px 0px 0px 0px
+|     border-width: 0px 0px 0px 0px
+|     border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|     border-solid: false false false false
+|     box-sizing: content-box
+|     overflow: visible
+|     offset: auto auto auto auto
+|     color: rgba(0, 0, 0, 255)
+|     background: rgba(0, 0, 0, 0)
+|     font-family: sans-serif
+|     font-size: 16px
+|     font-weight: 400
+|     font-italic: false
+|     line-height: 19.2px
+|     text-align: left
+|     white-space: normal
+|     AnonymousBlock
+|       display: block
+|       position: static
+|       width: auto
+|       height: auto
+|       min-width: auto
+|       max-width: none
+|       min-height: auto
+|       max-height: none
+|       margin: 0px 0px 0px 0px
+|       padding: 0px 0px 0px 0px
+|       border-width: 0px 0px 0px 0px
+|       border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|       border-solid: false false false false
+|       box-sizing: content-box
+|       overflow: visible
+|       offset: auto auto auto auto
+|       color: rgba(0, 0, 0, 255)
+|       background: rgba(0, 0, 0, 0)
+|       font-family: sans-serif
+|       font-size: 16px
+|       font-weight: 400
+|       font-italic: false
+|       line-height: 19.2px
+|       text-align: left
+|       white-space: normal
+|       InlineText node=13
+|         display: block
+|         position: static
+|         width: auto
+|         height: auto
+|         min-width: auto
+|         max-width: none
+|         min-height: auto
+|         max-height: none
+|         margin: 8px 8px 8px 8px
+|         padding: 0px 0px 0px 0px
+|         border-width: 0px 0px 0px 0px
+|         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|         border-solid: false false false false
+|         box-sizing: content-box
+|         overflow: visible
+|         offset: auto auto auto auto
+|         color: rgba(0, 0, 0, 255)
+|         background: rgba(0, 0, 0, 0)
+|         font-family: sans-serif
+|         font-size: 16px
+|         font-weight: 400
+|         font-italic: false
+|         line-height: 19.2px
+|         text-align: left
+|         white-space: normal
+|     Block node=14
+|       display: block
+|       position: static
+|       width: auto
+|       height: auto
+|       min-width: auto
+|       max-width: none
+|       min-height: auto
+|       max-height: none
+|       margin: 16px 0px 16px 0px
+|       padding: 0px 0px 0px 0px
+|       border-width: 0px 0px 0px 0px
+|       border-color: rgba(0, 0, 255, 255) rgba(0, 0, 255, 255) rgba(0, 0, 255, 255) rgba(0, 0, 255, 255)
+|       border-solid: false false false false
+|       box-sizing: content-box
+|       overflow: visible
+|       offset: auto auto auto auto
+|       color: rgba(0, 0, 255, 255)
+|       background: rgba(0, 0, 0, 0)
+|       font-family: sans-serif
+|       font-size: 16px
+|       font-weight: 400
+|       font-italic: false
+|       line-height: 19.2px
+|       text-align: left
+|       white-space: normal
+|       InlineText node=15
+|         display: block
+|         position: static
+|         width: auto
+|         height: auto
+|         min-width: auto
+|         max-width: none
+|         min-height: auto
+|         max-height: none
+|         margin: 16px 0px 16px 0px
+|         padding: 0px 0px 0px 0px
+|         border-width: 0px 0px 0px 0px
+|         border-color: rgba(0, 0, 255, 255) rgba(0, 0, 255, 255) rgba(0, 0, 255, 255) rgba(0, 0, 255, 255)
+|         border-solid: false false false false
+|         box-sizing: content-box
+|         overflow: visible
+|         offset: auto auto auto auto
+|         color: rgba(0, 0, 255, 255)
+|         background: rgba(0, 0, 0, 0)
+|         font-family: sans-serif
+|         font-size: 16px
+|         font-weight: 400
+|         font-italic: false
+|         line-height: 19.2px
+|         text-align: left
+|         white-space: normal
+|     AnonymousBlock
+|       display: block
+|       position: static
+|       width: auto
+|       height: auto
+|       min-width: auto
+|       max-width: none
+|       min-height: auto
+|       max-height: none
+|       margin: 0px 0px 0px 0px
+|       padding: 0px 0px 0px 0px
+|       border-width: 0px 0px 0px 0px
+|       border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|       border-solid: false false false false
+|       box-sizing: content-box
+|       overflow: visible
+|       offset: auto auto auto auto
+|       color: rgba(0, 0, 0, 255)
+|       background: rgba(0, 0, 0, 0)
+|       font-family: sans-serif
+|       font-size: 16px
+|       font-weight: 400
+|       font-italic: false
+|       line-height: 19.2px
+|       text-align: left
+|       white-space: normal
+|       InlineText node=16
+|         display: block
+|         position: static
+|         width: auto
+|         height: auto
+|         min-width: auto
+|         max-width: none
+|         min-height: auto
+|         max-height: none
+|         margin: 8px 8px 8px 8px
+|         padding: 0px 0px 0px 0px
+|         border-width: 0px 0px 0px 0px
+|         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|         border-solid: false false false false
+|         box-sizing: content-box
+|         overflow: visible
+|         offset: auto auto auto auto
+|         color: rgba(0, 0, 0, 255)
+|         background: rgba(0, 0, 0, 0)
+|         font-family: sans-serif
+|         font-size: 16px
+|         font-weight: 400
+|         font-italic: false
+|         line-height: 19.2px
+|         text-align: left
+|         white-space: normal
+|     Block node=17
+|       display: block
+|       position: static
+|       width: auto
+|       height: auto
+|       min-width: auto
+|       max-width: none
+|       min-height: auto
+|       max-height: none
+|       margin: 22px 0px 22px 0px
+|       padding: 0px 0px 0px 0px
+|       border-width: 0px 0px 0px 0px
+|       border-color: rgba(0, 128, 0, 255) rgba(0, 128, 0, 255) rgba(0, 128, 0, 255) rgba(0, 128, 0, 255)
+|       border-solid: false false false false
+|       box-sizing: content-box
+|       overflow: visible
+|       offset: auto auto auto auto
+|       color: rgba(0, 128, 0, 255)
+|       background: rgba(0, 0, 0, 0)
+|       font-family: sans-serif
+|       font-size: 22px
+|       font-weight: 400
+|       font-italic: false
+|       line-height: 26.4px
+|       text-align: center
+|       white-space: normal
+|       InlineText node=18
+|         display: block
+|         position: static
+|         width: auto
+|         height: auto
+|         min-width: auto
+|         max-width: none
+|         min-height: auto
+|         max-height: none
+|         margin: 22px 0px 22px 0px
+|         padding: 0px 0px 0px 0px
+|         border-width: 0px 0px 0px 0px
+|         border-color: rgba(0, 128, 0, 255) rgba(0, 128, 0, 255) rgba(0, 128, 0, 255) rgba(0, 128, 0, 255)
+|         border-solid: false false false false
+|         box-sizing: content-box
+|         overflow: visible
+|         offset: auto auto auto auto
+|         color: rgba(0, 128, 0, 255)
+|         background: rgba(0, 0, 0, 0)
+|         font-family: sans-serif
+|         font-size: 22px
+|         font-weight: 400
+|         font-italic: false
+|         line-height: 26.4px
+|         text-align: center
+|         white-space: normal
+|     AnonymousBlock
+|       display: block
+|       position: static
+|       width: auto
+|       height: auto
+|       min-width: auto
+|       max-width: none
+|       min-height: auto
+|       max-height: none
+|       margin: 0px 0px 0px 0px
+|       padding: 0px 0px 0px 0px
+|       border-width: 0px 0px 0px 0px
+|       border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|       border-solid: false false false false
+|       box-sizing: content-box
+|       overflow: visible
+|       offset: auto auto auto auto
+|       color: rgba(0, 0, 0, 255)
+|       background: rgba(0, 0, 0, 0)
+|       font-family: sans-serif
+|       font-size: 16px
+|       font-weight: 400
+|       font-italic: false
+|       line-height: 19.2px
+|       text-align: left
+|       white-space: normal
+|       InlineText node=19
+|         display: block
+|         position: static
+|         width: auto
+|         height: auto
+|         min-width: auto
+|         max-width: none
+|         min-height: auto
+|         max-height: none
+|         margin: 8px 8px 8px 8px
+|         padding: 0px 0px 0px 0px
+|         border-width: 0px 0px 0px 0px
+|         border-color: rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255) rgba(0, 0, 0, 255)
+|         border-solid: false false false false
+|         box-sizing: content-box
+|         overflow: visible
+|         offset: auto auto auto auto
+|         color: rgba(0, 0, 0, 255)
+|         background: rgba(0, 0, 0, 0)
+|         font-family: sans-serif
+|         font-size: 16px
+|         font-weight: 400
+|         font-italic: false
+|         line-height: 19.2px
+|         text-align: left
+|         white-space: normal

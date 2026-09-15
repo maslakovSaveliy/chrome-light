@@ -132,14 +132,19 @@ pub fn build(doc: &StyledDocument) -> BoxTree {
     let mut boxes: Vec<LayoutBox> = Vec::new();
 
     let Some(root_node) = root_element(document) else {
-        let root = push_box(&mut boxes, None, BoxKind::AnonymousBlock, LayoutStyle::initial(), Vec::new());
+        let root = push_box(
+            &mut boxes,
+            None,
+            BoxKind::AnonymousBlock,
+            LayoutStyle::initial(),
+            Vec::new(),
+        );
         return BoxTree { boxes, root };
     };
 
     let root_style = doc
         .computed(root_node)
-        .map(adapt)
-        .unwrap_or_else(LayoutStyle::initial);
+        .map_or_else(LayoutStyle::initial, adapt);
     if root_style.display == Display::None {
         // The document element itself is `display: none` (unusual, but not impossible —
         // e.g. an author stylesheet with `html { display: none }`): the whole document
@@ -165,20 +170,17 @@ pub fn build(doc: &StyledDocument) -> BoxTree {
         built: Vec::new(),
     }];
 
-    loop {
-        let Some(top) = stack.len().checked_sub(1) else {
-            break;
-        };
-        let next_child = stack[top].children.get(stack[top].next_child).copied();
-        stack[top].next_child += 1;
+    while let Some(top) = stack.last_mut() {
+        let next_child = top.children.get(top.next_child).copied();
+        top.next_child += 1;
 
         let Some(child_id) = next_child else {
             // This frame's children are exhausted: finalize its box and hand it to the
             // parent frame (or, if this was the root frame, return it as the tree's root).
             let frame = stack.pop().unwrap_or_else(|| {
-                // Unreachable in practice — `top` was just computed as a valid index into a
-                // non-empty `stack` — but written without `expect`/`unwrap` panicking on a
-                // real failure: falls back to an empty frame rather than aborting.
+                // Unreachable in practice — the `while let` guard above just proved `stack`
+                // non-empty — but written without `expect`/`unwrap` panicking on a real
+                // failure: falls back to an empty frame rather than aborting.
                 Frame {
                     node: root_node,
                     style: LayoutStyle::initial(),
@@ -196,16 +198,31 @@ pub fn build(doc: &StyledDocument) -> BoxTree {
             let box_id = push_box(&mut boxes, Some(frame.node), kind, frame.style, children);
             match stack.last_mut() {
                 Some(parent) => parent.built.push(box_id),
-                None => return BoxTree { boxes, root: box_id },
+                None => {
+                    return BoxTree {
+                        boxes,
+                        root: box_id,
+                    };
+                }
             }
             continue;
         };
 
-        match classify_child(doc, child_id, &stack[top].style) {
+        // `top`'s mutable borrow of `stack` ends here (its last use was incrementing
+        // `next_child` above), so `stack.last()`/`stack.push()` below are free to borrow
+        // `stack` again.
+        let child_box = match stack.last() {
+            Some(frame) => classify_child(doc, child_id, &frame.style),
+            // Unreachable — same invariant as the `unwrap_or_else` above.
+            None => ChildBox::Skip,
+        };
+        match child_box {
             ChildBox::Skip => {}
             ChildBox::Leaf(kind, style) => {
                 let box_id = push_box(&mut boxes, Some(child_id), kind, style, Vec::new());
-                stack[top].built.push(box_id);
+                if let Some(top) = stack.last_mut() {
+                    top.built.push(box_id);
+                }
             }
             ChildBox::Container(kind, style) => {
                 stack.push(Frame {
@@ -220,12 +237,18 @@ pub fn build(doc: &StyledDocument) -> BoxTree {
         }
     }
 
-    // Unreachable in practice (every path above either loops or returns — see the loop body:
-    // the only `break` is the defensive `checked_sub` guard, which cannot fire because the
-    // stack starts non-empty and every `pop` is immediately followed by either pushing to the
-    // now-topmost frame or returning). Kept panic-free anyway: hand back an empty tree rather
-    // than diverging if that invariant is ever wrong.
-    let root = push_box(&mut boxes, None, BoxKind::AnonymousBlock, LayoutStyle::initial(), Vec::new());
+    // Unreachable in practice: the `while let` loop above only ends when `stack` is empty,
+    // and every `pop` that empties `stack` is immediately followed by a `return` (see the
+    // `match stack.last_mut()` inside the loop) rather than falling through to another
+    // iteration. Kept panic-free anyway: hand back an empty tree rather than diverging if
+    // that invariant is ever wrong.
+    let root = push_box(
+        &mut boxes,
+        None,
+        BoxKind::AnonymousBlock,
+        LayoutStyle::initial(),
+        Vec::new(),
+    );
     BoxTree { boxes, root }
 }
 
@@ -378,7 +401,9 @@ fn wrap_inline_runs(
     let mut result = Vec::with_capacity(built.len());
     let mut run: Vec<BoxId> = Vec::new();
     for id in built {
-        let block_level = boxes.get(id.index()).is_some_and(|b| is_block_level(&b.kind));
+        let block_level = boxes
+            .get(id.index())
+            .is_some_and(|b| is_block_level(&b.kind));
         if block_level {
             if !run.is_empty() {
                 result.push(flush_run(boxes, std::mem::take(&mut run), container_style));

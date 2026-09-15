@@ -245,6 +245,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cl-layout"
+version = "0.0.1"
+dependencies = [
+ "cl-dom",
+ "cl-html",
+ "cl-net",
+ "cl-style",
+ "insta",
+ "proptest",
+ "stylo",
+ "thiserror",
+]
+
+[[package]]
 name = "cl-net"
 version = "0.0.1"
 dependencies = [

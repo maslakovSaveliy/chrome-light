@@ -19,7 +19,9 @@ use cl_style::ComputedValues;
 use style::color::AbsoluteColor;
 use style::properties::longhands::box_sizing::computed_value::T as StyloBoxSizing;
 use style::properties::longhands::white_space_collapse::computed_value::T as WhiteSpaceCollapse;
-use style::values::computed::font::{FontFamily as StyloFontFamily, GenericFontFamily, SingleFontFamily};
+use style::values::computed::font::{
+    FontFamily as StyloFontFamily, GenericFontFamily, SingleFontFamily,
+};
 use style::values::computed::{
     BorderSideWidth, BorderStyle, Color as StyloColor, Display as StyloDisplay, FontStyle,
     FontWeight as StyloFontWeight, Inset, Length as StyloLength, LengthPercentage,
@@ -29,7 +31,7 @@ use style::values::computed::{
 
 use crate::au::Au;
 use crate::geom::{
-    BoxSizing, Display, Length, LayoutStyle, Overflow, Position, Rgba8, Sides, TextAlign,
+    BoxSizing, Display, LayoutStyle, Length, Overflow, Position, Rgba8, Sides, TextAlign,
     WhiteSpace, normal_line_height,
 };
 
@@ -164,22 +166,22 @@ pub fn adapt(cv: &ComputedValues) -> LayoutStyle {
             left: adapt_length_percentage(&padding.clone_padding_left().0),
         },
         border_width: Sides {
-            top: bt_w,
-            right: br_w,
-            bottom: bb_w,
-            left: bl_w,
+            top: top_border.0,
+            right: right_border.0,
+            bottom: bottom_border.0,
+            left: left_border.0,
         },
         border_color: Sides {
-            top: bt_c,
-            right: br_c,
-            bottom: bb_c,
-            left: bl_c,
+            top: top_border.1,
+            right: right_border.1,
+            bottom: bottom_border.1,
+            left: left_border.1,
         },
         border_solid: Sides {
-            top: bt_s,
-            right: br_s,
-            bottom: bb_s,
-            left: bl_s,
+            top: top_border.2,
+            right: right_border.2,
+            bottom: bottom_border.2,
+            left: left_border.2,
         },
         box_sizing: adapt_box_sizing(position_style.clone_box_sizing()),
         overflow: adapt_overflow(box_style.clone_overflow_x()),
@@ -199,7 +201,7 @@ pub fn adapt(cv: &ComputedValues) -> LayoutStyle {
         font_size,
         font_weight: adapt_font_weight(font.clone_font_weight()),
         font_italic: font.clone_font_style() != FontStyle::NORMAL,
-        line_height: adapt_line_height(&font.clone_line_height(), font_size),
+        line_height: adapt_line_height(font.clone_line_height(), font_size),
         text_align: adapt_text_align(inherited_text.clone_text_align()),
         white_space: adapt_white_space(inherited_text.clone_white_space_collapse()),
     }
@@ -240,9 +242,7 @@ fn adapt_box_sizing(box_sizing: StyloBoxSizing) -> BoxSizing {
 /// why `overflow-x` rather than `overflow-y`).
 fn adapt_overflow(overflow: StyloOverflow) -> Overflow {
     match overflow {
-        StyloOverflow::Visible | StyloOverflow::Scroll | StyloOverflow::Auto => {
-            Overflow::Visible
-        }
+        StyloOverflow::Visible | StyloOverflow::Scroll | StyloOverflow::Auto => Overflow::Visible,
         StyloOverflow::Hidden | StyloOverflow::Clip => Overflow::Hidden,
     }
 }
@@ -250,14 +250,14 @@ fn adapt_overflow(overflow: StyloOverflow) -> Overflow {
 /// `text-align` → [`TextAlign`]. See [`adapt`]'s "What is dropped" for the fold rule.
 fn adapt_text_align(align: StyloTextAlign) -> TextAlign {
     match align {
-        StyloTextAlign::Left | StyloTextAlign::Start | StyloTextAlign::MozLeft => {
-            TextAlign::Left
-        }
-        StyloTextAlign::Right | StyloTextAlign::End | StyloTextAlign::MozRight => {
-            TextAlign::Right
-        }
+        // `Justify` has no dedicated fold target (see [`adapt`]'s "What is dropped"), so it
+        // shares `Left`'s arm rather than repeating an identical body under its own pattern.
+        StyloTextAlign::Left
+        | StyloTextAlign::Start
+        | StyloTextAlign::MozLeft
+        | StyloTextAlign::Justify => TextAlign::Left,
+        StyloTextAlign::Right | StyloTextAlign::End | StyloTextAlign::MozRight => TextAlign::Right,
         StyloTextAlign::Center | StyloTextAlign::MozCenter => TextAlign::Center,
-        StyloTextAlign::Justify => TextAlign::Left,
     }
 }
 
@@ -273,11 +273,17 @@ fn adapt_white_space(collapse: WhiteSpaceCollapse) -> WhiteSpace {
 }
 
 /// `font-weight`'s numeric value, clamped to the `u16` range `1..=1000` CSS defines for it.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "`FontWeight::value()` is already clamped to [1, 1000] by stylo (the property's \
+               own parse-time range), and the explicit `.clamp(1.0, 1000.0)` just above \
+               re-asserts that range here, so the f32 -> u16 cast below never truncates or \
+               loses a sign in practice; kept as a checked clamp rather than relying solely \
+               on the (also saturating) `as` cast, so the intent reads directly at the call \
+               site"
+)]
 fn adapt_font_weight(weight: StyloFontWeight) -> u16 {
-    // `FontWeight::value()` is already clamped to `[1, 1000]` by stylo (the property's own
-    // parse-time range), so the cast below never truncates in practice; it is still written
-    // as a saturating round rather than a bare `as u16` so a future stylo version relaxing
-    // that range could not turn this into a silent wraparound.
     weight.value().round().clamp(1.0, 1000.0) as u16
 }
 
@@ -355,8 +361,8 @@ fn adapt_length_percentage(lp: &LengthPercentage) -> Length {
 /// `line-height` → [`Au`]: a `<length>` is used as-is, a `<number>` multiplies `font_size`
 /// (both per CSS's definition of the property), and `normal` is approximated by
 /// [`normal_line_height`].
-fn adapt_line_height(line_height: &StyloLineHeight, font_size: Au) -> Au {
-    match line_height {
+fn adapt_line_height(line_height: StyloLineHeight, font_size: Au) -> Au {
+    match &line_height {
         StyloLineHeight::Normal => normal_line_height(font_size),
         StyloLineHeight::Number(n) => font_size.mul_by_f32(n.0),
         StyloLineHeight::Length(len) => Au::from_px(len.0.px()),
@@ -381,25 +387,29 @@ fn single_family_name(family: &SingleFontFamily) -> String {
 fn generic_family_name(generic: GenericFontFamily) -> &'static str {
     match generic {
         GenericFontFamily::Serif => "serif",
-        GenericFontFamily::SansSerif => "sans-serif",
+        // `None` is stylo's "no generic family specified" internal sentinel — never produced
+        // by parsing a real `font-family` declaration. Falls back to the CSS-wide default
+        // rather than an empty string, so a `LayoutStyle::font_family` entry is never blank.
+        GenericFontFamily::SansSerif | GenericFontFamily::None => "sans-serif",
         GenericFontFamily::Monospace => "monospace",
         GenericFontFamily::Cursive => "cursive",
         GenericFontFamily::Fantasy => "fantasy",
         GenericFontFamily::SystemUi => "system-ui",
-        // `None` is stylo's "no generic family specified" internal sentinel — never produced
-        // by parsing a real `font-family` declaration. Falls back to the CSS-wide default
-        // rather than an empty string, so a `LayoutStyle::font_family` entry is never blank.
-        GenericFontFamily::None => "sans-serif",
     }
 }
 
 /// One border side's stylo values → the used width (zeroed for `none`/`hidden`, the
 /// border-width/border-style trap [`adapt`] documents), the resolved color (`currentcolor`
 /// against `self_color`), and whether the side is `solid`.
+///
+/// `width`/`color` are taken by reference (`style`/`self_color` are cheap `Copy` types small
+/// enough that a reference would cost more than the value): both are read once and never
+/// moved, so cloning the caller's owned `clone_border_*_width`/`clone_border_*_color` result
+/// into this function would be a wasted copy.
 fn adapt_border_side(
-    width: BorderSideWidth,
+    width: &BorderSideWidth,
     style: BorderStyle,
-    color: StyloColor,
+    color: &StyloColor,
     self_color: AbsoluteColor,
 ) -> (Au, Rgba8, bool) {
     let used_width = if style.none_or_hidden() {
@@ -438,6 +448,10 @@ fn to_rgba8(color: AbsoluteColor) -> Rgba8 {
                (also saturating) `as` cast, so the intent reads directly at the call site"
 )]
 fn unit_to_u8(component: f32) -> u8 {
-    let component = if component.is_finite() { component } else { 0.0 };
+    let component = if component.is_finite() {
+        component
+    } else {
+        0.0
+    };
     (component.clamp(0.0, 1.0) * 255.0).round() as u8
 }

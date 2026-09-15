@@ -123,6 +123,11 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "exact equality is the point of this test: a whole-pixel value must round \
+                   trip through Au bit-for-bit, not merely approximately"
+    )]
     fn au_to_px_should_invert_from_px_for_whole_pixels() {
         assert_eq!(Au::from_px(16.0).to_px(), 16.0);
         assert_eq!(Au::from_px(-3.0).to_px(), -3.0);

@@ -1,10 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*"]
-# crates/layout is parked: Task 16 of the M1a plan was interrupted mid-edit and the crate does
-# not compile (the border-width/border-style extraction in style_adapt.rs is unfinished).
-# The work is committed so it is not lost; re-add it to the members glob when Task 16 resumes.
-exclude = ["tools/fuzz", "crates/layout"]
+exclude = ["tools/fuzz"]
 
 [workspace.package]
 version = "0.0.1"

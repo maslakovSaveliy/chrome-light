@@ -38,6 +38,6 @@ pub use au::Au;
 pub use box_tree::{BoxId, BoxKind, BoxTree, LayoutBox, build};
 pub use error::LayoutError;
 pub use geom::{
-    BoxSizing, Display, Length, Overflow, Point, Position, Rect, Rgba8, Sides, Size, TextAlign,
-    WhiteSpace, LayoutStyle,
+    BoxSizing, Display, LayoutStyle, Length, Overflow, Point, Position, Rect, Rgba8, Sides, Size,
+    TextAlign, WhiteSpace,
 };
