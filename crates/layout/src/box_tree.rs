@@ -33,6 +33,18 @@
 //! it happens where every other part of a box's `kind`/children is finalized: when [`build`]
 //! pops a `Frame` off its stack, not when the frame is pushed.
 //!
+//! # Invariant: `style.display` always agrees with `kind`
+//!
+//! For every element box (everything but `AnonymousBlock`/`AnonymousInline`, which have no
+//! `display` of their own — see [`LayoutStyle::anonymous_block`]), `kind` and
+//! `LayoutBox::style`'s `display` field always name the same thing: `BoxKind::Block` ↔
+//! [`Display::Block`], `BoxKind::Inline` ↔ [`Display::Inline`]. This matters specifically for
+//! a blockified box (see above): `style_adapt::adapt` computed `Display::Inline` for it (it
+//! *is* an inline element by its own CSS), so blockification forces `style.display` to
+//! [`Display::Block`] too, not just `kind` — a caller that branches on `style.display`
+//! instead of `kind` must reach the same, corrected answer either way. `finalize_kind` is
+//! where both are set together.
+//!
 //! [`build`] walks the DOM with an explicit stack rather than recursion, for the same reason
 //! every traversal elsewhere in `ChromeLight` does: a document's nesting depth is
 //! attacker-controlled, and a recursive walk would let a hostile document overflow the call
@@ -121,6 +133,11 @@ pub struct LayoutBox {
     /// inherited-only style). An `InlineText` box is different: see
     /// [`BoxKind::InlineText`]'s docs — its `style` carries only the inherited properties
     /// from its container, with everything else at its initial value.
+    ///
+    /// For an element box, `style.display` always agrees with [`LayoutBox::kind`] — see the
+    /// module docs' "Invariant: `style.display` always agrees with `kind`" section — so a
+    /// blockified box's `style.display` reads [`Display::Block`], never the `Display::Inline`
+    /// its source element's own CSS computed.
     pub style: LayoutStyle,
     /// This box's children, in box (≈ document) order.
     pub children: Vec<BoxId>,
@@ -218,7 +235,7 @@ pub fn build(doc: &StyledDocument) -> BoxTree {
         let Some(child_id) = next_child else {
             // This frame's children are exhausted: finalize its box and hand it to the
             // parent frame (or, if this was the root frame, return it as the tree's root).
-            let frame = stack.pop().unwrap_or_else(|| {
+            let mut frame = stack.pop().unwrap_or_else(|| {
                 // Unreachable in practice — the `while let` guard above just proved `stack`
                 // non-empty — but written without `expect`/`unwrap` panicking on a real
                 // failure: falls back to an empty frame rather than aborting.
@@ -231,7 +248,7 @@ pub fn build(doc: &StyledDocument) -> BoxTree {
                     built: Vec::new(),
                 }
             });
-            let kind = finalize_kind(frame.kind, &boxes, &frame.built);
+            let kind = finalize_kind(frame.kind, &mut frame.style, &boxes, &frame.built);
             let children = wrap_inline_runs(&mut boxes, frame.built, &frame.style);
             let box_id = push_box(&mut boxes, Some(frame.node), kind, frame.style, children);
             match stack.last_mut() {
@@ -424,12 +441,24 @@ fn is_block_level(kind: &BoxKind) -> bool {
 /// M1a blockifies instead of splitting the inline box per CSS 2.1 §9.2.1.1. This can only be
 /// decided once `built` is known, i.e. when [`build`] finalizes the frame, never at the point
 /// the frame was pushed.
-fn finalize_kind(kind: ContainerKind, boxes: &[LayoutBox], built: &[BoxId]) -> BoxKind {
+///
+/// When blockification happens, `style.display` is forced to [`Display::Block`] too, so the
+/// returned `BoxKind` and `style.display` never disagree — see the module docs' "Invariant"
+/// section and [`LayoutBox::style`]'s docs: `style.display` was still `Display::Inline` here
+/// (whatever `style_adapt::adapt` computed for the source element), and a caller matching on
+/// `style.display` instead of `kind` must see the same, corrected answer either way.
+fn finalize_kind(
+    kind: ContainerKind,
+    style: &mut LayoutStyle,
+    boxes: &[LayoutBox],
+    built: &[BoxId],
+) -> BoxKind {
     let has_block_child = built
         .iter()
         .filter_map(|&id| boxes.get(id.index()))
         .any(|b| is_block_level(&b.kind));
     if kind == ContainerKind::Inline && has_block_child {
+        style.display = Display::Block;
         return BoxKind::Block;
     }
     match kind {

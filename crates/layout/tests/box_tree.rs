@@ -10,7 +10,7 @@ mod common;
 
 use cl_dom::{NodeId, local_name};
 use cl_layout::box_tree::{BoxId, BoxKind, BoxTree};
-use cl_layout::{Au, Length, Rgba8, build};
+use cl_layout::{Au, Display, Length, Rgba8, build};
 
 /// The first box (depth-first) generated for `node`, or `None` if its whole subtree was
 /// skipped (a `display: none` element, or one nested inside one).
@@ -166,28 +166,55 @@ fn box_tree_should_emit_line_break_for_br() {
     ));
 }
 
-/// `<div><span>x<div>b</div>y</span></div>`: the `<span>` is inline-level by its own
-/// `display`, but directly contains a block-level `<div>` child. CSS 2.1 §9.2.1.1 would split
-/// the `<span>` around the block; M1a instead blockifies it (see `box_tree.rs`'s module
-/// docs, "Invariant: no block-level box is ever a child of an `Inline` box") — the span's own
-/// box becomes `Block`, and the usual anonymous-block wrapping then applies to it exactly
-/// like any other block container: `Block(span) { AnonymousBlock { InlineText }, Block(div) {
-/// InlineText }, AnonymousBlock { InlineText } }`.
+/// `<div><span>x<div>b</div>y</span><span>plain</span></div>`: the first `<span>` is
+/// inline-level by its own `display`, but directly contains a block-level `<div>` child. CSS
+/// 2.1 §9.2.1.1 would split it around the block; M1a instead blockifies it (see
+/// `box_tree.rs`'s module docs, "Invariant: no block-level box is ever a child of an
+/// `Inline` box") — its own box becomes `Block`, `style.display` is forced to
+/// `Display::Block` to match (the other "Invariant" section: `style.display` always agrees
+/// with `kind`), and the usual anonymous-block wrapping then applies to it exactly like any
+/// other block container: `Block(span) { AnonymousBlock { InlineText }, Block(div) {
+/// InlineText }, AnonymousBlock { InlineText } }`. The second `<span>` has no block-level
+/// child, so — for contrast — it is left alone: `Inline` with `style.display ==
+/// Display::Inline`.
 #[test]
 fn box_tree_should_blockify_inline_with_block_child() {
-    let styled = common::styled_document(
-        "<!DOCTYPE html><html><body><div><span>x<div>b</div>y</span></div></body></html>",
-    );
+    let styled = common::styled_document(concat!(
+        "<!DOCTYPE html><html><body>",
+        "<div><span>x<div>b</div>y</span><span>plain</span></div>",
+        "</body></html>",
+    ));
     let tree = build(&styled);
 
-    let span = common::find_element(styled.document(), |el| el.name.local == local_name!("span"))
-        .expect("fixture has a <span>");
+    let spans: Vec<NodeId> = styled
+        .document()
+        .descendants(styled.document().root())
+        .filter(|id| {
+            styled
+                .document()
+                .element(*id)
+                .is_some_and(|el| el.name.local == local_name!("span"))
+        })
+        .collect();
+    assert_eq!(
+        spans.len(),
+        2,
+        "fixture has a blockified <span> and a plain inline <span>"
+    );
+    let span = *spans.first().expect("blockified <span> present");
+    let plain_span = *spans.get(1).expect("plain <span> present");
+
     let span_box_id = find_box_by_node(&tree, span).expect("<span> generates a box");
     let span_box = tree.get(span_box_id).expect("box exists");
     assert_eq!(
         span_box.kind,
         BoxKind::Block,
         "an inline element with a block-level child must be blockified"
+    );
+    assert_eq!(
+        span_box.style.display,
+        Display::Block,
+        "a blockified box's style.display must be forced to match its kind"
     );
     assert_eq!(span_box.children.len(), 3);
 
@@ -228,6 +255,14 @@ fn box_tree_should_blockify_inline_with_block_child() {
             .map(|b| &b.kind),
         Some(BoxKind::InlineText(_))
     ));
+
+    // For contrast: a plain inline `<span>` with no block-level child is not blockified —
+    // it stays `Inline`, with `style.display` still `Display::Inline`.
+    let plain_span_box_id =
+        find_box_by_node(&tree, plain_span).expect("plain <span> generates a box");
+    let plain_span_box = tree.get(plain_span_box_id).expect("box exists");
+    assert_eq!(plain_span_box.kind, BoxKind::Inline);
+    assert_eq!(plain_span_box.style.display, Display::Inline);
 }
 
 /// An `InlineText` box's `style` carries only the *inherited* half of its container's style
