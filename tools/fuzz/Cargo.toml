@@ -10,11 +10,54 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+cl-dom = { path = "../../crates/dom" }
+cl-fonts = { path = "../../crates/fonts", features = ["arbitrary"] }
+cl-gfx = { path = "../../crates/gfx" }
+cl-html = { path = "../../crates/html" }
 cl-ipc = { path = "../../crates/ipc" }
+cl-layout = { path = "../../crates/layout" }
+cl-net = { path = "../../crates/net" }
+cl-paint = { path = "../../crates/paint", features = ["arbitrary"] }
+cl-style = { path = "../../crates/style" }
 
 [[bin]]
 name = "ipc_decode"
 path = "fuzz_targets/ipc_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "url_parse"
+path = "fuzz_targets/url_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "html_parse"
+path = "fuzz_targets/html_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "css_stylesheet"
+path = "fuzz_targets/css_stylesheet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "display_list_validate"
+path = "fuzz_targets/display_list_validate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "display_list_rasterize"
+path = "fuzz_targets/display_list_rasterize.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- expects: a green bar at (0,30)-(30,60), a blue bar at (50,10)-(80,40). #b's static flow
+     position would be (0,0)-(30,30); position:relative with top:10px;left:50px shifts only
+     where it PAINTS, to (50,10)-(80,40) - it does not affect #c, whose own static flow
+     position, (0,30)-(30,60) right after #b's unshifted 30px-tall box, is unchanged
+     (CSS 2.1 SS10.6.4: relative positioning never alters the flow around the box). -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { font-family: Ahem; font-size: 20px; line-height: 20px; width: 30px; height: 30px; }
+  #b { background: #00f; position: relative; top: 10px; left: 50px; }
+  #c { background: #0f0; }
+</style>
+</head>
+<body>
+<div id="b"></div>
+<div id="c"></div>
+</body>
+</html>

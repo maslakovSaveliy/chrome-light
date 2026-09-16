@@ -6,13 +6,22 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 
 ## Движок
 
+`parley` и `fontique` подключены как `default-features = false, features = ["std"]`: это выключает `system` (fontconfig/DirectWrite/CoreText) — движок рендерит только свои встроенные шрифты (детерминизм reftest'ов, ADR-0009) — и `complex-scripts` (словарный перенос строк для CJK/тайского/кхмерского; решение Task 18, вернуться к нему вместе с поддержкой этих письменностей).
+
 | Crate | Роль | Почему этот | Альтернативы | Риск |
 |---|---|---|---|---|
 | `html5ever`, `markup5ever` | HTML tokenizer/tree builder | spec-conformant, Servo, WPT-проверен, `Atom` | свой парсер | средний — API меняется |
 | `cssparser` | CSS tokenizer | требуется stylo | — | низкий |
-| `stylo` (+`stylo_atoms`, `stylo_dom`, `selectors`, `servo_arc`) | CSS cascade/computed style | Firefox-grade, параллельный, огромное покрытие | свой cascade (годы) | средний — тяжёлая интеграция трейтов `TElement`/`TNode`, breaking releases |
+| `stylo_traits`, `stylo_dom`, `stylo_atoms`, `stylo_static_prefs` | часть stylo | та же версия | — | низкий |
+| `selectors` | CSS селекторы | требуется stylo | — | низкий |
+| `stylo` (+`stylo_atoms`, `stylo_dom`, `selectors`, `servo_arc`) | CSS cascade/computed style | Firefox-grade, параллельный, огромное покрытие | свой cascade (годы) | высокий — Python 3 на сборке, API без гарантий стабильности (pre-1.0, ADR-0015). Про `unsafe`: в `cl-style` его **ноль** — поправки к ADR-0015 сняли изначальное допущение, `tools/check-unsafe-scope.sh` держит `#![forbid(unsafe_code)]` во всех крейтах M1a |
+| `euclid` 0.22 | typed 2D geometry (`Size2D`, `Scale`) для `style::device::Device::new` (viewport/device-pixel-ratio) | версия, которую сам `stylo` 0.20 использует внутри (`style_traits`/`app_units`); не реэкспортируется из `style::`, поэтому нужен как прямая зависимость `cl-style` (обнаружено в task-2 build spike) | — | низкий |
 | `taffy` | flex/grid/block math | CSS-корректный, используется Blitz/Bevy | свой | низкий |
-| `parley`, `swash`, `fontdb`, `skrifa` | text layout, shaping, fonts | Linebender-стек, чистый Rust | harfbuzz-rs (C), cosmic-text | средний — pre-1.0 |
+| `parley` 0.11 (Apache-2.0 OR MIT) | shaping + line breaking + `text-align` внутри `cl-layout` (Task 18: inline formatting context); тянет `harfrust` (shaper), `skrifa`, `parley_data`, `icu_segmenter` | Linebender-стек, чистый Rust, тот же `fontique`, что и `cl-fonts` | harfbuzz-rs (C), cosmic-text | средний — pre-1.0 |
+| `swash` 0.2 (Apache-2.0 OR MIT) | растеризация глифов в 8-битные alpha-маски внутри `cl-gfx` (Task 21: CPU backend) — `ScaleContext`/`Render::new(&[Source::Outline])`/`Format::Alpha`, хинтинг выключен ради детерминизма; тянет `zeno` (scan conversion) и `yazi` (распаковка `woff2`-таблиц) | Linebender-стек, чистый Rust, тот же `skrifa`, что и `parley`; `tiny-skia` не умеет растеризовать глифы сам | harfbuzz-rs + FreeType (C), `vello_cpu` | средний — pre-1.0 |
+| `fontique` | font discovery | Linebender-стек | system fontconfig | низкий |
+| `skrifa` (два в `Cargo.lock`: 0.46.2 прямая dev-dependency `cl-fonts`, 0.44.0 транзитивная через `parley` 0.11.1 и `swash` 0.2.10) | font-table parsing (glyph metrics/outlines) | обнаружено Task 23 (`cargo tree -d`): `parley`/`swash` ещё не подняли зависимость до 0.46 | обновить `parley`/`swash` когда выйдет релиз на `skrifa` 0.46 | низкий — типы двух версий не пересекаются в нашем коде (`cl-fonts` и `parley`/`swash` никогда не передают друг другу значения `skrifa::Tag`/`FontRef`), но раздувает бинарник; отслеживать при апдейте `parley`/`swash` |
+| `tendril` | веб-строки (rope/small-string для текстовых узлов) | Servo | — | низкий — **не прямая зависимость**: приходит через `markup5ever` и берётся как `markup5ever::tendril` (у markup5ever 0.39 это tendril 0.5; отдельный пин 0.4 дал бы два несовместимых `StrTendril`) |
 | `vello`, `wgpu`, `peniko`, `kurbo` | 2D GPU raster, GPU abstraction | чистый Rust, Metal/DX12/Vulkan | skia-safe (C++), tiny-skia only | средний — wgpu breaking каждый релиз |
 | `tiny-skia` | CPU raster fallback, reftests | детерминизм | vello_cpu | низкий |
 | `winit` | окна, input | стандарт | tao | низкий |
@@ -63,7 +72,15 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 | `tracing`, `tracing-subscriber`, `tracing-chrome` | observability | низкий |
 | `thiserror`, `anyhow` | ошибки | низкий |
 | `clap` | CLI флаги | низкий |
-| `insta`, `proptest`, `arbitrary`, `libfuzzer-sys`, `criterion` | тесты | низкий |
+| `insta`, `proptest`, `arbitrary`, `libfuzzer-sys`, `criterion` | тесты | низкий — `arbitrary` (MIT OR Apache-2.0) опциональный, за feature-флагом `arbitrary` в `cl-fonts`/`cl-layout`/`cl-paint`: даёт `derive(Arbitrary)` для типов, которые структурно генерируют фаззеры `display_list_validate`/`display_list_rasterize`, плюс `FontKey::from_raw` (doc-hidden, только тесты/фаззинг). В обычной сборке движка выключен |
+| `serde_json` | парсинг WPT/html5lib JSON/тест-фикстур в conformance-гарнесах (dev-dependency) | низкий |
+
+## Bundled assets
+
+| Ресурс | Лицензия | Примечание |
+|---|---|---|
+| `Ahem.ttf` | CC0-1.0 | WPT fonts/Ahem.ttf |
+| `NotoSans-Regular.ttf` | OFL-1.1 | unmodified (Reserved Font Name clause не затрагивает) |
 
 ## Запрещено
 

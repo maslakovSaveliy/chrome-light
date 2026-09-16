@@ -1,0 +1,32 @@
+[package]
+name = "cl-style"
+description = "ChromeLight style system: stylo cascade over the arena DOM"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_style"
+
+[dependencies]
+cl-dom.workspace = true
+cl-net.workspace = true
+cssparser.workspace = true
+euclid.workspace = true
+markup5ever.workspace = true
+selectors.workspace = true
+stylo.workspace = true
+stylo_atoms.workspace = true
+stylo_dom.workspace = true
+stylo_traits.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+cl-html.workspace = true
+insta.workspace = true
+
+[lints]
+workspace = true

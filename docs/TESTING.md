@@ -22,10 +22,14 @@ Pass rate — не единственный KPI. Unsupported, timeout, crash и 
 ## 2. Детерминизм
 
 - Фиксированные шрифты в testshell (bundled test fonts, никаких системных), DPR=1, viewport 800×600, отключены анимации, фиксированный `Clock`, фиксированный RNG seed, `Math.random` детерминирован в test mode.
-- `cl-testshell` — один процесс? **Нет:** multiprocess по умолчанию даже в тестах, чтобы ловить IPC-баги; `--single-process` только для отладки.
+- `cl-testshell` — один процесс? **Нет:** multiprocess по умолчанию даже в тестах, чтобы ловить IPC-баги; `--single-process` только для отладки. Исключение M1a: `cl-testshell` рендерит в одном процессе (`// M1a-ONLY`), multiprocess testshell — M1b.
+- M1a-пайплайн (Task 22, `crates/testshell/src/pipeline.rs`): `render_file`/`render_bytes` синхронно прогоняют один документ через `cl-html` → `cl-style` → `cl-layout` → `cl-paint` → `cl-gfx` в одном потоке одного процесса, с нуля — новый `StyleEngine` и `FontDb::bundled()` на каждый вызов, ничего не разделяется между вызовами и потоками (`tests/determinism.rs` проверяет байт-в-байт идентичность и между двумя вызовами, и при рендере на разных `std::thread`). CLI-команда `dump <input> --stage dom|style|box-tree|fragments|display-list` печатает промежуточный дамп любой стадии тем же форматом, что снапшот-тесты соответствующих crate (`cl_dom::serialize::dom_dump`, `cl_style::dump::computed_style_dump`, `cl_layout::dump::{box_tree_dump,fragment_tree_dump}`, `cl_paint::dump::display_list_dump`) — удобно для диагностики reftest-расхождений без отдельного инструмента. Первая reftest-пара (`tests/ref/text-basic.html` + `text-basic-ref.html`, шрифт Ahem 20px) зафиксирована здесь же и уже используется `tests/determinism.rs`/`tests/cli.rs`; полный reftest-harness — Task 23.
 
-## 3. WPT интеграция
+## 3. WPT интеграция (M2+)
 
+В M1 — JS-free корпуса: html5lib-tests tree-construction (`tools/conformance/html5lib/`), WPT `urltestdata.json` (`tools/conformance/url/`), запускаются как `cargo test`.
+
+Полная интеграция wptrunner:
 1. Product adapter: запуск бинарника, профиль во временной директории, порты/сертификаты WPT, таймауты, cleanup, детекция crash по exit code и dump.
 2. Порядок включения директорий: `url`, `encoding`, `dom`, `html/syntax`, `css/css-cascade`, `css/CSS2`, `fetch`, `xhr`, `html/webappapis`, затем `css/css-flexbox`, `css/css-grid`, `css/css-text`, `workers`, `IndexedDB`, `service-workers`…
 3. Expected failures — versioned metadata `tools/wpt/expectations/**/*.ini` с bug ID и датой пересмотра. Переписывать expectation для скрытия регрессии запрещено.

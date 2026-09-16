@@ -1,0 +1,15 @@
+---
+source: crates/layout/tests/fragment_tree_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\"))"
+---
+#fragments
+| Block <html> border=(0.00, 0.00, 800.00, 105.60) content=(0.00, 0.00, 800.00, 105.60)
+|   Block <body> border=(8.00, 16.00, 784.00, 67.60) content=(8.00, 16.00, 784.00, 67.60)
+|     Block <p> border=(8.00, 16.00, 784.00, 19.20) content=(8.00, 16.00, 784.00, 19.20)
+|       Line border=(8.00, 16.00, 784.00, 19.20) content=(8.00, 16.00, 784.00, 19.20)
+|         Text runs=1 border=(8.00, 16.00, 111.25, 19.20) content=(8.00, 16.00, 111.25, 19.20)
+|           Run font=Noto Sans size=16.00 origin=(8.00, 33.10) glyphs=15 advance=111.25
+|     Block <p> border=(8.00, 57.20, 784.00, 26.40) content=(8.00, 57.20, 784.00, 26.40)
+|       Line border=(8.00, 57.20, 784.00, 26.40) content=(8.00, 57.20, 784.00, 26.40)
+|         Text runs=1 border=(339.23, 57.20, 121.53, 26.40) content=(339.23, 57.20, 121.53, 26.40)
+|           Run font=Noto Sans size=22.00 origin=(339.23, 80.72) glyphs=11 advance=121.53

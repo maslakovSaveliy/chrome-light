@@ -1,0 +1,42 @@
+[package]
+name = "cl-paint"
+description = "ChromeLight paint: display list building from a fragment tree in CSS2 paint order"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_paint"
+
+[features]
+# Off by default; the fuzz workspace (`tools/fuzz`) turns this on to derive
+# `arbitrary::Arbitrary` for `DisplayItem`/`DisplayList` (Task 20's `display_list_validate`
+# target) — forwards to `cl-layout/arbitrary` for the geometry/text types those enums embed.
+arbitrary = ["dep:arbitrary", "cl-layout/arbitrary"]
+# Off by default; forwards to `cl-layout/serde`, same reasoning as `arbitrary` above (the
+# display list crosses the renderer -> gpu process IPC boundary from M1b onward).
+serde = ["dep:serde", "cl-layout/serde"]
+
+[dependencies]
+arbitrary = { workspace = true, optional = true }
+# `cl-dom` is not in the controller ruling's plain dependency list (it names cl-dom as a
+# dev-dependency only), but `build`'s signature takes `doc: &cl_dom::Document` — a type this
+# crate's own public API names in `src/build.rs` — so it must be a normal dependency, exactly
+# like `cl-layout` itself needed it as a normal (not dev) dependency for
+# `dump::fragment_tree_dump`'s identical `&Document` parameter. See task-19-report.md
+# "Deviations" for the full reasoning.
+cl-dom.workspace = true
+cl-fonts.workspace = true
+cl-layout.workspace = true
+serde = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+cl-html.workspace = true
+cl-net.workspace = true
+cl-style.workspace = true
+insta.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- expects: a black bar (0,0)-(800,10), and a red bar (0,30)-(100,40). #parent has no
+     margin of its own, but its first child's margin-top:20px collapses through it (nothing -
+     no padding, no border - separates them, CSS 2.1 SS8.3.1), so #parent (not just #child)
+     is pushed 20px below #before: 10 (#before height) + 20 (collapsed margin) = 30. #child
+     itself has no background, so #parent's own red shows through at its full 100x10 box. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { font-family: Ahem; font-size: 20px; line-height: 20px; }
+  #before { height: 10px; background: #000; }
+  #parent { width: 100px; background: #f00; }
+  #child { height: 10px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<div id="before"></div>
+<div id="parent"><div id="child"></div></div>
+</body>
+</html>

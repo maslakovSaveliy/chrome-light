@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- expects: line 1 is two 20x20 black squares at (0,0) and (60,0) - NOT one 80px bar -
+     and line 2 is one 40x20 black bar at (0,20). white-space:pre preserves every space and
+     breaks at every newline (CSS Text 3 SS3), so "a  b\ncd" becomes two lines: "a  b" is
+     4 Ahem glyphs each advancing a full 20px em (80px of line box), but Ahem's space glyph
+     is a *blank* em square - only "a" and "b" paint - so the two painted squares sit 60px
+     apart; "cd" is 2 painted glyphs, a contiguous 40px bar. Both lines are 20px tall
+     (line-height) and stack directly with no gap. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  pre { font-family: Ahem; font-size: 20px; line-height: 20px; margin: 0; }
+</style>
+</head>
+<body>
+<pre>a  b
+cd</pre>
+</body>
+</html>

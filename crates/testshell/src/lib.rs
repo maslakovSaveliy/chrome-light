@@ -1,32 +1,42 @@
 //! Headless shell used by reftests and (from M1) the WPT product adapter. Deterministic by
-//! construction: fixed viewport, no system fonts, CPU raster.
+//! construction: fixed viewport, no system fonts, CPU raster — see [`pipeline`]'s module docs
+//! for the full list of what is fixed and why.
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod dump;
+pub mod pipeline;
+pub mod reftest;
+
 use std::path::Path;
 
-use tiny_skia::{Color, Pixmap};
+use tiny_skia::Pixmap;
+
+pub use dump::{Stage, select};
+pub use pipeline::{RenderOptions, RenderOutput, Stages, render_bytes, render_file};
 
 /// Testshell failure.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ShellError {
     /// `--viewport` was not `WIDTHxHEIGHT` with both > 0.
+    #[error("invalid viewport {0:?}, expected WIDTHxHEIGHT")]
     InvalidViewport(String),
-    /// Pixmap allocation failed (zero size or too large).
-    Alloc {
-        /// Width.
-        width: u32,
-        /// Height.
-        height: u32,
-    },
-    /// PNG decode failed.
+    /// `--stage` was not one of `dom`, `style`, `box-tree`, `fragments`, `display-list`.
+    #[error("invalid stage {0:?}, expected dom|style|box-tree|fragments|display-list")]
+    InvalidStage(String),
+    /// PNG decode (or, for the CLI's own writes, encode) failed.
+    #[error("png {path}: {cause}")]
     Png {
         /// File.
         path: String,
-        /// Cause.
-        source: String,
+        /// Cause. Named `cause` rather than `source`: thiserror treats a field literally
+        /// named `source` as `std::error::Error::source()` and requires it to implement
+        /// `Error`, which a plain formatted `String` (from `Pixmap::load_png`'s or
+        /// `Pixmap::save_png`'s own error type) does not.
+        cause: String,
     },
     /// Two images differ in size.
+    #[error("size mismatch: {a_w}x{a_h} vs {b_w}x{b_h}")]
     SizeMismatch {
         /// A width.
         a_w: u32,
@@ -37,34 +47,34 @@ pub enum ShellError {
         /// B height.
         b_h: u32,
     },
-    /// I/O.
-    Io(std::io::Error),
-}
-
-impl std::fmt::Display for ShellError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ShellError::InvalidViewport(s) => {
-                write!(f, "invalid viewport {s:?}, expected WIDTHxHEIGHT")
-            }
-            ShellError::Alloc { width, height } => {
-                write!(f, "cannot allocate {width}x{height} pixmap")
-            }
-            ShellError::Png { path, source } => write!(f, "png {path}: {source}"),
-            ShellError::SizeMismatch { a_w, a_h, b_w, b_h } => {
-                write!(f, "size mismatch: {a_w}x{a_h} vs {b_w}x{b_h}")
-            }
-            ShellError::Io(e) => write!(f, "io: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ShellError {}
-
-impl From<std::io::Error> for ShellError {
-    fn from(e: std::io::Error) -> Self {
-        ShellError::Io(e)
-    }
+    /// I/O (reading a PNG to compare, or resolving/canonicalising an input path).
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+    /// `cl-net` failed to resolve a URL or load a resource (the document itself, or a
+    /// `<link rel=stylesheet>` — see [`pipeline::render_bytes`]).
+    #[error("net: {0}")]
+    Net(#[from] cl_net::NetError),
+    /// `cl-html` failed to parse the document. Uninhabited today — see
+    /// [`cl_html::HtmlError`]'s docs — kept so a future fallible parse path needs no API
+    /// break here.
+    #[error("html: {0}")]
+    Html(#[from] cl_html::HtmlError),
+    /// `cl-style` failed to construct the style engine, build a stylesheet, or resolve the
+    /// cascade.
+    #[error("style: {0}")]
+    Style(#[from] cl_style::StyleError),
+    /// The bundled font database failed to load. Expected only from a corrupted build — see
+    /// [`cl_fonts::FontError`]'s docs — kept so that failure is a reported `Err` rather than
+    /// a panic.
+    #[error("fonts: {0}")]
+    Font(#[from] cl_fonts::FontError),
+    /// `cl-layout` failed to lay out the styled document (font plumbing only — see
+    /// [`cl_layout::LayoutError`]).
+    #[error("layout: {0}")]
+    Layout(#[from] cl_layout::LayoutError),
+    /// `cl-gfx` failed to rasterise the display list.
+    #[error("gfx: {0}")]
+    Gfx(#[from] cl_gfx::GfxError),
 }
 
 /// Result of comparing two PNGs.
@@ -90,42 +100,40 @@ pub fn parse_viewport(s: &str) -> Result<(u32, u32), ShellError> {
     Ok((w, h))
 }
 
-/// An opaque white canvas. M0-ONLY: the real pipeline (cl-html → … → cl-gfx) replaces this in M1;
-/// the CLI and reftest harness stay the same.
-pub fn render_blank(width: u32, height: u32) -> Result<Pixmap, ShellError> {
-    let mut pm = Pixmap::new(width, height).ok_or(ShellError::Alloc { width, height })?;
-    pm.fill(Color::WHITE);
-    Ok(pm)
-}
-
 /// Count differing pixels between two PNGs of equal size.
 pub fn compare_png(a: &Path, b: &Path) -> Result<Diff, ShellError> {
     let load = |p: &Path| {
         Pixmap::load_png(p).map_err(|e| ShellError::Png {
             path: p.display().to_string(),
-            source: e.to_string(),
+            cause: e.to_string(),
         })
     };
-    let pa = load(a)?;
-    let pb = load(b)?;
-    if (pa.width(), pa.height()) != (pb.width(), pb.height()) {
+    compare_pixmaps(&load(a)?, &load(b)?)
+}
+
+/// Count differing pixels between two already-decoded pixmaps of equal size — the in-memory
+/// core [`compare_png`] loads two PNGs into before delegating here, and what
+/// [`reftest::run_pair`] uses directly (a reftest pair is rendered straight to a [`Pixmap`],
+/// so round-tripping it through a PNG file just to diff it would be pure overhead).
+pub fn compare_pixmaps(a: &Pixmap, b: &Pixmap) -> Result<Diff, ShellError> {
+    if (a.width(), a.height()) != (b.width(), b.height()) {
         return Err(ShellError::SizeMismatch {
-            a_w: pa.width(),
-            a_h: pa.height(),
-            b_w: pb.width(),
-            b_h: pb.height(),
+            a_w: a.width(),
+            a_h: a.height(),
+            b_w: b.width(),
+            b_h: b.height(),
         });
     }
-    let differing_pixels = pa
+    let differing_pixels = a
         .pixels()
         .iter()
-        .zip(pb.pixels())
+        .zip(b.pixels())
         .filter(|(x, y)| x != y)
         .count() as u64;
     Ok(Diff {
         differing_pixels,
-        width: pa.width(),
-        height: pa.height(),
+        width: a.width(),
+        height: a.height(),
     })
 }
 
@@ -147,11 +155,16 @@ mod tests {
         assert!(parse_viewport("800x600x1").is_err());
     }
 
-    #[test]
-    fn render_blank_should_be_opaque_white_of_requested_size() {
-        let pm = render_blank(4, 3).expect("alloc");
-        assert_eq!((pm.width(), pm.height()), (4, 3));
-        assert!(pm.data().chunks(4).all(|px| px == [255, 255, 255, 255]));
+    fn write_png(width: u32, height: u32, path: &Path) {
+        let opts = RenderOptions {
+            viewport: (width, height),
+        };
+        let base = cl_net::Url::parse("file:///lib-test/x.html").expect("base url");
+        render_bytes(b"<!doctype html>", &base, &opts)
+            .expect("render")
+            .pixmap
+            .save_png(path)
+            .expect("save");
     }
 
     #[test]
@@ -160,10 +173,7 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("dir");
         let a = dir.join("a.png");
         let b = dir.join("b.png");
-        render_blank(8, 8)
-            .expect("alloc")
-            .save_png(&a)
-            .expect("save");
+        write_png(8, 8, &a);
         std::fs::copy(&a, &b).expect("copy");
         let d = compare_png(&a, &b).expect("compare");
         assert_eq!(
@@ -183,11 +193,8 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("dir");
         let a = dir.join("a.png");
         let b = dir.join("b.png");
-        render_blank(8, 8)
-            .expect("alloc")
-            .save_png(&a)
-            .expect("save");
-        let mut pm = render_blank(8, 8).expect("alloc");
+        write_png(8, 8, &a);
+        let mut pm = Pixmap::load_png(&a).expect("reload");
         #[allow(clippy::expect_used)]
         if let Some(px) = pm.pixels_mut().get_mut(10) {
             *px = tiny_skia::PremultipliedColorU8::from_rgba(0, 0, 0, 255).expect("color");
@@ -204,14 +211,8 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("dir");
         let a = dir.join("a.png");
         let b = dir.join("b.png");
-        render_blank(8, 8)
-            .expect("alloc")
-            .save_png(&a)
-            .expect("save");
-        render_blank(9, 8)
-            .expect("alloc")
-            .save_png(&b)
-            .expect("save");
+        write_png(8, 8, &a);
+        write_png(9, 8, &b);
         assert!(matches!(
             compare_png(&a, &b),
             Err(ShellError::SizeMismatch { .. })

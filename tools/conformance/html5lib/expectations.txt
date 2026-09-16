@@ -1,0 +1,47 @@
+# Known-failing html5lib-tests tree-construction cases for cl_html/cl_dom.
+#
+# One entry per line: `<file>:<index>\t# reason`, where <file> is the vendored .dat file name
+# and <index> is the 0-based position of the case within that file's case list (counting every
+# case, including skipped `#document-fragment`/`#script-on` ones — see
+# crates/html/tests/tree_construction.rs's `parse_dat`). Stable as long as the file's content
+# and PINNED_COMMIT do not change; a corpus refresh must regenerate this file (see README.md).
+# Blank lines and full-line `#` comments are ignored. The harness asserts both directions: every
+# case that actually fails must be listed here, and every case listed here must actually still
+# fail (no stale entries).
+#
+# Real measured rate at PINNED_COMMIT f994590f528ac8b6073665791ddb1ed85c66dfb2: 1307/1313
+# (99.5%) over non-skipped cases (37 skipped: 29 #document-fragment, 8 #script-on), 0 panics.
+# Well above the M1a gate of 0.90. Two root-cause categories, both upstream in html5ever itself
+# (crates/html/src/** was not modified to produce this number — see this task's report for the
+# full writeup). A third category — cl_dom::serialize::html5lib_tree sorting an element's
+# attributes by `(namespace, local name)` instead of by the rendered attribute text — was a real
+# bug in this crate, not an upstream gap; it has since been fixed (see
+# crates/dom/src/serialize.rs's `format_attr`/sort-by-rendered-name and its module docs), which
+# is why webkit02.dat case 22 no longer appears below.
+#
+#   - mathml-annotation-xml-integration-point (4 cases, tests20.dat): a `<math><annotation-xml
+#     encoding="text/html"|"application/xhtml+xml">` (case-insensitively) is an HTML integration
+#     point per the HTML Standard's tree-construction algorithm, so a subsequent HTML start tag
+#     (e.g. `<div>`) must be inserted as its child, still processed with the ordinary "in body"
+#     rules. html5ever 0.39 instead breaks the element out to a sibling of `<math>`, i.e. it
+#     does not recognize `annotation-xml` as an HTML integration point for these two encoding
+#     values. This is html5ever's own tree-builder foreign-content/integration-point logic
+#     (crate `markup5ever`/`html5ever`, not `cl_html::sink` — the sink only receives html5ever's
+#     `append`/`create_element` callbacks, it does not decide where they target), so it is not
+#     fixable from within this crate's scope.
+#   - selectedcontent-mirroring (2 cases, webkit02.dat): the HTML Standard's "Customizable
+#     select" feature (added 2024/2025) specifies that a `<button><selectedcontent>` inside a
+#     `<select>` mirrors the text content of the currently-selected `<option>` as part of tree
+#     construction. html5ever 0.39 predates this addition and does not implement the mirroring
+#     step — `<selectedcontent>` is built as an ordinary (empty) element, never populated. This
+#     is a missing html5ever feature, not a bug reachable from `cl_html`/`cl_dom`.
+#
+# Filed as DONE_WITH_CONCERNS per this task's brief (even though the rate clears the gate): these
+# remaining 6 cases are genuine upstream html5ever gaps worth a maintainer decision on whether/how
+# to address (patch html5ever upstream, or accept).
+tests20.dat:54	# mathml-annotation-xml-integration-point: html5ever does not treat <annotation-xml encoding="application/xhtml+xml"> as an HTML integration point, so the following <div> is broken out to a <body> sibling of <math> instead of nested inside <annotation-xml> as the HTML Standard's tree-construction algorithm requires
+tests20.dat:55	# mathml-annotation-xml-integration-point: html5ever does not treat <annotation-xml encoding="aPPlication/xhtmL+xMl"> (case-insensitive match required by spec) as an HTML integration point, so the following <div> is broken out to a <body> sibling of <math> instead of nested inside <annotation-xml>
+tests20.dat:56	# mathml-annotation-xml-integration-point: html5ever does not treat <annotation-xml encoding="text/html"> as an HTML integration point, so the following <div> is broken out to a <body> sibling of <math> instead of nested inside <annotation-xml> as the HTML Standard's tree-construction algorithm requires
+tests20.dat:57	# mathml-annotation-xml-integration-point: html5ever does not treat <annotation-xml encoding="Text/htmL"> (case-insensitive match required by spec) as an HTML integration point, so the following <div> is broken out to a <body> sibling of <math> instead of nested inside <annotation-xml>
+webkit02.dat:44	# selectedcontent-mirroring: html5ever 0.39 predates the HTML Standard's "Customizable select" feature and does not mirror the selected <option>'s text content into a <button><selectedcontent> inside a <select>, so <selectedcontent> is built empty instead of containing a copy of the option's "X" text
+webkit02.dat:45	# selectedcontent-mirroring: html5ever 0.39 predates the HTML Standard's "Customizable select" feature and does not mirror the selected <option>'s (mixed text/element) content into a <button><selectedcontent> inside a <select>, so <selectedcontent> is built empty instead of containing a copy of the option's content

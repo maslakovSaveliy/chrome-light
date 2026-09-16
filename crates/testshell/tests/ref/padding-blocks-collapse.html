@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- expects: a blue bar (0,0)-(150,25) then a black bar (0,25)-(150,35). #parent's
+     padding-top:5px stops its top margin from collapsing with #child's (CSS 2.1 SS8.3.1: only
+     "nothing" between them collapses), so #child's margin-top:20px becomes a real gap inside
+     the padding: #parent's blue background shows for padding(5) + gap(20) = 25px, then
+     #child's own black background covers the remaining 10px. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { font-family: Ahem; font-size: 20px; line-height: 20px; }
+  #parent { width: 150px; padding-top: 5px; background: #00f; }
+  #child { height: 10px; margin-top: 20px; background: #000; }
+</style>
+</head>
+<body>
+<div id="parent"><div id="child"></div></div>
+</body>
+</html>

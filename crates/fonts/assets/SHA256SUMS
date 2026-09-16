@@ -1,0 +1,16 @@
+# SHA-256 checksums for bundled font assets (verified by fetch.sh).
+#
+# Ahem.ttf
+#   source: https://github.com/web-platform-tests/wpt
+#   pinned commit: 986881aaf27ffc441f67dd9e5595e797141b1f40
+#   url: https://raw.githubusercontent.com/web-platform-tests/wpt/986881aaf27ffc441f67dd9e5595e797141b1f40/fonts/Ahem.ttf
+#   license: public domain / CC0 (see LICENSE-Ahem)
+#
+# NotoSans-Regular.ttf
+#   source: https://github.com/notofonts/notofonts.github.io
+#   pinned commit: 28b15b4b43b7bed62b5cf6e6b0b5ff5846270535
+#   url: https://raw.githubusercontent.com/notofonts/notofonts.github.io/28b15b4b43b7bed62b5cf6e6b0b5ff5846270535/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf
+#   license: SIL Open Font License 1.1, unmodified (see LICENSE-OFL)
+#
+b719ecb31c5b21fc573c03f6421c74ac63c271a5a3ff841e34f9705fb94b8448  Ahem.ttf
+478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823  NotoSans-Regular.ttf

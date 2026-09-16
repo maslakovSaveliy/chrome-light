@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- expects: a black bar at (0,0) 50x50. #outer is a 50x50 box with overflow:hidden; its
+     100x100 child is clipped to #outer's padding box (CSS 2.1 SS11.1.1), so only the
+     top-left 50x50 of the child paints. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { font-family: Ahem; font-size: 20px; line-height: 20px; }
+  #outer { width: 50px; height: 50px; overflow: hidden; }
+  #inner { width: 100px; height: 100px; background: #000; }
+</style>
+</head>
+<body>
+<div id="outer"><div id="inner"></div></div>
+</body>
+</html>
