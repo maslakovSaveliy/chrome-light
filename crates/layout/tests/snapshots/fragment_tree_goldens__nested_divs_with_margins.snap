@@ -3,20 +3,14 @@ source: crates/layout/tests/fragment_tree_goldens.rs
 expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
 ---
 #fragments
-| Block <html> border=(0.00, 0.00, 800.00, 202.00) content=(0.00, 0.00, 800.00, 202.00)
-|   AnonymousBlock border=(0.00, 0.00, 800.00, 0.00) content=(0.00, 0.00, 800.00, 0.00)
-|   Block <body> border=(8.00, 8.00, 784.00, 186.00) content=(8.00, 8.00, 784.00, 186.00)
-|     AnonymousBlock border=(8.00, 8.00, 784.00, 0.00) content=(8.00, 8.00, 784.00, 0.00)
-|     Block <div> border=(18.00, 28.00, 414.00, 146.00) content=(25.00, 35.00, 400.00, 132.00)
-|       AnonymousBlock border=(25.00, 35.00, 400.00, 0.00) content=(25.00, 35.00, 400.00, 0.00)
-|       Block <div> border=(25.00, 51.00, 400.00, 50.00) content=(28.00, 51.00, 397.00, 50.00)
-|         Line border=(28.00, 51.00, 397.00, 19.20) content=(28.00, 51.00, 397.00, 19.20)
-|           Text runs=1 border=(28.00, 51.00, 8.98, 19.20) content=(28.00, 51.00, 8.98, 19.20)
-|             Run font=Noto Sans size=16.00 origin=(28.00, 68.10) glyphs=1 advance=8.98
-|       AnonymousBlock border=(25.00, 101.00, 400.00, 0.00) content=(25.00, 101.00, 400.00, 0.00)
-|       Block <div> border=(25.00, 117.00, 400.00, 50.00) content=(28.00, 117.00, 397.00, 50.00)
-|         Line border=(28.00, 117.00, 397.00, 19.20) content=(28.00, 117.00, 397.00, 19.20)
-|           Text runs=1 border=(28.00, 117.00, 9.83, 19.20) content=(28.00, 117.00, 9.83, 19.20)
-|             Run font=Noto Sans size=16.00 origin=(28.00, 134.10) glyphs=1 advance=9.83
-|       AnonymousBlock border=(25.00, 167.00, 400.00, 0.00) content=(25.00, 167.00, 400.00, 0.00)
-|     AnonymousBlock border=(8.00, 194.00, 784.00, 0.00) content=(8.00, 194.00, 784.00, 0.00)
+| Block <html> border=(0.00, 0.00, 800.00, 186.00) content=(0.00, 0.00, 800.00, 186.00)
+|   Block <body> border=(8.00, 20.00, 784.00, 146.00) content=(8.00, 20.00, 784.00, 146.00)
+|     Block <div> border=(18.00, 20.00, 414.00, 146.00) content=(25.00, 27.00, 400.00, 132.00)
+|       Block <div> border=(25.00, 43.00, 400.00, 50.00) content=(28.00, 43.00, 397.00, 50.00)
+|         Line border=(28.00, 43.00, 397.00, 19.20) content=(28.00, 43.00, 397.00, 19.20)
+|           Text runs=1 border=(28.00, 43.00, 8.98, 19.20) content=(28.00, 43.00, 8.98, 19.20)
+|             Run font=Noto Sans size=16.00 origin=(28.00, 60.10) glyphs=1 advance=8.98
+|       Block <div> border=(25.00, 109.00, 400.00, 50.00) content=(28.00, 109.00, 397.00, 50.00)
+|         Line border=(28.00, 109.00, 397.00, 19.20) content=(28.00, 109.00, 397.00, 19.20)
+|           Text runs=1 border=(28.00, 109.00, 9.83, 19.20) content=(28.00, 109.00, 9.83, 19.20)
+|             Run font=Noto Sans size=16.00 origin=(28.00, 126.10) glyphs=1 advance=9.83

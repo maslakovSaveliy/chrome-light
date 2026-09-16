@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Reference for margin-collapse-siblings-whitespace.html: identical geometry to
+     margin-collapse-siblings-ref.html - two bars at the collapsed positions, via a plain
+     margin-top on the second (20px, the already-collapsed max(20,10)). -->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  div { height: 10px; background: #000; }
+  #second { margin-top: 20px; }
+</style>
+</head>
+<body>
+<div id="first"></div>
+<div id="second"></div>
+</body>
+</html>

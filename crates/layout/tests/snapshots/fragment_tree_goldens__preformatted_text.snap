@@ -3,15 +3,12 @@ source: crates/layout/tests/fragment_tree_goldens.rs
 expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
 ---
 #fragments
-| Block <html> border=(0.00, 0.00, 800.00, 102.40) content=(0.00, 0.00, 800.00, 102.40)
-|   AnonymousBlock border=(0.00, 0.00, 800.00, 0.00) content=(0.00, 0.00, 800.00, 0.00)
-|   Block <body> border=(8.00, 8.00, 784.00, 86.40) content=(8.00, 8.00, 784.00, 86.40)
-|     AnonymousBlock border=(8.00, 8.00, 784.00, 0.00) content=(8.00, 8.00, 784.00, 0.00)
-|     Block <pre> border=(8.00, 24.00, 784.00, 54.40) content=(16.00, 32.00, 768.00, 38.40)
-|       Line border=(16.00, 32.00, 768.00, 19.20) content=(16.00, 32.00, 768.00, 19.20)
-|         Text runs=1 border=(16.00, 32.00, 91.40, 19.20) content=(16.00, 32.00, 91.40, 19.20)
-|           Run font=Noto Sans size=16.00 origin=(16.00, 49.10) glyphs=12 advance=91.40
-|       Line border=(16.00, 51.20, 768.00, 19.20) content=(16.00, 51.20, 768.00, 19.20)
-|         Text runs=1 border=(16.00, 51.20, 104.35, 19.20) content=(16.00, 51.20, 104.35, 19.20)
-|           Run font=Noto Sans size=16.00 origin=(16.00, 68.30) glyphs=13 advance=104.35
-|     AnonymousBlock border=(8.00, 94.40, 784.00, 0.00) content=(8.00, 94.40, 784.00, 0.00)
+| Block <html> border=(0.00, 0.00, 800.00, 86.40) content=(0.00, 0.00, 800.00, 86.40)
+|   Block <body> border=(8.00, 16.00, 784.00, 54.40) content=(8.00, 16.00, 784.00, 54.40)
+|     Block <pre> border=(8.00, 16.00, 784.00, 54.40) content=(16.00, 24.00, 768.00, 38.40)
+|       Line border=(16.00, 24.00, 768.00, 19.20) content=(16.00, 24.00, 768.00, 19.20)
+|         Text runs=1 border=(16.00, 24.00, 91.40, 19.20) content=(16.00, 24.00, 91.40, 19.20)
+|           Run font=Noto Sans size=16.00 origin=(16.00, 41.10) glyphs=12 advance=91.40
+|       Line border=(16.00, 43.20, 768.00, 19.20) content=(16.00, 43.20, 768.00, 19.20)
+|         Text runs=1 border=(16.00, 43.20, 104.35, 19.20) content=(16.00, 43.20, 104.35, 19.20)
+|           Run font=Noto Sans size=16.00 origin=(16.00, 60.30) glyphs=13 advance=104.35

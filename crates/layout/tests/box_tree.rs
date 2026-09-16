@@ -300,3 +300,76 @@ fn box_tree_inline_text_style_should_only_carry_inherited_properties() {
         }
     );
 }
+
+/// CSS 2.1 §9.2.2.1: a text node between two block-level siblings that is nothing but
+/// collapsible whitespace under `white-space: normal` (ordinary markup indentation) generates
+/// no box at all — not even the anonymous block CSS 2.1 §9.2.1.1's mixed-content rule would
+/// otherwise wrap it in. `<div>\n  <p>a</p>\n  <p>b</p>\n</div>` must produce exactly two
+/// `Block(p)` children, not `Block(p), AnonymousBlock, Block(p)`.
+#[test]
+fn box_tree_should_not_generate_boxes_for_collapsible_whitespace_between_blocks() {
+    let styled = common::styled_document(
+        "<!DOCTYPE html><html><body><div>\n  <p>a</p>\n  <p>b</p>\n</div></body></html>",
+    );
+    let tree = build(&styled);
+
+    let div = common::find_element(styled.document(), |el| el.name.local == local_name!("div"))
+        .expect("fixture has a <div>");
+    let div_box_id = find_box_by_node(&tree, div).expect("<div> generates a box");
+    let div_box = tree.get(div_box_id).expect("box exists");
+    assert_eq!(
+        div_box.children.len(),
+        2,
+        "the whitespace-only text nodes around the two <p>s must generate no boxes"
+    );
+    assert!(matches!(
+        tree.get(nth_child(&tree, div_box_id, 0)).map(|b| &b.kind),
+        Some(BoxKind::Block)
+    ));
+    assert!(matches!(
+        tree.get(nth_child(&tree, div_box_id, 1)).map(|b| &b.kind),
+        Some(BoxKind::Block)
+    ));
+}
+
+/// The same shape under `white-space: pre`: the leading text is no longer collapsible (CSS
+/// 2.1 §9.2.2.1 only drops what *would* collapse), so it still generates an `AnonymousBlock`
+/// wrapping an `InlineText`, exactly as `box_tree_should_wrap_inline_runs_in_anonymous_blocks`
+/// exercises for non-whitespace text.
+#[test]
+fn box_tree_should_keep_whitespace_under_white_space_pre() {
+    let styled = common::styled_document(concat!(
+        "<!DOCTYPE html><html><body>",
+        "<div style=\"white-space:pre\">\n<p>a</p></div>",
+        "</body></html>",
+    ));
+    let tree = build(&styled);
+
+    let div = common::find_element(styled.document(), |el| el.name.local == local_name!("div"))
+        .expect("fixture has a <div>");
+    let div_box_id = find_box_by_node(&tree, div).expect("<div> generates a box");
+    let div_box = tree.get(div_box_id).expect("box exists");
+    assert_eq!(
+        div_box.children.len(),
+        2,
+        "the leading newline must still generate a box under white-space: pre"
+    );
+
+    let first = tree
+        .get(nth_child(&tree, div_box_id, 0))
+        .expect("first child exists");
+    assert_eq!(first.kind, BoxKind::AnonymousBlock);
+    assert!(matches!(
+        first
+            .children
+            .first()
+            .and_then(|&id| tree.get(id))
+            .map(|b| &b.kind),
+        Some(BoxKind::InlineText(_))
+    ));
+
+    assert!(matches!(
+        tree.get(nth_child(&tree, div_box_id, 1)).map(|b| &b.kind),
+        Some(BoxKind::Block)
+    ));
+}

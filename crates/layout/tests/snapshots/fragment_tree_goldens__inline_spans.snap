@@ -3,18 +3,15 @@ source: crates/layout/tests/fragment_tree_goldens.rs
 expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 ---
 #fragments
-| Block <html> border=(0.00, 0.00, 800.00, 86.00) content=(0.00, 0.00, 800.00, 86.00)
-|   AnonymousBlock border=(0.00, 0.00, 800.00, 0.00) content=(0.00, 0.00, 800.00, 0.00)
-|   Block <body> border=(8.00, 8.00, 784.00, 70.00) content=(8.00, 8.00, 784.00, 70.00)
-|     AnonymousBlock border=(8.00, 8.00, 784.00, 0.00) content=(8.00, 8.00, 784.00, 0.00)
-|     Block <p> border=(8.00, 28.00, 784.00, 30.00) content=(8.00, 28.00, 784.00, 30.00)
-|       Line border=(8.00, 28.00, 784.00, 30.00) content=(8.00, 28.00, 784.00, 30.00)
-|         Text runs=1 border=(8.00, 28.00, 51.42, 30.00) content=(8.00, 28.00, 51.42, 30.00)
-|           Run font=Noto Sans size=20.00 origin=(8.00, 50.77) glyphs=6 advance=51.42
-|         Text runs=1 border=(59.40, 28.00, 48.33, 30.00) content=(59.40, 28.00, 48.33, 30.00)
-|           Run font=Noto Sans size=20.00 origin=(59.40, 50.77) glyphs=5 advance=48.33
-|         Text runs=1 border=(107.72, 28.00, 46.28, 30.00) content=(107.72, 28.00, 46.28, 30.00)
-|           Run font=Noto Sans size=20.00 origin=(107.72, 50.77) glyphs=5 advance=46.28
-|         Text runs=1 border=(154.00, 28.00, 41.93, 30.00) content=(154.00, 28.00, 41.93, 30.00)
-|           Run font=Noto Sans size=20.00 origin=(154.00, 50.77) glyphs=4 advance=41.93
-|     AnonymousBlock border=(8.00, 78.00, 784.00, 0.00) content=(8.00, 78.00, 784.00, 0.00)
+| Block <html> border=(0.00, 0.00, 800.00, 70.00) content=(0.00, 0.00, 800.00, 70.00)
+|   Block <body> border=(8.00, 20.00, 784.00, 30.00) content=(8.00, 20.00, 784.00, 30.00)
+|     Block <p> border=(8.00, 20.00, 784.00, 30.00) content=(8.00, 20.00, 784.00, 30.00)
+|       Line border=(8.00, 20.00, 784.00, 30.00) content=(8.00, 20.00, 784.00, 30.00)
+|         Text runs=1 border=(8.00, 20.00, 51.42, 30.00) content=(8.00, 20.00, 51.42, 30.00)
+|           Run font=Noto Sans size=20.00 origin=(8.00, 42.77) glyphs=6 advance=51.42
+|         Text runs=1 border=(59.40, 20.00, 48.33, 30.00) content=(59.40, 20.00, 48.33, 30.00)
+|           Run font=Noto Sans size=20.00 origin=(59.40, 42.77) glyphs=5 advance=48.33
+|         Text runs=1 border=(107.72, 20.00, 46.28, 30.00) content=(107.72, 20.00, 46.28, 30.00)
+|           Run font=Noto Sans size=20.00 origin=(107.72, 42.77) glyphs=5 advance=46.28
+|         Text runs=1 border=(154.00, 20.00, 41.93, 30.00) content=(154.00, 20.00, 41.93, 30.00)
+|           Run font=Noto Sans size=20.00 origin=(154.00, 42.77) glyphs=4 advance=41.93

@@ -38,7 +38,12 @@ use crate::geom::WhiteSpace;
 /// and `\n` of a `\r\n` pair, each of which this treats individually — the result is the same
 /// single space either way). The form feed is included for the same reason the HTML spec's
 /// "ASCII whitespace" set does: the parser can hand one through in text content.
-fn is_collapsible(c: char) -> bool {
+///
+/// `pub(crate)`: also used by [`crate::box_tree`] to decide whether a whole text node is
+/// nothing but this — CSS 2.1 §9.2.2.1's "white space content that would subsequently be
+/// collapsed away ... does not generate any anonymous inline boxes" — the same definition of
+/// "collapsible" this module already uses for the collapsing itself, not a second one.
+pub(crate) fn is_collapsible(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{0C}')
 }
 

@@ -253,6 +253,39 @@ fn sibling_vertical_margins_should_collapse_to_max() {
     );
 }
 
+/// Regression test for the box-generation fix in `crates/layout/src/box_tree.rs` (CSS 2.1
+/// §9.2.2.1): ordinary markup indentation between two block siblings must not defeat their
+/// sibling margin collapse. A whitespace-only text node between two `<div>`s used to become a
+/// real (zero-height, zero-margin) `AnonymousBlock`, splitting the collapse into two hops that
+/// *summed* the margins (20 + 30 = 50) instead of taking their *max* (30) — found while
+/// writing `crates/testshell/tests/ref/margin-collapse-siblings.html` (Task 23), which had to
+/// be written with no whitespace between its two `<div>`s to avoid it. `line-height: 20px`
+/// makes the first `<div>`'s one line of text a fixed, round 20px tall regardless of font
+/// metrics, so `#b`'s expected `y` is exact: `20` (first div's height) `+ 30` (the *collapsed*
+/// margin) `= 50` — not `20 + (20 + 30) = 70`, which is what the pre-fix summing bug produced.
+#[test]
+fn whitespace_between_siblings_should_not_defeat_margin_collapsing() {
+    let html = "
+        <style>body { margin: 0 } div { line-height: 20px }</style>
+        <body>
+        <div style=\"margin-bottom: 20px\">a</div>
+        <div id=\"b\" style=\"margin-top: 30px\">b</div>
+        </body>
+    ";
+    let (tree, styled) = common::layout_html(html);
+    let b = fragment_by_id(&tree, styled.document(), "b");
+    assert_eq!(
+        b.border_box.origin,
+        Point {
+            x: px(0.0),
+            y: px(50.0)
+        },
+        "sibling margins must collapse to their max (30px), landing #b at 20 + 30 = 50, even \
+         with whitespace between the two <div>s in the source — summing to 20 + 50 = 70 would \
+         mean the whitespace-only text node between them was still generating a real box"
+    );
+}
+
 /// A container's top margin collapses with its first block-level child's top margin when
 /// nothing (no padding, no border) separates them (CSS 2.1 §8.3.1): `#parent` has no margin
 /// of its own, but its first child's `margin-top: 20px` becomes `#parent`'s own *effective*
