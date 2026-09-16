@@ -581,10 +581,12 @@ fn nested_blocks_should_stack_vertically() {
 /// `O(n²/2)`), i.e. tens of seconds — decisively over budget, not a close call. See the fix
 /// report for the full per-depth measurement table.
 ///
-/// Bounded at 5s total (parse + style + box tree + layout — an `O(n)` `layout` at this depth
-/// finishes in milliseconds; the 5s budget is almost entirely `parse`/`style`'s own,
-/// unavoidable cost at this depth, not this crate's). `CL_SMOKE_SLOW=1` raises the bound to
-/// 15s, the same escape hatch the plan's other smoke tests use, for a slow/loaded CI runner.
+/// Bounded at 5s for `cl_layout::layout` ALONE — parse, style and font-database construction
+/// run before the timer starts (they are other crates' cost: parse/style are super-linear at
+/// this depth, a recorded branch debt, and on the Windows CI runner they alone took ~4.8 s).
+/// An `O(n)` `layout` at this depth finishes in milliseconds, so the bound is a ~100× margin,
+/// not a close call. `CL_SMOKE_SLOW=1` raises it to 15s, the same escape hatch the plan's other
+/// smoke tests use, for a slow/loaded CI runner.
 #[test]
 fn deep_first_child_chain_should_lay_out_in_linear_time() {
     const DEPTH: usize = 5_000;
@@ -599,8 +601,17 @@ fn deep_first_child_chain_should_lay_out_in_linear_time() {
     }
     html.push_str("</body>");
 
+    // Parse, style and font-database construction happen OUTSIDE the timer: they are other
+    // crates' cost (parse/style are themselves super-linear at this depth — a recorded branch
+    // debt, not this crate's), and on the Windows CI runner they alone consumed ~4.8 s of the
+    // 5 s bound before Task 18 pushed the total over it. This test's claim is about
+    // `cl_layout::layout` only, so that is the only thing it times.
+    let styled = common::styled_document(&html);
+    let mut fonts = cl_fonts::FontDb::bundled().expect("bundled font db");
+    let viewport = cl_layout::Viewport::new(800.0, 600.0);
+
     let start = std::time::Instant::now();
-    let (tree, styled) = common::layout_html(&html);
+    let tree = cl_layout::layout(&styled, viewport, &mut fonts).expect("layout");
     let elapsed = start.elapsed();
 
     let limit = smoke_time_limit();
