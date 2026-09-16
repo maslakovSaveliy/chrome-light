@@ -48,7 +48,7 @@ use cl_dom::NodeId;
 use cl_fonts::{FontDb, FontFace, FontKey};
 use parley::{
     Alignment, AlignmentOptions, FontContext, FontData, FontFamily, FontFamilyName, FontStyle,
-    FontWeight, GenericFamily, LayoutContext, LineHeight, StyleProperty,
+    FontWeight, GenericFamily, LayoutContext, LineHeight, StyleProperty, TextWrapMode,
 };
 
 use crate::au::Au;
@@ -120,25 +120,22 @@ pub(crate) enum InlineItem<'a> {
 /// absolute origin when it turns these into fragments, so this module never needs to know
 /// where on the page the block ended up.
 ///
-/// The task brief's sketch of this type is `{ height, baseline, runs, width }`; `offset` and
-/// `run_items` are added because the fragment builder needs them and nothing else can
-/// recover them: `offset` is where `text-align` put the line, and `run_items` says which
-/// [`InlineItem`] each run's text came from (and therefore which DOM node and which
-/// `LayoutStyle` its `Text` fragment carries).
+/// The task brief's sketch of this type is `{ height, baseline, runs, width }`. There is no
+/// `width` (nor a line-offset) field here: a line box is as wide as its containing block (CSS
+/// 2.1 §9.4.2), so the `Line` fragment's width comes from the container, and the line's own
+/// occupied extent and its `text-align` offset are already baked into the runs' origins and
+/// advances — storing either a second time would be a second source of truth for the same
+/// geometry. `run_items` *is* added, because the fragment builder needs it and nothing else
+/// can recover it: it says which [`InlineItem`] each run's text came from, and therefore which
+/// DOM node and which `LayoutStyle` its `Text` fragment carries.
 pub(crate) struct LineBox {
     /// The line box's height: the container's `line-height` (see the module docs — M1a does
     /// not implement per-inline line heights).
     pub(crate) height: Au,
     /// The baseline's offset from the line box's top.
     pub(crate) baseline: Au,
-    /// The line's own inline extent, *excluding* any trailing collapsible space that hangs
-    /// past the end of the line (CSS Text 3 §4.1.1).
-    pub(crate) width: Au,
-    /// The line's left edge, relative to the container's content-box left edge: zero for
-    /// `text-align: left`, the free space (or half of it) for `right`/`center`.
-    pub(crate) offset: Au,
     /// The line's glyph runs, in visual (left-to-right) order. Origins are relative to the
-    /// *line box's* top-left corner: `x` already includes the alignment `offset`, and `y` is
+    /// *line box's* top-left corner: `x` already includes the `text-align` offset, and `y` is
     /// always zero — [`crate::inline`] adds `baseline` (and the block's absolute content
     /// origin) when it places the runs, so the baseline lives in exactly one place.
     pub(crate) runs: Vec<GlyphRun>,
@@ -273,6 +270,7 @@ impl TextShaper {
         builder.push_default(StyleProperty::FontWeight(font_weight(style)));
         builder.push_default(StyleProperty::FontStyle(font_style(style)));
         builder.push_default(StyleProperty::Brush(style.color));
+        builder.push_default(StyleProperty::TextWrapMode(wrap_mode(style)));
 
         for span in spans {
             let Some(InlineItem::Text {
@@ -298,12 +296,15 @@ impl TextShaper {
                 StyleProperty::FontStyle(font_style(item_style)),
                 range.clone(),
             );
-            builder.push(StyleProperty::Brush(item_style.color), range);
+            builder.push(StyleProperty::Brush(item_style.color), range.clone());
+            builder.push(StyleProperty::TextWrapMode(wrap_mode(item_style)), range);
         }
 
         let mut layout = builder.build(text);
-        // A zero or negative available width is legitimate (`width: 0`), and must break every
-        // break opportunity rather than panic or loop.
+        // A zero or negative available width is legitimate (`width: 0`), and must break at
+        // every break opportunity rather than panic or loop. `white-space: pre` content has no
+        // soft-wrap opportunities at all (`TextWrapMode::NoWrap`, pushed above), so it
+        // overflows this width instead of wrapping — which is what `pre` means.
         layout.break_all_lines(Some(available_width.to_px().max(0.0)));
         layout.align(alignment(style.text_align), AlignmentOptions::default());
         layout
@@ -319,23 +320,31 @@ impl TextShaper {
         style: &LayoutStyle,
     ) -> Result<Vec<LineBox>, LayoutError> {
         let line_height = style.line_height.max(Au::ZERO);
-        let mut lines = Vec::with_capacity(layout.len());
+        let line_count = layout.len();
+        let mut lines = Vec::with_capacity(line_count);
 
-        for line in layout.lines() {
+        for (index, line) in layout.lines().enumerate() {
             let mut clusters = self.line_clusters(&line, spans, items, style)?;
             trim_trailing_spaces(&mut clusters, text, spans, items);
+
+            // Text ending in a forced break (a `<br>` at the end of a paragraph, a trailing
+            // `\n` in a `<pre>`) makes `parley` emit one more, entirely empty line after it —
+            // a caret position, not a line box (`parley`'s own line breaker excludes that
+            // line's height from `Layout::height`). CSS 2.1 §9.4.2 generates no line box
+            // there, so a *last* line that holds nothing is dropped. An empty line in the
+            // middle (`a<br><br>b`) is a real line box and is kept.
+            if index + 1 == line_count && clusters.is_empty() {
+                continue;
+            }
 
             let metrics = line.metrics();
             let line_x = metrics.offset + metrics.inline_min_coord;
             let baseline = Au::from_px(metrics.baseline - metrics.block_min_coord);
-            let width = Au::from_px(clusters.iter().map(|c| c.advance).sum::<f32>());
 
             let (runs, run_items) = build_runs(&clusters, line_x);
             lines.push(LineBox {
                 height: line_height,
                 baseline,
-                width,
-                offset: Au::from_px(line_x),
                 runs,
                 run_items,
             });
@@ -635,6 +644,20 @@ fn font_style(style: &LayoutStyle) -> FontStyle {
         FontStyle::Italic
     } else {
         FontStyle::Normal
+    }
+}
+
+/// One style's `white-space` as `parley`'s soft-wrap setting.
+///
+/// `white-space: pre` means "break only at a forced break": it has no soft-wrap opportunities
+/// at all, so a `pre` line wider than its containing block overflows rather than wrapping
+/// (CSS Text 3 §3 `white-space`, §5 line breaking). `normal` wraps as usual. Pushed both as
+/// the container's default and per text span, since a nested inline can carry its own
+/// `white-space`.
+fn wrap_mode(style: &LayoutStyle) -> TextWrapMode {
+    match style.white_space {
+        WhiteSpace::Normal => TextWrapMode::Wrap,
+        WhiteSpace::Pre => TextWrapMode::NoWrap,
     }
 }
 

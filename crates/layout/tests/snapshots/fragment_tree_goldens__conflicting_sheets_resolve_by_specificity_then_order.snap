@@ -8,12 +8,12 @@ expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\
 |   Block <body> border=(8.00, 8.00, 784.00, 121.60) content=(8.00, 8.00, 784.00, 121.60)
 |     AnonymousBlock border=(8.00, 8.00, 784.00, 0.00) content=(8.00, 8.00, 784.00, 0.00)
 |     Block <p> border=(8.00, 24.00, 784.00, 19.20) content=(8.00, 24.00, 784.00, 19.20)
-|       Line border=(8.00, 24.00, 111.25, 19.20) content=(8.00, 24.00, 111.25, 19.20)
+|       Line border=(8.00, 24.00, 784.00, 19.20) content=(8.00, 24.00, 784.00, 19.20)
 |         Text runs=1 border=(8.00, 24.00, 111.25, 19.20) content=(8.00, 24.00, 111.25, 19.20)
 |           Run font=Noto Sans size=16.00 origin=(8.00, 41.10) glyphs=15 advance=111.25
 |     AnonymousBlock border=(8.00, 59.20, 784.00, 0.00) content=(8.00, 59.20, 784.00, 0.00)
 |     Block <p> border=(8.00, 81.20, 784.00, 26.40) content=(8.00, 81.20, 784.00, 26.40)
-|       Line border=(339.23, 81.20, 121.53, 26.40) content=(339.23, 81.20, 121.53, 26.40)
+|       Line border=(8.00, 81.20, 784.00, 26.40) content=(8.00, 81.20, 784.00, 26.40)
 |         Text runs=1 border=(339.23, 81.20, 121.53, 26.40) content=(339.23, 81.20, 121.53, 26.40)
 |           Run font=Noto Sans size=22.00 origin=(339.23, 104.72) glyphs=11 advance=121.53
 |     AnonymousBlock border=(8.00, 129.60, 784.00, 0.00) content=(8.00, 129.60, 784.00, 0.00)

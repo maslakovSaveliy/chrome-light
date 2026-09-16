@@ -8,7 +8,7 @@ expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
 |   Block <body> border=(8.00, 8.00, 784.00, 70.00) content=(8.00, 8.00, 784.00, 70.00)
 |     AnonymousBlock border=(8.00, 8.00, 784.00, 0.00) content=(8.00, 8.00, 784.00, 0.00)
 |     Block <p> border=(8.00, 28.00, 784.00, 30.00) content=(8.00, 28.00, 784.00, 30.00)
-|       Line border=(8.00, 28.00, 187.93, 30.00) content=(8.00, 28.00, 187.93, 30.00)
+|       Line border=(8.00, 28.00, 784.00, 30.00) content=(8.00, 28.00, 784.00, 30.00)
 |         Text runs=1 border=(8.00, 28.00, 51.42, 30.00) content=(8.00, 28.00, 51.42, 30.00)
 |           Run font=Noto Sans size=20.00 origin=(8.00, 50.77) glyphs=6 advance=51.42
 |         Text runs=1 border=(59.40, 28.00, 48.33, 30.00) content=(59.40, 28.00, 48.33, 30.00)

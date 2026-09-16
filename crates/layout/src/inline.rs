@@ -26,12 +26,17 @@
 //!
 //! # Line boxes
 //!
-//! Every line box in one block is the *container*'s `line-height` tall (M1a does not
-//! implement per-inline line heights or vertical alignment, so there is no per-line max of
-//! differing inline heights to take), and lines stack directly one under another from the
-//! container's content-box top. A `Line` fragment's three rects are all the same: its origin
-//! is where `text-align` put the line, its width the line's own inline extent excluding any
-//! hanging trailing space, its height that line height.
+//! A line box is as wide as its containing block and stacks directly under the previous one
+//! (CSS 2.1 §9.4.2), so a `Line` fragment's three rects are all the same and all span the
+//! container's content box horizontally: `x`/`w` are the container's content-box `x`/width,
+//! `y` is one line height per preceding line below the container's content-box top, and `h`
+//! is the *container*'s `line-height` (M1a implements neither per-inline line heights nor
+//! vertical alignment, so there is no per-line maximum of differing inline heights to take).
+//!
+//! Where the text actually sits *within* that full-width box is `text-align`'s business, and
+//! it is carried by the runs: every [`crate::text::GlyphRun`] has its own absolute origin, and
+//! each `Text` child fragment spans exactly its own runs. So a centred line is a full-width
+//! `Line` fragment whose `Text` children start half the free space in.
 //!
 //! # Content that collapses to nothing
 //!
@@ -206,24 +211,20 @@ fn build_fragments(
 
     for line in lines {
         let line_top = origin.y.saturating_add(cursor_y);
-        let line_left = origin.x.saturating_add(line.offset);
-        let mut line_rect = Rect {
+        // CSS 2.1 §9.4.2: a line box is as wide as its containing block, whatever the text
+        // inside it does — `text-align` moves the *content* within the line box, not the box.
+        let line_rect = Rect {
             origin: Point {
-                x: line_left,
+                x: origin.x,
                 y: line_top,
             },
             size: Size {
-                w: line.width,
+                w: args.content_width,
                 h: line.height,
             },
         };
 
         let mut children = Vec::new();
-        // The line box's width is taken from its `Text` children once they exist, rather
-        // than from the shaper's own `f32` line advance: the two differ by up to an app unit
-        // or two, since a child's width is the sum of its glyphs' *already rounded* advances,
-        // and a line box that is narrower than the text inside it would be a lie.
-        let mut content_right = line_left;
         for group in group_runs(line) {
             let (node, style) = match items.get(group.item) {
                 Some(InlineItem::Text { node, style, .. }) => (Some(*node), (*style).clone()),
@@ -243,7 +244,7 @@ fn build_fragments(
                 .collect();
             let rect = Rect {
                 origin: Point {
-                    x: runs.first().map_or(line_rect.origin.x, |r| r.origin.x),
+                    x: runs.first().map_or(origin.x, |r| r.origin.x),
                     y: line_top,
                 },
                 size: Size {
@@ -251,7 +252,6 @@ fn build_fragments(
                     h: line.height,
                 },
             };
-            content_right = content_right.max(rect.origin.x.saturating_add(rect.size.w));
             let style_id = push_style(styles, style);
             children.push(push_fragment(
                 fragments,
@@ -267,9 +267,6 @@ fn build_fragments(
             ));
         }
 
-        if !children.is_empty() {
-            line_rect.size.w = content_right.saturating_sub(line_left).max(Au::ZERO);
-        }
         let line_style_id = push_style(styles, args.container_style.clone());
         line_ids.push(push_fragment(
             fragments,

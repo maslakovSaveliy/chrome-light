@@ -10,6 +10,11 @@
 //! font-version-dependent. Fixtures also reset `body { margin: 0 }` and the UA `<p>`/`<div>`
 //! margins so each content box starts at the viewport origin, the same isolation
 //! `tests/block.rs` uses.
+//!
+//! Note what a `Line` fragment's rect is and is not: per CSS 2.1 §9.4.2 it spans its
+//! containing block's *content width*, whatever the text inside it does, so these tests
+//! assert the text's own extent through `line_extent` (the runs' origins and advances) and
+//! assert the `Line` rect separately, against the container.
 #![allow(
     clippy::expect_used,
     reason = "a failed setup step in a test should abort that test, loudly"
@@ -86,6 +91,42 @@ fn glyph_count(tree: &FragmentTree, line: &Fragment) -> usize {
     runs_of(tree, line).iter().map(|r| r.glyphs.len()).sum()
 }
 
+/// The inline extent the text of `line` actually occupies: `(left edge, width)`, taken from
+/// the runs' own origins and advances.
+///
+/// This is *not* the `Line` fragment's own width — a line box is as wide as its containing
+/// block (CSS 2.1 §9.4.2) and `text-align` moves the content inside it, so the occupied
+/// extent has to be read off the runs.
+fn line_extent(tree: &FragmentTree, line: &Fragment) -> (Au, Au) {
+    let runs = runs_of(tree, line);
+    let (Some(first), Some(last)) = (runs.first(), runs.last()) else {
+        return (line.border_box.origin.x, Au::ZERO);
+    };
+    let end = last
+        .glyphs
+        .iter()
+        .fold(last.origin.x, |x, g| Au(x.0 + g.advance.0));
+    (first.origin.x, Au(end.0 - first.origin.x.0))
+}
+
+/// Asserts that `line`'s own rect spans the content box of the element with `id`, as CSS 2.1
+/// §9.4.2 requires of every line box.
+fn assert_line_spans_container(tree: &FragmentTree, doc: &Document, id: &str, line: &Fragment) {
+    let container = fragment_by_id(tree, doc, id);
+    assert_eq!(
+        line.border_box.origin.x, container.content_box.origin.x,
+        "a line box starts at its containing block's content-box left edge"
+    );
+    assert_eq!(
+        line.border_box.size.w, container.content_box.size.w,
+        "a line box is as wide as its containing block (CSS 2.1 §9.4.2)"
+    );
+    assert_eq!(
+        line.border_box, line.content_box,
+        "a line box has no box model of its own"
+    );
+}
+
 /// The style block every Ahem fixture shares: no UA margins anywhere, Ahem at 16px.
 const AHEM: &str = "body, p, div, pre { margin: 0; padding: 0 } \
                     #t { font-family: Ahem; font-size: 16px }";
@@ -105,10 +146,11 @@ fn short_text_should_produce_one_line() {
     let line = lines.first().expect("one line");
     assert_eq!(glyph_count(&tree, line), 5, "one glyph per character");
     assert_eq!(
-        line.border_box.size.w,
-        Au(960 * 5),
-        "line width is five Ahem ems"
+        line_extent(&tree, line),
+        (Au::ZERO, Au(960 * 5)),
+        "the text occupies five Ahem ems from the content-box left edge"
     );
+    assert_line_spans_container(&tree, styled.document(), "t", line);
 }
 
 /// Line breaking happens at the container's *content-box* width: `"xxxxx xxxxx xxxxx"` in
@@ -125,15 +167,16 @@ fn long_text_should_wrap_at_available_width() {
     let lines = lines_of(&tree, styled.document(), "t");
     assert_eq!(lines.len(), 3, "three line boxes");
     for line in &lines {
+        let (_, width) = line_extent(&tree, line);
         assert!(
-            line.border_box.size.w <= Au::from_px(100.0),
-            "line wider than the 100px container: {:?}",
-            line.border_box.size.w
+            width <= Au::from_px(100.0),
+            "line content wider than the 100px container: {width:?}"
         );
+        assert_line_spans_container(&tree, styled.document(), "t", line);
     }
     let first = lines.first().expect("three lines");
     assert_eq!(glyph_count(&tree, first), 5, "first line holds one word");
-    assert_eq!(first.border_box.size.w, Au(960 * 5));
+    assert_eq!(line_extent(&tree, first), (Au::ZERO, Au(960 * 5)));
 }
 
 /// `<br>` forces a line break wherever it falls, even though the text either side would
@@ -146,7 +189,7 @@ fn br_should_force_line_break() {
     assert_eq!(lines.len(), 2, "one line either side of the <br>");
     for line in &lines {
         assert_eq!(glyph_count(&tree, line), 1, "one glyph per line");
-        assert_eq!(line.border_box.size.w, AHEM_ADVANCE);
+        assert_eq!(line_extent(&tree, line), (Au::ZERO, AHEM_ADVANCE));
     }
 }
 
@@ -162,9 +205,101 @@ fn white_space_pre_should_preserve_spaces_and_newlines() {
     let first = lines.first().expect("two lines");
     let second = lines.get(1).expect("two lines");
     assert_eq!(glyph_count(&tree, first), 4, "a, space, space, b");
-    assert_eq!(first.border_box.size.w, Au(960 * 4));
+    assert_eq!(line_extent(&tree, first), (Au::ZERO, Au(960 * 4)));
     assert_eq!(glyph_count(&tree, second), 2, "c, d");
-    assert_eq!(second.border_box.size.w, Au(960 * 2));
+    assert_eq!(line_extent(&tree, second), (Au::ZERO, Au(960 * 2)));
+}
+
+/// `white-space: pre` has no soft-wrap opportunities at all, so a `pre` line wider than its
+/// containing block *overflows* instead of wrapping (CSS Text 3 §3, §5): ten Ahem glyphs at
+/// 16px are 160px of text in a 100px box, and they stay on one line.
+#[test]
+fn white_space_pre_should_not_wrap_at_available_width() {
+    // The unbreakable case first: ten `x`s have no break opportunity to take even if wrapping
+    // were on, so this pins the overflow geometry.
+    let html = format!(
+        "<style>{AHEM} #t {{ width: 100px }}</style><body><pre id=\"t\">xxxxxxxxxx</pre></body>"
+    );
+    let (tree, styled) = common::layout_html(&html);
+    let lines = lines_of(&tree, styled.document(), "t");
+    assert_eq!(lines.len(), 1, "pre never soft-wraps");
+    let line = lines.first().expect("one line");
+    assert_eq!(glyph_count(&tree, line), 10);
+    assert_eq!(
+        line_extent(&tree, line),
+        (Au::ZERO, Au(960 * 10)),
+        "160px of text overflowing a 100px box"
+    );
+    assert_line_spans_container(&tree, styled.document(), "t", line);
+
+    // And the case that actually needs `TextWrapMode::NoWrap`: with spaces there *are* break
+    // opportunities, and `white-space: normal` would take them.
+    let html = format!(
+        "<style>{AHEM} #t {{ width: 100px }}</style><body><pre id=\"t\">xxxxx xxxxx</pre></body>"
+    );
+    let (tree, styled) = common::layout_html(&html);
+    let lines = lines_of(&tree, styled.document(), "t");
+    assert_eq!(lines.len(), 1, "pre must not break at its spaces");
+    let line = lines.first().expect("one line");
+    assert_eq!(glyph_count(&tree, line), 11, "five x, space, five x");
+    assert_eq!(line_extent(&tree, line), (Au::ZERO, Au(960 * 11)));
+}
+
+/// A forced break at the *end* of the content adds no line box (CSS 2.1 §9.4.2): `parley`
+/// reports one more, empty line there — a caret position — and it must not become a `Line`
+/// fragment or add a line height to the block.
+#[test]
+fn trailing_br_should_not_add_a_line_box() {
+    let html = format!("<style>{AHEM}</style><body><p id=\"t\">a<br></p></body>");
+    let (tree, styled) = common::layout_html(&html);
+    let lines = lines_of(&tree, styled.document(), "t");
+    assert_eq!(
+        lines.len(),
+        1,
+        "the trailing <br> ends the line, it adds none"
+    );
+    assert_eq!(glyph_count(&tree, lines.first().expect("one line")), 1);
+    let target = fragment_by_id(&tree, styled.document(), "t");
+    assert_eq!(
+        target.content_box.size.h,
+        Au::from_px(19.2),
+        "one line height tall (1.2 x 16px), not two"
+    );
+}
+
+/// The mirror of [`trailing_br_should_not_add_a_line_box`] for `white-space: pre`: a trailing
+/// `\n` is the same forced break and behaves the same way.
+#[test]
+fn trailing_newline_in_pre_should_not_add_a_line_box() {
+    let html = format!("<style>{AHEM}</style><body><pre id=\"t\">a\n</pre></body>");
+    let (tree, styled) = common::layout_html(&html);
+    let lines = lines_of(&tree, styled.document(), "t");
+    assert_eq!(lines.len(), 1, "the trailing newline adds no line box");
+    assert_eq!(glyph_count(&tree, lines.first().expect("one line")), 1);
+}
+
+/// A forced break in the *middle* is a different matter: two adjacent breaks leave a genuinely
+/// empty line box between them, which must survive (only the *terminal* empty line is dropped).
+#[test]
+fn double_br_in_the_middle_should_add_an_empty_line() {
+    let html = format!("<style>{AHEM}</style><body><p id=\"t\">a<br><br>b</p></body>");
+    let (tree, styled) = common::layout_html(&html);
+    let lines = lines_of(&tree, styled.document(), "t");
+    assert_eq!(lines.len(), 3, "a, an empty line, b");
+    assert_eq!(glyph_count(&tree, lines.first().expect("three lines")), 1);
+    assert_eq!(
+        glyph_count(&tree, lines.get(1).expect("three lines")),
+        0,
+        "the middle line box is empty but real"
+    );
+    assert_eq!(glyph_count(&tree, lines.get(2).expect("three lines")), 1);
+
+    // The `pre` mirror: `a\n\nb` is the same three lines.
+    let html = format!("<style>{AHEM}</style><body><pre id=\"t\">a\n\nb</pre></body>");
+    let (tree, styled) = common::layout_html(&html);
+    let lines = lines_of(&tree, styled.document(), "t");
+    assert_eq!(lines.len(), 3, "a, an empty line, b");
+    assert_eq!(glyph_count(&tree, lines.get(1).expect("three lines")), 0);
 }
 
 /// `white-space: normal` collapses every run of spaces, tabs and newlines to a single space
@@ -177,7 +312,7 @@ fn white_space_normal_should_collapse_runs_of_spaces() {
     assert_eq!(lines.len(), 1);
     let line = lines.first().expect("one line");
     assert_eq!(glyph_count(&tree, line), 3, "a, one space, b");
-    assert_eq!(line.border_box.size.w, Au(960 * 3));
+    assert_eq!(line_extent(&tree, line), (Au::ZERO, Au(960 * 3)));
 }
 
 /// `text-align: center` offsets each line by half its free space: `"xx"` is 32px wide in a
@@ -193,8 +328,14 @@ fn text_align_center_should_offset_runs() {
     let lines = lines_of(&tree, styled.document(), "t");
     assert_eq!(lines.len(), 1);
     let line = lines.first().expect("one line");
-    assert_eq!(line.border_box.origin.x, Au::from_px(34.0));
-    assert_eq!(line.border_box.size.w, Au(960 * 2));
+    // The line *box* still spans the whole 100px container; the centring shows up in the
+    // content's own extent and in the run origin.
+    assert_line_spans_container(&tree, styled.document(), "t", line);
+    assert_eq!(
+        line_extent(&tree, line),
+        (Au::from_px(34.0), Au(960 * 2)),
+        "(100 - 32) / 2 = 34px of free space to the left of the text"
+    );
     let runs = runs_of(&tree, line);
     let run = runs.first().expect("one run");
     assert_eq!(
@@ -265,18 +406,18 @@ fn noto_sans_text_should_wrap_at_the_body_content_width() {
     let lines = lines_of(&tree, styled.document(), "t");
     assert!(lines.len() > 1, "a 60-word paragraph must wrap");
     for line in &lines {
+        let (left, width) = line_extent(&tree, line);
         assert!(
-            line.border_box.size.w <= Au::from_px(784.0),
-            "line wider than <body>'s 784px content box: {:?}",
-            line.border_box.size.w
+            width <= Au::from_px(784.0),
+            "line content wider than <body>'s 784px content box: {width:?}"
         );
-        assert_eq!(line.border_box.origin.x, Au::from_px(8.0), "left aligned");
+        assert_eq!(left, Au::from_px(8.0), "left aligned");
+        assert_line_spans_container(&tree, styled.document(), "t", line);
     }
-    let first = lines.first().expect("at least two lines");
+    let (_, first_width) = line_extent(&tree, lines.first().expect("at least two lines"));
     assert!(
-        first.border_box.size.w > Au::from_px(700.0),
-        "the first line must be filled close to the 784px limit, was {:?}",
-        first.border_box.size.w
+        first_width > Au::from_px(700.0),
+        "the first line must be filled close to the 784px limit, was {first_width:?}"
     );
 }
 
