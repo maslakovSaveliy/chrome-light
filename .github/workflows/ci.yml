@@ -60,6 +60,12 @@ jobs:
           # CL_SMOKE_SLOW=1").
           CL_SMOKE_SLOW: "1"
       - run: cargo test --workspace --doc --locked
+      # The reftest suite runs twice on purpose. `cargo nextest run` above already runs it as
+      # `crates/testshell/tests/reftests.rs` (which also asserts the pair count, so a pair
+      # added without updating EXPECTED_PAIR_COUNT fails there); this step runs the same suite
+      # through the shipping CLI, which is what a developer runs locally and what the plan's
+      # acceptance criterion names. The duplication costs ~0.3s and catches a CLI-only
+      # regression — an argument-parsing or exit-code break — that the library test cannot see.
       - run: cargo run -p cl-testshell -- reftest
       - name: upload reftest failure artifacts
         if: failure()

@@ -9,11 +9,19 @@
 //!
 //! Verified directly against the corpus (see the Task 4 report for the fetched commit and
 //! files): plain elements (`tests1.dat`), attribute sorting (`webkit01.dat`), doctypes with
-//! and without public/system ids (`doctype01.dat`), the `<svg …>`/`<math …>` tag prefix
-//! (`svg.dat`, `math.dat`), `<template>` content nesting (`template.dat`), and the
-//! `prefix local="value"` form taken by an adjusted foreign attribute inside SVG/`MathML`
-//! content, as opposed to a literal colon-containing attribute name on a plain HTML element
-//! (`tests9.dat`, the `xlink:href` vs. `xlink href` contrast).
+//! and without public/system ids (`doctype01.dat`), `<template>` content nesting
+//! (`template.dat`), and the `prefix local="value"` form taken by an adjusted foreign
+//! attribute inside SVG/`MathML` content, as opposed to a literal colon-containing attribute
+//! name on a plain HTML element (`tests9.dat`, the `xlink:href` vs. `xlink href` contrast).
+//! Every file named there is one of the 36 this repo actually vendors
+//! (`tools/conformance/html5lib/fetch.sh`'s `FILES`), so Task 9's harness re-checks each on
+//! every run.
+//!
+//! The `<svg …>`/`<math …>` tag prefix is the exception: it was read from upstream's
+//! `svg.dat`/`math.dat` while this format was being written, but **those two files are not
+//! vendored**, so no test in this repo exercises that branch. It is documented, not covered —
+//! see `docs/SPEC_REGISTRY.md`'s html5lib row for the full list of what the 1307/1313 figure
+//! does and does not span.
 //!
 //! No recursion: the walk uses one explicit `(NodeId, depth)` stack (see the crate-level
 //! docs on why — hostile input can nest arbitrarily deep) and is bounded by

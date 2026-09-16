@@ -3,10 +3,9 @@
      to the greater of the two (CSS 2.1 SS8.3.1), not their sum: 20px margin-bottom meeting
      10px margin-top collapses to 20px, so the second bar starts at 10 (first bar height) +
      20 (collapsed margin) = 30. The two <div>s are adjacent in the source with no whitespace
-     between them: M1a does not implement self-collapsing empty blocks
-     (crates/layout/src/block.rs), so a whitespace-only text node between them would generate
-     a real (zero-height) anonymous block that breaks the direct sibling collapse into two
-     separate hops and sums the margins (30px) instead of taking their max (20px). -->
+     between them; the same markup *with* whitespace between them is the separate pair
+     margin-collapse-siblings-whitespace, which covers CSS 2.1 SS9.2.2.1 (a run of
+     collapsible white space generates no box at all). -->
 <html>
 <head>
 <link rel="stylesheet" href="fonts.css">

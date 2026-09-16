@@ -52,11 +52,24 @@ fn render_then_compare_should_round_trip_through_cli() {
 
 #[test]
 fn render_should_fail_when_input_missing() {
+    // The output path is never written (the input does not exist, so the render fails first),
+    // but it still has to be a *plausible* path on every platform this suite runs on — `/tmp`
+    // is not one on Windows. `std::env::temp_dir()` is, everywhere.
+    let out = std::env::temp_dir().join("cl-tscli-never-written.png");
     let r = bin()
-        .args(["render", "/definitely/missing.html", "--png", "/tmp/x.png"])
+        .args([
+            "render".as_ref(),
+            "/definitely/missing.html".as_ref(),
+            "--png".as_ref(),
+            out.as_os_str(),
+        ])
         .status()
         .expect("run");
     assert!(!r.success());
+    assert!(
+        !out.exists(),
+        "a failed render must not leave an output file behind"
+    );
 }
 
 #[test]

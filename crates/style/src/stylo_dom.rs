@@ -472,9 +472,11 @@ impl<'a> TElement for ElementHandle<'a> {
     ) where
         V: Push<ApplicableDeclarationBlock>,
     {
-        // Presentational hints (`bgcolor`, `width`, `align`, ...) are legacy HTML
-        // attribute mappings. M1a's CSS subset is driven from stylesheets only; the
-        // attribute mappings are tracked as `partial` in `docs/SPEC_REGISTRY.md`.
+        // Presentational hints (`bgcolor`, `width`, `align`, ...) are legacy HTML attribute
+        // mappings (HTML Standard, Rendering §15.3 "Presentational hints"). M1a's cascade is
+        // driven from stylesheets only, so this stays empty: `<body bgcolor=red>` and
+        // `<td width=100>` affect nothing. Recorded as `todo` in `docs/SPEC_REGISTRY.md`
+        // (row "presentational-hints") — not `partial`, since none of them is mapped.
     }
 
     fn local_name(&self) -> &cl_dom::LocalName {
