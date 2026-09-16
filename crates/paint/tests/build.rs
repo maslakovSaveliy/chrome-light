@@ -205,9 +205,11 @@ fn overflow_hidden_should_wrap_children_in_clip() {
 
 /// Task 22's controller ruling: a page taller than the viewport by more than
 /// [`cl_paint::OFFSCREEN_MARGIN_PX`] must still `build` (and then `validate`) at the real
-/// viewport size — `build` has to cull the far-offscreen item itself, not merely rely on
-/// `validate` tolerating it (`validate` would *reject* it: it requires full containment, not
-/// just intersection — see `crate::build`'s module docs).
+/// viewport size — `build` has to cull the wholly-offscreen item itself, not merely rely on
+/// `validate` tolerating it (`validate` rejects an item that does not overlap the widened
+/// region at all — see `crate::build`'s module docs). The companion case, an item that *does*
+/// overlap and merely extends past the margin, must survive both — see
+/// [`tall_container_background_should_survive_culling`].
 ///
 /// Layout, top to bottom at 800px wide, `html`/`body` margin and padding zeroed:
 /// `#before` (0-1000px, no background) -> `#control` (1000-1010px, green background) ->
@@ -261,6 +263,42 @@ fn offscreen_items_should_be_culled() {
     // proving #far was culled *before* validation rather than merely tolerated by it.
     cl_paint::validate(&dl, Rect::from_px(0.0, 0.0, 800.0, 600.0))
         .expect("a list with the far-offscreen item culled must validate at the real viewport");
+}
+
+/// Critical C1 of the M1a final review: culling by *containment* dropped visible content. A
+/// `background` on a 5000px-tall container is ordinary markup — the container starts at the
+/// top of the viewport and the reader can see its first 600px — but its border box is not
+/// contained in the viewport inflated by 4096px (`600 + 4096 = 4696 < 5000`), so the old
+/// containment test culled the `Rect` entirely and the page rendered blank. Both `build`'s
+/// culling and `validate`'s bounds check are now intersection tests, so the item survives and
+/// the list still validates at the real viewport size.
+#[test]
+fn tall_container_background_should_survive_culling() {
+    let html = r#"<!DOCTYPE html>
+<html><head><style>
+  html, body { margin: 0; padding: 0 }
+  #tall { background: rgb(238, 238, 238); height: 5000px }
+</style></head>
+<body><div id="tall"></div></body></html>"#;
+    let (tree, styled) = common::layout_html(html);
+
+    let dl = build(&tree, styled.document());
+
+    assert!(
+        dl.items.contains(&DisplayItem::Rect {
+            rect: Rect::from_px(0.0, 0.0, 800.0, 5000.0),
+            color: Rgba8 {
+                r: 238,
+                g: 238,
+                b: 238,
+                a: 255,
+            },
+        }),
+        "the visible background of a 5000px-tall container must not be culled, got: {:?}",
+        dl.items
+    );
+    cl_paint::validate(&dl, Rect::from_px(0.0, 0.0, 800.0, 600.0))
+        .expect("an item that merely extends past the offscreen margin must still validate");
 }
 
 #[test]
@@ -317,6 +355,45 @@ fn html_background_should_win_over_body() {
                     b: 255,
                     a: 255
                 },
+            },
+        ]
+    );
+}
+
+/// The half of canvas-background propagation the test above does not pin down: §14.2 resets
+/// only the source element's own *background*, not everything else it paints. `<html>` with
+/// both a background and a border must therefore still emit its `Border` on its own border box
+/// — a suppression that swallowed the border too would silently lose a painted edge.
+#[test]
+fn html_background_propagation_should_not_suppress_its_own_border() {
+    let html = "<!DOCTYPE html><html><head><style>html { background: #f00; border: 3px solid #0f0 } body { margin: 0; height: 50px }</style></head><body></body></html>";
+    let (tree, styled) = common::layout_html(html);
+
+    let dl = build(&tree, styled.document());
+
+    assert_eq!(
+        dl.items,
+        vec![
+            // The canvas rect carries html's red background over the whole viewport...
+            DisplayItem::Rect {
+                rect: Rect::from_px(0.0, 0.0, 800.0, 600.0),
+                color: Rgba8 {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 255
+                },
+            },
+            // ...and html's own border box repaints no background, but does paint its border.
+            DisplayItem::Border {
+                rect: Rect::from_px(0.0, 0.0, 800.0, 56.0),
+                widths: Sides::uniform(Au::from_px(3.0)),
+                colors: Sides::uniform(Rgba8 {
+                    r: 0,
+                    g: 255,
+                    b: 0,
+                    a: 255
+                }),
             },
         ]
     );

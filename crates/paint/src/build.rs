@@ -33,24 +33,25 @@
 //!
 //! A document can be far taller (or wider) than the viewport — an ordinary "long page", not
 //! a hostile one — and [`crate::validate::validate`] only accepts an item whose geometry
-//! lies *entirely* within the viewport widened by [`crate::validate::OFFSCREEN_MARGIN_PX`]
-//! on every side (4096px), or (for a [`DisplayItem::Text`] run specifically) whose
+//! *intersects* the viewport widened by [`crate::validate::OFFSCREEN_MARGIN_PX`] on every
+//! side (4096px), or (for a [`DisplayItem::Text`] run specifically) whose
 //! [`cl_layout::GlyphRun::origin`] lies within that same region — see `validate`'s own
-//! `check_rect`/`check_text_run`. Without culling, `build` would still emit an item for
-//! every fragment regardless of how far past that margin it falls, and the resulting list
-//! would fail validation the moment any page grew taller than `viewport height + 4096px` —
-//! turning an everyday long page into an unrenderable one. So:
+//! `check_rect`/`check_text_run`. Without culling, `build` would still emit an item for every
+//! fragment regardless of how far past that margin it falls, and a hostile document could make
+//! the gpu process reason about arbitrarily many items it can never show. So:
 //!
 //! * A [`FragmentKind::Block`] fragment's background/border ([`DisplayItem::Rect`]/
-//!   [`DisplayItem::Border`]) is skipped entirely when its border box is not **entirely
-//!   contained** in that widened region (`InflatedViewport::contains_rect`) — the *exact*
-//!   condition `validate` itself checks for that item, not a looser "any overlap" test (an
-//!   earlier version of this culling used overlap instead of containment; it let a rect
-//!   straddling the boundary through culling only for `validate` to still reject it, a case
-//!   reachable by nothing more exotic than ~90 ordinary stacked paragraphs — see
-//!   `crates/testshell/tests/smoke.rs`'s 1MB fixture, which is what surfaced it). Matching
-//!   `validate`'s own test exactly means an item surviving culling is *guaranteed*, not
-//!   merely likely, to pass validation.
+//!   [`DisplayItem::Border`]) is skipped when its border box does not **intersect** that
+//!   widened region (`InflatedViewport::intersects_rect`) — the *exact* condition `validate`
+//!   itself checks for that item, so an item surviving culling is *guaranteed*, not merely
+//!   likely, to pass validation.
+//!
+//!   Both tests were originally full *containment*, which is the one direction that loses
+//!   content rather than merely allowing extra: a 5000px-tall `<div>` with a background starts
+//!   at the top of the viewport and is plainly visible, but its border box is not contained in
+//!   `600 + 4096px`, so its background was culled and the page rendered blank
+//!   (`crates/paint/tests/build.rs`'s `tall_container_background_should_survive_culling`).
+//!   Culling may only ever drop what nothing can see.
 //! * A [`FragmentKind::Text`] fragment culls each [`cl_layout::GlyphRun`] independently
 //!   against `InflatedViewport::contains_point` — again `validate`'s own exact
 //!   `check_text_run` condition on the run's `origin`, which is *all* `validate` ever checks
@@ -73,11 +74,11 @@
 //!   exactly the viewport's own bounds, trivially within any margin around them.
 //!
 //! The margin itself ([`crate::validate::OFFSCREEN_MARGIN_PX`]) is shared through one public
-//! constant rather than two independently-chosen numbers, specifically so this module's
-//! culling and `validate`'s own check can never silently drift apart in *how far* they each
-//! allow — only in *what* they check at that distance (full geometry here, since dropping an
-//! item is a real content change; the identical rect/point test `validate` itself applies,
-//! for exactly the reason above).
+//! constant rather than two independently-chosen numbers, and the per-axis overlap rule through
+//! one `pub(crate)` function (`crate::validate::axis_overlaps`), specifically so this module's
+//! culling and `validate`'s own check can never silently drift apart — neither in *how far*
+//! they each allow nor in *what* they decide about a rect at that distance. Dropping an item is
+//! a real content change, so culling is never allowed to be the stricter of the two.
 //!
 //! # Canvas background propagation (CSS 2.1 §14.2, css-backgrounds-3 §2.11.2)
 //!
@@ -104,7 +105,10 @@
 //! [`FragmentId`] that does not resolve via [`FragmentTree::get`] (a dangling reference — see
 //! `tests/build.rs`'s malformed-tree test, which corrupts a real tree's own
 //! [`FragmentTree::root`]) is skipped, never a panic, and the bound stops an adversarial
-//! cycle (a fragment listing itself as its own descendant) from looping forever. A
+//! cycle (a fragment listing itself as its own descendant) from looping forever. When that
+//! bound fires inside a clipped subtree the walk drains every still-open clip on its way out
+//! (`drain_pending_pop_clips`), so even a malformed tree yields a list whose clip stack
+//! balances — a truncated list is still a *valid* list. A
 //! [`StyleId`] that does not resolve via [`FragmentTree::style`] falls back to
 //! [`LayoutStyle::initial`] rather than panicking.
 //!
@@ -126,7 +130,7 @@ use cl_layout::{
 };
 
 use crate::list::{DisplayItem, DisplayList};
-use crate::validate::OFFSCREEN_MARGIN_PX;
+use crate::validate::{OFFSCREEN_MARGIN_PX, axis_overlaps};
 
 /// Builds the paint-order display list for `tree`, resolving element identity (for canvas
 /// background propagation) against `doc`. See the module docs for the full paint order, the
@@ -184,22 +188,23 @@ impl InflatedViewport {
         }
     }
 
-    /// Whether `rect` lies entirely within this region — deliberately the *exact* condition
-    /// [`crate::validate::validate`] itself checks for a `Rect`/`Border` item's rect
-    /// (mirroring that module's own private `InflatedBounds::contains_rect`), rather than a
-    /// looser "any overlap at all" test: an earlier version of this culling used intersection
-    /// (a rect overlapping the region survives, regardless of how far past its far edge
-    /// extends), which let a rect straddling the boundary through culling only for `validate`
-    /// to still reject it there — reachable by nothing more exotic than ~90 ordinary
-    /// paragraphs stacking up to exactly the `600 + 4096px` cutoff (see
-    /// `crates/testshell/tests/smoke.rs`'s 1MB fixture, which is what surfaced it). Matching
-    /// `validate`'s own test exactly means an item that survives this call is *guaranteed* to
-    /// pass the corresponding `validate` check, not merely likely to.
-    fn contains_rect(self, rect: Rect) -> bool {
-        rect.origin.x >= self.min.x
-            && rect.origin.y >= self.min.y
-            && rect.right() <= self.max.x
-            && rect.bottom() <= self.max.y
+    /// Whether `rect` overlaps this region at all — deliberately the *exact* condition
+    /// [`crate::validate::validate`] itself checks for a `Rect`/`Border` item's rect (mirroring
+    /// that module's own private `InflatedBounds::intersects_rect`, degenerate-rect rule
+    /// included), so an item that survives this call is *guaranteed* to pass the corresponding
+    /// `validate` check, not merely likely to.
+    ///
+    /// Both sides used to test full *containment* instead, which was wrong in the direction
+    /// that actually loses content: a container taller than `viewport height + 4096px` — a
+    /// `background` on a 5000px-tall div, or ~90 ordinary stacked paragraphs — has its top
+    /// firmly onscreen, yet its border box is not contained in the region, so its background
+    /// and border were culled here and the page rendered blank where the reader could plainly
+    /// see it should not (`crates/paint/tests/build.rs`'s
+    /// `tall_container_background_should_survive_culling`). Culling must only ever drop what
+    /// nothing can see, so both this test and `validate`'s are intersections.
+    fn intersects_rect(self, rect: Rect) -> bool {
+        axis_overlaps(rect.origin.x, rect.right(), self.min.x, self.max.x)
+            && axis_overlaps(rect.origin.y, rect.bottom(), self.min.y, self.max.y)
     }
 
     /// Whether `point` lies within this region — the exact condition
@@ -219,7 +224,7 @@ impl InflatedViewport {
     /// that starts inside the region and extends past it is trimmed at the region's edge; a
     /// `rect` that does not intersect the region at all collapses to a zero-size rect pinned
     /// at the nearest corner. Either way the result always satisfies
-    /// [`crate::validate::validate`]'s full-containment check — used only for a clip rect
+    /// [`crate::validate::validate`]'s bounds check — used only for a clip rect
     /// (see the module docs), which must never disappear or the clip stack would unbalance.
     fn clamp(self, rect: Rect) -> Rect {
         let left = rect.origin.x.clamp(self.min.x, self.max.x);
@@ -278,7 +283,14 @@ fn walk(
             Frame::PopClip => items.push(DisplayItem::PopClip),
             Frame::Fragment(id) => {
                 if remaining == 0 {
-                    break;
+                    // The cycle guard fired: this walk has popped more fragment frames than
+                    // the tree holds fragments, so a malformed tree is looping. Stopping is
+                    // right, but stopping *silently* would leave every `PushClip` already
+                    // emitted unmatched — an `UnbalancedClip` list, which
+                    // `crate::validate::validate` rejects outright, turning a merely
+                    // malformed tree into an unrenderable one. Close them all instead.
+                    drain_pending_pop_clips(&stack, items);
+                    return;
                 }
                 remaining -= 1;
 
@@ -309,6 +321,20 @@ fn walk(
     }
 }
 
+/// Emits a [`DisplayItem::PopClip`] for every [`Frame::PopClip`] still pending on `stack`,
+/// innermost first (stack order, top down) — [`walk`]'s exit path when its cycle guard fires
+/// part-way through a clipped subtree, so the list it produced still balances.
+///
+/// Takes the stack by shared reference: the walk is returning immediately afterwards, so
+/// draining it in place would buy nothing.
+fn drain_pending_pop_clips(stack: &[Frame], items: &mut Vec<DisplayItem>) {
+    for frame in stack.iter().rev() {
+        if matches!(frame, Frame::PopClip) {
+            items.push(DisplayItem::PopClip);
+        }
+    }
+}
+
 /// Emits the background and border items for one fragment (steps 1-2 of the module docs'
 /// paint order), or its glyph runs if it is a `Text` fragment. A `Line`/`AnonymousBlock`
 /// fragment never has its own background or border. Culls any item whose geometry does not
@@ -324,7 +350,7 @@ fn paint_fragment(
 ) {
     match &fragment.kind {
         FragmentKind::Block => {
-            if !viewport.contains_rect(fragment.border_box) {
+            if !viewport.intersects_rect(fragment.border_box) {
                 return;
             }
             if !suppress_background && style.background.a > 0 && !fragment.border_box.is_empty() {
@@ -462,4 +488,86 @@ fn find_element_fragment(
     }
 
     None
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    reason = "a failed setup step in a test should abort that test, loudly"
+)]
+mod tests {
+    use super::{DisplayItem, Frame, drain_pending_pop_clips};
+    use cl_layout::{FragmentId, Rect, Viewport};
+
+    /// A real [`FragmentId`] — the type has no public constructor (ids only ever come out of a
+    /// [`cl_layout::FragmentTree`]), so the cheapest way to name one in a test is to lay out a
+    /// trivial document and take its root.
+    fn a_real_fragment_id() -> FragmentId {
+        let base = cl_net::Url::parse("file:///paint/test.html").expect("base url");
+        let doc = cl_html::parse_document_str("<!DOCTYPE html><html><body></body></html>", &base)
+            .expect("parse")
+            .document;
+        let mut engine = cl_style::StyleEngine::new((800.0, 600.0), 1.0).expect("engine");
+        engine.add_ua_sheet().expect("ua sheet");
+        let styled = engine.resolve(doc).expect("resolve");
+        let mut fonts = cl_fonts::FontDb::bundled().expect("bundled font db");
+        let tree =
+            cl_layout::layout(&styled, Viewport::new(800.0, 600.0), &mut fonts).expect("layout");
+        tree.root
+    }
+
+    /// [`walk`]'s cycle guard (`remaining == 0`) can fire part-way through a clipped subtree of
+    /// a malformed fragment tree. Every `PushClip` already emitted is represented on the stack
+    /// by a pending [`Frame::PopClip`], so bailing out must close them all — innermost (top of
+    /// stack) first — or the list ends `UnbalancedClip` and
+    /// [`crate::validate::validate`] rejects it wholesale. Pending `Frame::Fragment`s
+    /// contribute nothing.
+    ///
+    /// Exercised at this level rather than end to end because the guard is unreachable from a
+    /// well-formed [`cl_layout::FragmentTree`], and a cyclic one cannot be assembled from
+    /// outside `cl-layout` (`FragmentTree::fragments` is `pub(crate)` there).
+    #[test]
+    fn drain_pending_pop_clips_should_close_every_open_clip_innermost_first() {
+        let id = a_real_fragment_id();
+        let stack = vec![
+            Frame::PopClip,
+            Frame::Fragment(id),
+            Frame::PopClip,
+            Frame::Fragment(id),
+        ];
+        let mut items = vec![
+            DisplayItem::PushClip {
+                rect: Rect::from_px(0.0, 0.0, 10.0, 10.0),
+            },
+            DisplayItem::PushClip {
+                rect: Rect::from_px(1.0, 1.0, 5.0, 5.0),
+            },
+        ];
+
+        drain_pending_pop_clips(&stack, &mut items);
+
+        assert_eq!(
+            items.len(),
+            4,
+            "one PopClip per pending PopClip frame, nothing per pending Fragment frame"
+        );
+        assert!(matches!(items.get(2), Some(DisplayItem::PopClip)));
+        assert!(matches!(items.get(3), Some(DisplayItem::PopClip)));
+
+        let list = crate::list::DisplayList {
+            items,
+            bounds: Rect::from_px(0.0, 0.0, 800.0, 600.0),
+        };
+        assert_eq!(crate::validate::validate(&list, list.bounds), Ok(()));
+    }
+
+    /// A stack with nothing pending emits nothing: the guard firing outside any clip must not
+    /// invent a `PopClip`, which would be a `PopWithoutPush` of its own.
+    #[test]
+    fn drain_pending_pop_clips_should_emit_nothing_when_no_clip_is_open() {
+        let stack = vec![Frame::Fragment(a_real_fragment_id())];
+        let mut items = Vec::new();
+        drain_pending_pop_clips(&stack, &mut items);
+        assert!(items.is_empty());
+    }
 }

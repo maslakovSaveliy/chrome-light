@@ -18,6 +18,27 @@ use crate::error::FontError;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FontKey(u32);
 
+impl FontKey {
+    /// Builds a `FontKey` from a raw index, **for tests and fuzz targets only**.
+    ///
+    /// Gated behind the `arbitrary` feature, which is off by default and turned on only by
+    /// `tools/fuzz` and by test targets that need to name a key no [`FontDb`] ever issued —
+    /// `cl-gfx`'s `rasterize_should_report_font_not_bundled`, which exercises
+    /// `GfxError::FontNotBundled`, the raster-time "this key is from another process's font
+    /// database" path that is otherwise unreachable in a single-process M1a build.
+    ///
+    /// This adds no reach a fuzzer did not already have: with the same feature on, `FontKey`
+    /// derives `arbitrary::Arbitrary`, so an arbitrary `u32` key is already constructible.
+    /// Production code never has this constructor at all, which is the point — a key must
+    /// come from the [`FontDb`] that will resolve it.
+    #[cfg(feature = "arbitrary")]
+    #[doc(hidden)]
+    #[must_use]
+    pub fn from_raw(raw: u32) -> FontKey {
+        FontKey(raw)
+    }
+}
+
 /// One bundled font face: a family name plus the raw font bytes and face index
 /// `skrifa`/`swash`/`parley` need to parse and shape it.
 #[derive(Debug, Clone, Copy)]

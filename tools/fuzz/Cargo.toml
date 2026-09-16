@@ -11,6 +11,8 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 cl-dom = { path = "../../crates/dom" }
+cl-fonts = { path = "../../crates/fonts", features = ["arbitrary"] }
+cl-gfx = { path = "../../crates/gfx" }
 cl-html = { path = "../../crates/html" }
 cl-ipc = { path = "../../crates/ipc" }
 cl-layout = { path = "../../crates/layout" }
@@ -49,6 +51,13 @@ bench = false
 [[bin]]
 name = "display_list_validate"
 path = "fuzz_targets/display_list_validate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "display_list_rasterize"
+path = "fuzz_targets/display_list_rasterize.rs"
 test = false
 doc = false
 bench = false

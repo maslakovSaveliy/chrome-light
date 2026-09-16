@@ -8,6 +8,7 @@ Nightly-only workspace (excluded from root). Run:
     cargo +nightly fuzz run --fuzz-dir tools/fuzz html_parse -- -max_total_time=60
     cargo +nightly fuzz run --fuzz-dir tools/fuzz css_stylesheet -- -max_total_time=60
     cargo +nightly fuzz run --fuzz-dir tools/fuzz display_list_validate -- -max_total_time=60
+    cargo +nightly fuzz run --fuzz-dir tools/fuzz display_list_rasterize -- -max_total_time=60
 
 Targets: `ipc_decode` (cl-ipc codec, both directions), `url_parse` (cl-net `Url::parse` and
 `Url::parse_with_base`), `html_parse` (cl-html `parse_document`: encoding sniff, html5ever
@@ -17,5 +18,11 @@ rule/selector parsing over an author stylesheet), `display_list_validate` (cl-pa
 `validate`: schema-checks a structured, `Arbitrary`-generated `DisplayList` — the renderer ->
 gpu process boundary's receiver-side check, Task 20 — against a fixed 800x600 bounds; built
 with cl-paint's `arbitrary` feature, which forwards through cl-layout to cl-fonts so every
-geometry/text/font type a `DisplayList` embeds derives `arbitrary::Arbitrary`). Every new
-parser/decoder adds a target in the same PR (CLAUDE.md §3.1).
+geometry/text/font type a `DisplayList` embeds derives `arbitrary::Arbitrary`),
+`display_list_rasterize` (cl-gfx `cpu::rasterize` over the same `Arbitrary`-generated
+`DisplayList` on a 64x64 canvas — the *consumer* behind that boundary check: `rasterize` runs
+`validate` itself and refuses an invalid list, so this target exercises the arithmetic past the
+gate, e.g. border strips whose top and bottom widths each validate but together exceed the box
+height. The bundled `FontDb` is built once per thread, not per iteration: measured 4.3 us to
+build against 4.2 us per `rasterize`, so caching it roughly doubles the iteration rate). Every
+new parser/decoder adds a target in the same PR (CLAUDE.md §3.1).

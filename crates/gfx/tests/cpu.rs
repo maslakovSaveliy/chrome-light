@@ -434,6 +434,114 @@ fn oversized_glyph_should_be_skipped_not_allocated() {
     }
 }
 
+/// `cl_paint::validate` accepts a `Border` whose `top` and `bottom` widths are each no larger
+/// than the box's height but whose *sum* exceeds it (`border_widths_valid` checks each side
+/// individually, by design — see its docs), so a hostile or merely odd list can reach
+/// `fill_border` with no middle band at all. It must paint the two horizontal strips, skip the
+/// left/right strips entirely rather than computing a negative band height, and not panic.
+#[test]
+fn border_should_handle_top_plus_bottom_exceeding_height() {
+    let red = rgba(255, 0, 0, 255);
+    let green = rgba(0, 255, 0, 255);
+    let blue = rgba(0, 0, 255, 255);
+    let magenta = rgba(255, 0, 255, 255);
+    let items = vec![DisplayItem::Border {
+        // A 16px-tall box with 12px top and 12px bottom borders: 12 <= 16 on each side, so the
+        // list is valid, but 12 + 12 > 16 leaves no room between them.
+        rect: Rect::from_px(4.0, 4.0, 16.0, 16.0),
+        widths: Sides {
+            top: Au::from_px(12.0),
+            right: Au::from_px(2.0),
+            bottom: Au::from_px(12.0),
+            left: Au::from_px(2.0),
+        },
+        colors: Sides {
+            top: red,
+            right: green,
+            bottom: blue,
+            left: magenta,
+        },
+    }];
+    let dl = list(items.clone());
+    assert_eq!(
+        cl_paint::validate(&dl, dl.bounds),
+        Ok(()),
+        "the premise: this list is one validate accepts"
+    );
+
+    let pixmap = raster(items);
+
+    assert_eq!(
+        px(&pixmap, 10, 4),
+        (255, 0, 0, 255),
+        "top strip's first row"
+    );
+    assert_eq!(
+        px(&pixmap, 10, 7),
+        (255, 0, 0, 255),
+        "top strip, above where the bottom strip starts"
+    );
+    assert_eq!(
+        px(&pixmap, 10, 8),
+        (0, 0, 255, 255),
+        "the bottom strip starts at y = bottom() - 12 = 8 and paints over the top strip"
+    );
+    assert_eq!(
+        px(&pixmap, 10, 19),
+        (0, 0, 255, 255),
+        "bottom strip's last row"
+    );
+    assert_eq!(
+        px(&pixmap, 4, 10),
+        (0, 0, 255, 255),
+        "no middle band, so the left strip is never painted - the bottom strip spans the \
+         box's full width here"
+    );
+    assert_eq!(px(&pixmap, 3, 10), WHITE, "just outside the box");
+    assert_eq!(px(&pixmap, 20, 10), WHITE, "just outside the box");
+}
+
+/// `cl_paint::validate` deliberately treats a [`cl_fonts::FontKey`] as opaque data (a key is
+/// valid for exactly one process's font database, which only that process can check), so a
+/// glyph run naming a key this process does not know is a *raster*-time condition: expected
+/// from M1b on, when the key crosses IPC from a renderer holding a stale database.
+/// `rasterize` must report it as [`GfxError::FontNotBundled`] rather than silently dropping
+/// the text or panicking.
+///
+/// Needs `cl_fonts::FontKey::from_raw` (doc-hidden, `arbitrary`-feature-gated, enabled here as
+/// a dev-dependency feature): every key a real `FontDb` hands out resolves by construction, so
+/// this path has no in-process input otherwise.
+#[test]
+fn rasterize_should_report_font_not_bundled() {
+    let fonts = FontDb::bundled().expect("bundled font db");
+    // The bundled database registers exactly two faces, at indices 0 and 1.
+    let stale = cl_fonts::FontKey::from_raw(999);
+    let dl = list(vec![DisplayItem::Text {
+        run: GlyphRun {
+            font: stale,
+            size: Au::from_px(16.0),
+            origin: Point {
+                x: Au::ZERO,
+                y: Au::from_px(16.0),
+            },
+            glyphs: vec![Glyph {
+                id: AHEM_X_GLYPH,
+                x: Au::ZERO,
+                y: Au::ZERO,
+                advance: Au::from_px(16.0),
+            }],
+            color: Rgba8::BLACK,
+        },
+    }]);
+
+    let err = cpu::rasterize(&dl, CANVAS, CANVAS, &fonts)
+        .expect_err("a stale font key must be reported, not ignored");
+    assert!(
+        matches!(err, GfxError::FontNotBundled { key } if key == stale),
+        "expected FontNotBundled({stale:?}), got {err:?}"
+    );
+}
+
 #[test]
 fn rasterize_should_reject_impossible_canvas_sizes() {
     let fonts = FontDb::bundled().expect("bundled font db");

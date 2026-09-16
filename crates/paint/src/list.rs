@@ -71,10 +71,15 @@ pub enum DisplayItem {
     /// Pops the most recently pushed clip rectangle, restoring the previous one (or no clip,
     /// if the stack is now empty).
     ///
-    /// Always paired with exactly one preceding [`DisplayItem::PushClip`] in a `DisplayList`
-    /// [`crate::build::build`] produced from a well-formed [`cl_layout::FragmentTree`] — see
-    /// that function's docs for the one case (a malformed tree with a dangling fragment
-    /// reference) where a `PushClip` can be left unmatched.
+    /// Always paired with exactly one preceding [`DisplayItem::PushClip`] in any `DisplayList`
+    /// [`crate::build::build`] produced — from a malformed [`cl_layout::FragmentTree`] as much
+    /// as from a well-formed one. A dangling fragment reference is skipped before any clip is
+    /// pushed for it, and when `build`'s cycle guard stops the walk part-way through a clipped
+    /// subtree it drains every still-open clip on its way out (`drain_pending_pop_clips`), so
+    /// the list it returns always balances and always passes
+    /// [`crate::validate::validate`]'s clip check. A list that arrives from anywhere else (an
+    /// IPC message from a compromised renderer) carries no such guarantee, which is exactly
+    /// what that check is for.
     PopClip,
 }
 

@@ -19,6 +19,11 @@ tiny-skia.workspace = true
 
 [dev-dependencies]
 cl-dom.workspace = true
+# `arbitrary` here only turns on `cl_fonts::FontKey::from_raw`, the doc-hidden test/fuzz-only
+# constructor `rasterize_should_report_font_not_bundled` needs to name a key no `FontDb` ever
+# issued — the one input that reaches `GfxError::FontNotBundled`. Dev-dependency only: the
+# library itself never builds with it.
+cl-fonts = { workspace = true, features = ["arbitrary"] }
 cl-html.workspace = true
 cl-net.workspace = true
 cl-style.workspace = true

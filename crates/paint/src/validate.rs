@@ -31,9 +31,12 @@
 //! * The list holds at most [`MAX_ITEMS`] items ([`DisplayListError::TooManyItems`]).
 //! * Every [`DisplayItem::Rect`]/[`DisplayItem::Border`]/[`DisplayItem::PushClip`] rect has
 //!   non-negative size and computes `origin + size` without `i32` overflow
-//!   ([`DisplayListError::InvalidRect`]), and lies within `bounds` inflated by 4096 pixels
-//!   (`OFFSCREEN_MARGIN_PX`) on every side — offscreen content within that margin is
-//!   legitimate, not a validation failure ([`DisplayListError::OutOfBounds`]).
+//!   ([`DisplayListError::InvalidRect`]), and *intersects* `bounds` inflated by 4096 pixels
+//!   (`OFFSCREEN_MARGIN_PX`) on every side ([`DisplayListError::OutOfBounds`]). Intersection,
+//!   not containment: a rect that starts onscreen and extends far past the margin (the
+//!   background of a container taller than the viewport plus twice the margin — everyday
+//!   markup) is legitimate and the rasteriser clips it; only geometry with no overlap at all
+//!   is rejected. See `InflatedBounds::intersects_rect`.
 //! * A [`DisplayItem::Border`]'s widths are each non-negative and no larger than the rect's
 //!   corresponding dimension (top/bottom against height, left/right against width) — also
 //!   [`DisplayListError::InvalidRect`], since an oversized or negative stroke width is the
@@ -83,10 +86,11 @@ pub const MAX_CLIP_DEPTH: usize = 256;
 ///
 /// `pub`, and reused as-is (not merely copied) by [`mod@crate::build`]'s own offscreen-item
 /// culling: `build` skips emitting an item whose geometry does not *intersect* the viewport
-/// widened by this same margin, so an item that survives culling here is guaranteed to have
-/// at least a chance of passing this module's *full-containment* check against that same
-/// margin. Sharing the one constant is what keeps the two bounds from ever drifting apart —
-/// see `crate::build`'s module docs, "Culling offscreen items".
+/// widened by this same margin, which is the identical test this module applies — so an item
+/// that survives culling there is *guaranteed* to pass this module's bounds check, not merely
+/// likely to. Sharing the one constant is what keeps the two regions from ever drifting apart,
+/// and sharing the one predicate shape keeps the two decisions from disagreeing about a rect
+/// inside it — see `crate::build`'s module docs, "Culling offscreen items".
 pub const OFFSCREEN_MARGIN_PX: f32 = 4096.0;
 
 /// Errors [`validate`] reports against a [`DisplayList`]. Every variant carries the offending
@@ -173,14 +177,54 @@ impl InflatedBounds {
             && point.y <= self.max_y
     }
 
-    /// Whether `rect` lies entirely within this region. Only meaningful for a `rect` that has
-    /// already passed [`rect_is_valid`] — an invalid rect's `right()`/`bottom()` would
-    /// saturate rather than reflect its true (overflowing) extent.
-    fn contains_rect(&self, rect: Rect) -> bool {
-        rect.origin.x >= self.min_x
-            && rect.origin.y >= self.min_y
-            && rect.right() <= self.max_x
-            && rect.bottom() <= self.max_y
+    /// Whether `rect` overlaps this region at all — an **intersection** test, not containment.
+    ///
+    /// A rect that starts inside the region and runs far past it is ordinary content (a
+    /// `background` on a container taller than `viewport + 2 × 4096px` — see
+    /// `crates/paint/tests/validate.rs`'s
+    /// `rect_extending_far_past_the_offscreen_margin_should_pass`), and a rasteriser clips it to
+    /// the canvas anyway. Requiring full containment made every such page unrenderable and,
+    /// worse, forced [`mod@crate::build`]'s mirroring cull to *drop* the item so its own output
+    /// would still validate — i.e. to silently delete content the reader can see. What this
+    /// check exists for is bounding how far a hostile renderer can push geometry the rasteriser
+    /// must reason about, and rejecting geometry with no overlap at all does exactly that
+    /// without discarding anything visible.
+    ///
+    /// Only meaningful for a `rect` that has already passed [`rect_is_valid`] — an invalid
+    /// rect's `right()`/`bottom()` would saturate rather than reflect its true (overflowing)
+    /// extent.
+    fn intersects_rect(&self, rect: Rect) -> bool {
+        axis_overlaps(rect.origin.x, rect.right(), self.min_x, self.max_x)
+            && axis_overlaps(rect.origin.y, rect.bottom(), self.min_y, self.max_y)
+    }
+}
+
+/// One axis of an intersection test: does the span `[lo, hi]` of a rect overlap the region's
+/// `[min, max]`?
+///
+/// `pub(crate)` so [`mod@crate::build`]'s own culling calls this exact function rather than
+/// re-deriving the comparison — the two decisions must agree about every rect, degenerate ones
+/// included, or culling could drop an item `validate` would have accepted (or keep one it will
+/// reject).
+///
+/// A rect with a real extent on this axis (`lo < hi`) is compared half-open — `hi > min &&
+/// lo < max` — so a rect that merely *abuts* the region (its right edge exactly on the
+/// region's left edge) counts as outside, which is what "no overlap" means for an area.
+///
+/// A **degenerate** span (`lo == hi`, i.e. a zero-width or zero-height rect) has no area to
+/// overlap with, so it is compared inclusively against the closed region instead. This is not
+/// a loophole but a necessity: [`mod@crate::build`] clamps an offscreen `overflow: hidden`
+/// clip rect into this very region rather than dropping it (dropping half a clip pair would
+/// unbalance the stack), and a clip rect that lies entirely past the region collapses to
+/// exactly a zero-size rect pinned on the region's boundary. Under the half-open comparison
+/// that legitimately-produced, maximally-clipping rect would be rejected as out of bounds.
+/// A zero-area rect on the boundary is `0px` outside the region, so accepting it weakens no
+/// distance bound.
+pub(crate) fn axis_overlaps(lo: Au, hi: Au, min: Au, max: Au) -> bool {
+    if lo == hi {
+        lo >= min && lo <= max
+    } else {
+        hi > min && lo < max
     }
 }
 
@@ -234,7 +278,7 @@ fn check_rect(rect: Rect, index: usize, inflated: &InflatedBounds) -> Result<(),
     if !rect_is_valid(rect) {
         return Err(DisplayListError::InvalidRect { index });
     }
-    if !inflated.contains_rect(rect) {
+    if !inflated.intersects_rect(rect) {
         return Err(DisplayListError::OutOfBounds { index });
     }
     Ok(())

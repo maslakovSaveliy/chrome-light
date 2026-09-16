@@ -288,6 +288,78 @@ fn rect_within_the_offscreen_margin_should_pass() {
     assert_eq!(validate(&dl, bounds()), Ok(()));
 }
 
+/// A rect that starts inside the inflated bounds and runs far past them is legitimate
+/// content, not a malformed item: a `background` on a 100 000px-tall container is ordinary
+/// markup, and the rasteriser clips it to the canvas anyway. `validate`'s bounds check is
+/// therefore an **intersection** test, not a containment one — requiring containment made
+/// every page taller than `viewport + 2 × 4096px` unrenderable, and forced `build` to cull
+/// the item (dropping visible content) to keep its own output validatable.
+#[test]
+fn rect_extending_far_past_the_offscreen_margin_should_pass() {
+    let dl = DisplayList {
+        items: vec![DisplayItem::Rect {
+            rect: Rect::from_px(0.0, 0.0, 800.0, 100_000.0),
+            color: Rgba8::BLACK,
+        }],
+        bounds: bounds(),
+    };
+
+    assert_eq!(validate(&dl, bounds()), Ok(()));
+}
+
+/// The other half of [`rect_extending_far_past_the_offscreen_margin_should_pass`]: an
+/// intersection test still rejects a rect with *no* overlap at all. This one sits entirely
+/// below the inflated bounds (`600 + 4096 = 4696px`), where the previous containment test
+/// only ever exercised a rect entirely to the right of them.
+#[test]
+fn rect_entirely_outside_the_offscreen_margin_should_fail() {
+    let dl = DisplayList {
+        items: vec![DisplayItem::Rect {
+            rect: Rect::from_px(0.0, 5000.0, 800.0, 10.0),
+            color: Rgba8::BLACK,
+        }],
+        bounds: bounds(),
+    };
+
+    assert_eq!(
+        validate(&dl, bounds()),
+        Err(DisplayListError::OutOfBounds { index: 0 })
+    );
+}
+
+/// Cross-area Q4: the UA stylesheet gives `<hr>` a 1px solid border all round and
+/// `height: 0`, so its border box is 2px tall and its top+bottom border widths (1px each)
+/// sum to exactly that. `validate`'s `border_widths_valid` checks each width against the
+/// rect's corresponding dimension *individually* (`1 ≤ 2`), which this satisfies — the
+/// concern was that `build` might emit the border on the *content* box (0px tall), where
+/// `1 ≤ 0` would fail. It emits it on the border box, so a page with an `<hr>` validates.
+#[test]
+fn hr_border_should_validate() {
+    let html = "<!DOCTYPE html><html><head><style>html, body { margin: 0; padding: 0 }</style></head><body><hr></body></html>";
+    let (tree, styled) = common::layout_html(html);
+
+    let dl = build(&tree, styled.document());
+
+    let hr_border = dl
+        .items
+        .iter()
+        .find_map(|item| match item {
+            DisplayItem::Border { rect, widths, .. } => Some((*rect, *widths)),
+            _ => None,
+        })
+        .expect("<hr> must emit a Border item");
+    assert_eq!(
+        hr_border.0.size,
+        Size {
+            w: Au::from_px(800.0),
+            h: Au::from_px(2.0)
+        },
+        "the Border rect must be the 2px-tall border box, not the 0px-tall content box"
+    );
+    assert_eq!(hr_border.1, Sides::uniform(Au::from_px(1.0)));
+    assert_eq!(validate(&dl, dl.bounds), Ok(()));
+}
+
 /// Ruling 5: `build()`'s output must itself validate — run over the same five golden
 /// fixtures `crates/paint/tests/display_list_goldens.rs` snapshots.
 #[test]
