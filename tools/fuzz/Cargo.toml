@@ -13,7 +13,9 @@ libfuzzer-sys = "0.4"
 cl-dom = { path = "../../crates/dom" }
 cl-html = { path = "../../crates/html" }
 cl-ipc = { path = "../../crates/ipc" }
+cl-layout = { path = "../../crates/layout" }
 cl-net = { path = "../../crates/net" }
+cl-paint = { path = "../../crates/paint", features = ["arbitrary"] }
 cl-style = { path = "../../crates/style" }
 
 [[bin]]
@@ -40,6 +42,13 @@ bench = false
 [[bin]]
 name = "css_stylesheet"
 path = "fuzz_targets/css_stylesheet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "display_list_validate"
+path = "fuzz_targets/display_list_validate.rs"
 test = false
 doc = false
 bench = false

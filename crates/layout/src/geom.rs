@@ -8,6 +8,8 @@ use crate::au::Au;
 
 /// A point in 2D space, in app units.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Point {
     /// Horizontal offset.
     pub x: Au,
@@ -17,6 +19,8 @@ pub struct Point {
 
 /// A width/height pair, in app units.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Size {
     /// Width.
     pub w: Au,
@@ -26,6 +30,8 @@ pub struct Size {
 
 /// An axis-aligned rectangle: an origin plus a size, in app units.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Rect {
     /// The rectangle's top-left corner.
     pub origin: Point,
@@ -89,6 +95,8 @@ impl Rect {
 /// matching how `margin`/`padding`/`border-width` shorthands enumerate their four values),
 /// each holding one `T`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Sides<T> {
     /// The top side.
     pub top: T,
@@ -224,6 +232,8 @@ pub enum Overflow {
 /// CSS color this layer reads (`currentcolor` and other indirections are already resolved by
 /// [`crate::style_adapt::adapt`]; see its docs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Rgba8 {
     /// Red channel.
     pub r: u8,

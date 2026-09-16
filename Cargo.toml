@@ -25,6 +25,11 @@ cl-paint = { path = "crates/paint", version = "0.0.1" }
 cl-gfx = { path = "crates/gfx", version = "0.0.1" }
 
 anyhow = "1"
+# `derive` for `#[derive(arbitrary::Arbitrary)]` on the geometry/display-list types the
+# `display_list_validate` fuzz target needs structured input for (Task 20). Feature-gated
+# (`arbitrary` feature) on cl-fonts/cl-layout/cl-paint, default off — see those crates'
+# `Cargo.toml` for the forwarding chain.
+arbitrary = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
 cssparser = "0.37"
 directories = "6"

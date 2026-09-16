@@ -60,6 +60,8 @@ use crate::geom::{LayoutStyle, Point, Rgba8, TextAlign, WhiteSpace};
 /// Coordinates are relative to [`GlyphRun::origin`], in app units, matching every other
 /// geometry type in this crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Glyph {
     /// The glyph id within [`GlyphRun::font`] (a `skrifa`/`swash` glyph index, not a
     /// Unicode code point).
@@ -76,6 +78,8 @@ pub struct Glyph {
 /// and color (a shaper never mixes fonts or sizes within a run — a style or font-fallback
 /// change starts a new one).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct GlyphRun {
     /// The font face every glyph in this run is drawn from.
     pub font: FontKey,

@@ -14,6 +14,8 @@ use crate::error::FontError;
 /// different `FontDb` instances -- always resolve keys through the same `FontDb`
 /// you got them from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FontKey(u32);
 
 /// One bundled font face: a family name plus the raw font bytes and face index

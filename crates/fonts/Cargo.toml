@@ -9,8 +9,19 @@ rust-version.workspace = true
 [lib]
 name = "cl_fonts"
 
+[features]
+# Off by default: only `cl-layout`/`cl-paint`'s own `arbitrary` features (and, transitively,
+# the fuzz workspace) turn this on. See `docs/superpowers/sdd/2026-09-07-m1a-static-pipeline/
+# task-20-report.md` for why `FontKey` — whose field is private to this crate — needs its own
+# derive rather than a hand-written impl elsewhere.
+arbitrary = ["dep:arbitrary"]
+# Off by default; forwarded from `cl-layout`/`cl-paint`'s own `serde` features.
+serde = ["dep:serde"]
+
 [dependencies]
+arbitrary = { workspace = true, optional = true }
 fontique.workspace = true
+serde = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -14,6 +14,8 @@ use cl_layout::{Au, GlyphRun, Rect, Rgba8, Sides};
 /// to walk a [`cl_layout::FragmentTree`] itself. See [`crate::build::build`]'s docs for the
 /// CSS 2.1 Appendix E paint order that produces this sequence.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DisplayItem {
     /// Fills `rect` with a solid, non-premultiplied `color`.
     ///
@@ -79,6 +81,8 @@ pub enum DisplayItem {
 /// A flat, paint-order sequence of [`DisplayItem`]s for one [`cl_layout::FragmentTree`], plus
 /// the rect it was painted against.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DisplayList {
     /// The draw commands, in the order a rasteriser must execute them to get correct paint
     /// order (CSS 2.1 Appendix E).

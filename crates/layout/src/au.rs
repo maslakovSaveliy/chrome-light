@@ -18,6 +18,8 @@
 /// Construct one from a CSS pixel value with [`Au::from_px`]; read it back with
 /// [`Au::to_px`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Au(pub i32);
 
 /// App units per CSS pixel. `1/60` is stylo's own `app_units::AU_PER_PX`

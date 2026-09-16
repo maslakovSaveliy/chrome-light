@@ -17,6 +17,10 @@
 //! eyeballing what [`build::build`] actually produced, the same way `cl_layout::dump`
 //! renders a `FragmentTree`.
 //!
+//! [`validate::validate`] (Task 20) is the schema check the M1b gpu process runs on a
+//! [`DisplayList`] before rasterising it — see that module's docs for the trust boundary and
+//! the exact rules.
+//!
 //! # Scope (M1a)
 //!
 //! Painted: element backgrounds and solid borders on `Block`/element fragments, shaped text,
@@ -36,7 +40,9 @@ pub mod build;
 pub mod dump;
 pub mod error;
 pub mod list;
+pub mod validate;
 
 pub use build::build;
 pub use error::PaintError;
 pub use list::{DisplayItem, DisplayList};
+pub use validate::{DisplayListError, MAX_CLIP_DEPTH, MAX_GLYPHS_PER_RUN, MAX_ITEMS, validate};

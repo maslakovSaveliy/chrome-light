@@ -9,11 +9,20 @@ rust-version.workspace = true
 [lib]
 name = "cl_layout"
 
+[features]
+# Off by default; forwards to `cl-fonts/arbitrary` so a derived `arbitrary::Arbitrary` impl
+# on `GlyphRun` (which carries a `cl_fonts::FontKey`) can reach that crate's own derive.
+arbitrary = ["dep:arbitrary", "cl-fonts/arbitrary"]
+# Off by default; forwards to `cl-fonts/serde`, same reasoning as `arbitrary` above.
+serde = ["dep:serde", "cl-fonts/serde"]
+
 [dependencies]
+arbitrary = { workspace = true, optional = true }
 cl-dom.workspace = true
 cl-fonts.workspace = true
 cl-style.workspace = true
 parley.workspace = true
+serde = { workspace = true, optional = true }
 stylo.workspace = true
 thiserror.workspace = true
 

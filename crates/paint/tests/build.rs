@@ -9,8 +9,9 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use cl_layout::{Au, FragmentId, FragmentTree, GlyphRun, Rect, Rgba8, Sides};
-use cl_paint::{DisplayItem, build};
+use cl_layout::{Au, FragmentId, FragmentTree, Glyph, GlyphRun, Point, Rect, Rgba8, Sides};
+use cl_paint::dump::display_list_dump;
+use cl_paint::{DisplayItem, DisplayList, build};
 
 /// Collects every fragment id reachable from `tree.root`, via the same public
 /// `get`/`children` walk `cl_paint::build` itself uses — used only to manufacture a
@@ -312,4 +313,85 @@ fn build_should_not_panic_on_a_dangling_fragment_id() {
 
     assert!(dl.items.is_empty());
     assert_eq!(dl.bounds, Rect::from_px(0.0, 0.0, 800.0, 600.0));
+}
+
+/// Coverage gap the Task 19 review found: [`display_list_dump`] indents by clip depth, but no
+/// test exercised a *nested* clip (two levels deep) to prove `PushClip`/`PopClip` print at
+/// the depth documented in `cl_paint::dump`'s module docs -- a `PushClip` at the depth
+/// *before* it opens, its matching `PopClip` at the depth *after* it closes, so the pair
+/// prints at the same indentation and only what nests between them is one level deeper.
+///
+/// Hand-assembled (not run through `build`) because the point is exercising `display_list_dump`
+/// itself against an item sequence [`Rect`, `PushClip`, `Text`, `PushClip`, `Rect`, `PopClip`,
+/// `PopClip`, `Rect`] -- not whatever the real layout pipeline happens to produce.
+#[test]
+fn display_list_dump_should_indent_by_clip_depth() {
+    let font = cl_fonts::FontDb::bundled()
+        .expect("bundled font db")
+        .key_for("Ahem")
+        .expect("Ahem key");
+    let black = Rgba8 {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+
+    let dl = DisplayList {
+        items: vec![
+            DisplayItem::Rect {
+                rect: Rect::from_px(1.0, 2.0, 3.0, 4.0),
+                color: black,
+            },
+            DisplayItem::PushClip {
+                rect: Rect::from_px(5.0, 6.0, 7.0, 8.0),
+            },
+            DisplayItem::Text {
+                run: GlyphRun {
+                    font,
+                    size: Au::from_px(16.0),
+                    origin: Point {
+                        x: Au::from_px(9.0),
+                        y: Au::from_px(10.0),
+                    },
+                    glyphs: vec![Glyph {
+                        id: 1,
+                        x: Au::ZERO,
+                        y: Au::ZERO,
+                        advance: Au::from_px(5.0),
+                    }],
+                    color: black,
+                },
+            },
+            DisplayItem::PushClip {
+                rect: Rect::from_px(11.0, 12.0, 13.0, 14.0),
+            },
+            DisplayItem::Rect {
+                rect: Rect::from_px(15.0, 16.0, 17.0, 18.0),
+                color: black,
+            },
+            DisplayItem::PopClip,
+            DisplayItem::PopClip,
+            DisplayItem::Rect {
+                rect: Rect::from_px(19.0, 20.0, 21.0, 22.0),
+                color: black,
+            },
+        ],
+        bounds: Rect::from_px(0.0, 0.0, 800.0, 600.0),
+    };
+
+    let expected = [
+        "DisplayList bounds=(0.00, 0.00, 800.00, 600.00) items=8",
+        "Rect (1.00, 2.00, 3.00, 4.00) #000000ff",
+        "PushClip (5.00, 6.00, 7.00, 8.00)",
+        "  Text font=FontKey(0) size=16.00 origin=(9.00, 10.00) glyphs=1 #000000ff",
+        "  PushClip (11.00, 12.00, 13.00, 14.00)",
+        "    Rect (15.00, 16.00, 17.00, 18.00) #000000ff",
+        "  PopClip",
+        "PopClip",
+        "Rect (19.00, 20.00, 21.00, 22.00) #000000ff",
+    ]
+    .join("\n");
+
+    assert_eq!(display_list_dump(&dl), expected);
 }
