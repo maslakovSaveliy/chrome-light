@@ -52,6 +52,13 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo build --workspace --locked
       - run: cargo nextest run --workspace --locked
+        env:
+          # `crates/testshell/tests/smoke.rs` (and `crates/layout/tests/block.rs`'s own
+          # deep-chain smoke test) budget their timing-sensitive assertions at 5s locally,
+          # 15s here — a shared/loaded CI runner is slower than a developer's machine, and
+          # the plan explicitly sanctions this escape hatch ("on CI allow 15 s via env
+          # CL_SMOKE_SLOW=1").
+          CL_SMOKE_SLOW: "1"
       - run: cargo test --workspace --doc --locked
       - name: release build refuses unsandboxed renderer (Gate S0)
         shell: bash

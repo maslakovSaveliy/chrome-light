@@ -203,6 +203,66 @@ fn overflow_hidden_should_wrap_children_in_clip() {
     );
 }
 
+/// Task 22's controller ruling: a page taller than the viewport by more than
+/// [`cl_paint::OFFSCREEN_MARGIN_PX`] must still `build` (and then `validate`) at the real
+/// viewport size — `build` has to cull the far-offscreen item itself, not merely rely on
+/// `validate` tolerating it (`validate` would *reject* it: it requires full containment, not
+/// just intersection — see `crate::build`'s module docs).
+///
+/// Layout, top to bottom at 800px wide, `html`/`body` margin and padding zeroed:
+/// `#before` (0-1000px, no background) -> `#control` (1000-1010px, green background) ->
+/// `#spacer` (1010-20010px, no background) -> `#far` (20010-20020px, red background). At an
+/// 800x600 viewport the offscreen margin puts the cutoff at `y = 600 + 4096 = 4696px`:
+/// `#control` is well inside it and must still be painted; `#far` is nowhere close and must
+/// be culled before the list ever reaches `validate`.
+#[test]
+fn offscreen_items_should_be_culled() {
+    let html = r#"<!DOCTYPE html>
+<html><head><style>
+  html, body { margin: 0; padding: 0 }
+  #before { height: 1000px }
+  #control { background: rgb(0, 255, 0); height: 10px }
+  #spacer { height: 19000px }
+  #far { background: rgb(255, 0, 0); height: 10px }
+</style></head>
+<body><div id="before"></div><div id="control"></div><div id="spacer"></div><div id="far"></div></body></html>"#;
+    let (tree, styled) = common::layout_html(html);
+
+    let dl = build(&tree, styled.document());
+
+    let control_rect = Rect::from_px(0.0, 1000.0, 800.0, 10.0);
+    let control_color = Rgba8 {
+        r: 0,
+        g: 255,
+        b: 0,
+        a: 255,
+    };
+    assert!(
+        dl.items.contains(&DisplayItem::Rect {
+            rect: control_rect,
+            color: control_color,
+        }),
+        "a background well inside the offscreen margin must still be painted, got: {:?}",
+        dl.items
+    );
+
+    let offscreen_limit_px = 600.0 + 4096.0;
+    for item in &dl.items {
+        if let DisplayItem::Rect { rect, .. } = item {
+            assert!(
+                rect.origin.y.to_px() < offscreen_limit_px,
+                "no Rect should reach this far past the viewport (the culled #far div sits \
+                 at y=20010px), got: {rect:?}"
+            );
+        }
+    }
+
+    // The whole point: the list `build` produced now validates at the real 800x600 viewport,
+    // proving #far was culled *before* validation rather than merely tolerated by it.
+    cl_paint::validate(&dl, Rect::from_px(0.0, 0.0, 800.0, 600.0))
+        .expect("a list with the far-offscreen item culled must validate at the real viewport");
+}
+
 #[test]
 fn body_background_should_propagate_to_canvas() {
     let html = "<!DOCTYPE html><html><head><style>body { background: #00f; margin: 0; height: 50px }</style></head><body></body></html>";

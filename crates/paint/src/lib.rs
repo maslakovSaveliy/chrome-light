@@ -12,6 +12,10 @@
 //!   [`DisplayList`] in CSS 2.1 Appendix E paint order (the M1a subset: background, then
 //!   solid borders, then an `overflow: hidden` clip, then children, then text — see that
 //!   module's docs for the exact order and for §14.2's canvas-background propagation).
+//!   `build` also culls any item whose geometry does not intersect the viewport widened by
+//!   [`validate::OFFSCREEN_MARGIN_PX`] — see [`mod@build`]'s "Culling offscreen items" — so a
+//!   page of any height still produces a `DisplayList` [`validate::validate`] accepts at the
+//!   real viewport size, not just one small enough to contain every item outright.
 //!
 //! [`dump::display_list_dump`] renders a [`DisplayList`] for snapshot tests and for
 //! eyeballing what [`build::build`] actually produced, the same way `cl_layout::dump`
@@ -45,4 +49,6 @@ pub mod validate;
 pub use build::build;
 pub use error::PaintError;
 pub use list::{DisplayItem, DisplayList};
-pub use validate::{DisplayListError, MAX_CLIP_DEPTH, MAX_GLYPHS_PER_RUN, MAX_ITEMS, validate};
+pub use validate::{
+    DisplayListError, MAX_CLIP_DEPTH, MAX_GLYPHS_PER_RUN, MAX_ITEMS, OFFSCREEN_MARGIN_PX, validate,
+};

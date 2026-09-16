@@ -1,5 +1,7 @@
 //! Task 22 smoke tests: pathological-scale or malformed input must never panic, and a
-//! generously-sized ordinary document must render within the M1a plan's time budget.
+//! generously-sized ordinary document must render within the M1a plan's time budget: 5s
+//! locally, 15s in CI (`.github/workflows/ci.yml`'s test job sets `CL_SMOKE_SLOW=1` for
+//! exactly this — see [`budget`]).
 #![allow(
     clippy::expect_used,
     reason = "a failed setup step in a test should abort that test, loudly"
@@ -37,7 +39,9 @@ fn temp_html_path(tag: &str) -> PathBuf {
 
 /// `< 5s` normally; `< 15s` under `CL_SMOKE_SLOW=1` for a slower/shared CI runner (the task
 /// brief's own escape hatch, matching `crates/layout/tests/block.rs`'s identical convention
-/// for its own deep-chain smoke test).
+/// for its own deep-chain smoke test). `.github/workflows/ci.yml`'s test-matrix job sets
+/// `CL_SMOKE_SLOW=1` on its `cargo nextest run --workspace --locked` step; a plain local
+/// `cargo test` still gets the tighter 5s bound.
 #[allow(
     clippy::disallowed_methods,
     reason = "`std::env::var` is restricted to `cl-platform` in production code so env access \
@@ -67,20 +71,14 @@ fn render_should_finish_a_1mb_document_within_the_time_budget() {
 
     // `UNIT` repeated ~14000 times to cross 1MB is several hundred thousand CSS pixels tall
     // (each `<p>` contributes its own line plus the UA sheet's `1em` top/bottom margin) — far
-    // past what a single canvas can represent in M1a: `cl_gfx::MAX_DIMENSION` caps a canvas
-    // edge at 16384px, and `cl_paint::validate` accepts geometry only within 4096px of the
-    // viewport. M1a has no scrolling/tiling compositor (that is M1b), so a flat page this
-    // tall is *expected* to fail exactly at the raster/validate step — reaching that specific
-    // failure still proves `cl-html`/`cl-style`/`cl-layout`/`cl-paint` all completed over the
-    // full 1MB document within the time budget, which is what this test exists to check
-    // (the task brief only requires "finish in time and don't panic", not that every input
-    // rasterizes). Any *other* failure — a stage earlier than `cl-gfx` — is a real bug in
-    // pipeline scaling and must fail this test.
-    let acceptable_outcome = matches!(&result, Ok(_) | Err(cl_testshell::ShellError::Gfx(_)));
-    assert!(
-        acceptable_outcome,
-        "unexpected failure stage for a 1MB document (expected success or a cl-gfx-only \
-         rejection of an over-tall canvas): {result:?}"
+    // past the viewport. `cl_paint::build` culls any item that does not intersect the
+    // viewport widened by `cl_paint::OFFSCREEN_MARGIN_PX` (controller ruling, Task 22 review:
+    // a page of any height must still render at viewport size — see
+    // `crates/paint/src/build.rs`'s "Culling offscreen items"), so this must succeed, not
+    // merely fail gracefully at the raster step.
+    result.expect(
+        "a 1MB document must render successfully: cl_paint::build culls everything outside \
+         the viewport's offscreen margin, so no page height should fail cl_gfx's validation",
     );
     let budget = budget();
     assert!(

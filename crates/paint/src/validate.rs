@@ -80,7 +80,14 @@ pub const MAX_CLIP_DEPTH: usize = 256;
 /// How far outside `bounds` an item's geometry may extend and still be accepted as
 /// legitimately offscreen content, in CSS pixels — a document with content well past the
 /// viewport (a tall page, an element positioned off to the side) is ordinary, not hostile.
-const OFFSCREEN_MARGIN_PX: f32 = 4096.0;
+///
+/// `pub`, and reused as-is (not merely copied) by [`mod@crate::build`]'s own offscreen-item
+/// culling: `build` skips emitting an item whose geometry does not *intersect* the viewport
+/// widened by this same margin, so an item that survives culling here is guaranteed to have
+/// at least a chance of passing this module's *full-containment* check against that same
+/// margin. Sharing the one constant is what keeps the two bounds from ever drifting apart —
+/// see `crate::build`'s module docs, "Culling offscreen items".
+pub const OFFSCREEN_MARGIN_PX: f32 = 4096.0;
 
 /// Errors [`validate`] reports against a [`DisplayList`]. Every variant carries the offending
 /// item's index into [`DisplayList::items`] (`UnbalancedClip` excepted: an imbalance is a

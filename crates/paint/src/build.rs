@@ -29,6 +29,56 @@
 //! which forces `background`/`border_solid` to their transparent/false initial values, but
 //! the `Block`-only check above makes that doubly certain).
 //!
+//! # Culling offscreen items
+//!
+//! A document can be far taller (or wider) than the viewport — an ordinary "long page", not
+//! a hostile one — and [`crate::validate::validate`] only accepts an item whose geometry
+//! lies *entirely* within the viewport widened by [`crate::validate::OFFSCREEN_MARGIN_PX`]
+//! on every side (4096px), or (for a [`DisplayItem::Text`] run specifically) whose
+//! [`cl_layout::GlyphRun::origin`] lies within that same region — see `validate`'s own
+//! `check_rect`/`check_text_run`. Without culling, `build` would still emit an item for
+//! every fragment regardless of how far past that margin it falls, and the resulting list
+//! would fail validation the moment any page grew taller than `viewport height + 4096px` —
+//! turning an everyday long page into an unrenderable one. So:
+//!
+//! * A [`FragmentKind::Block`] fragment's background/border ([`DisplayItem::Rect`]/
+//!   [`DisplayItem::Border`]) is skipped entirely when its border box is not **entirely
+//!   contained** in that widened region (`InflatedViewport::contains_rect`) — the *exact*
+//!   condition `validate` itself checks for that item, not a looser "any overlap" test (an
+//!   earlier version of this culling used overlap instead of containment; it let a rect
+//!   straddling the boundary through culling only for `validate` to still reject it, a case
+//!   reachable by nothing more exotic than ~90 ordinary stacked paragraphs — see
+//!   `crates/testshell/tests/smoke.rs`'s 1MB fixture, which is what surfaced it). Matching
+//!   `validate`'s own test exactly means an item surviving culling is *guaranteed*, not
+//!   merely likely, to pass validation.
+//! * A [`FragmentKind::Text`] fragment culls each [`cl_layout::GlyphRun`] independently
+//!   against `InflatedViewport::contains_point` — again `validate`'s own exact
+//!   `check_text_run` condition on the run's `origin`, which is *all* `validate` ever checks
+//!   a text run's position against (it bounds individual glyph offsets only against
+//!   arithmetic overflow, never against the viewport). One run of a multi-run text fragment
+//!   can be onscreen while another, on a much later line, is not, so each is decided on its
+//!   own — culling is always per item, never propagated from a fragment to its descendants
+//!   or siblings (CSS 2.1 §11.1.1's `overflow: visible` lets a child extend past a parent
+//!   whose own box happens to fall outside the region, so a parent's culling decision must
+//!   never suppress its children's).
+//! * A [`DisplayItem::PushClip`]/[`DisplayItem::PopClip`] pair is **never** dropped by
+//!   culling — dropping one half would unbalance the clip stack
+//!   [`crate::validate::validate`] checks for. Instead, an `overflow: hidden` fragment's
+//!   clip rect (the fragment's *padding* box) is clamped to lie within the widened region
+//!   before it is emitted (`InflatedViewport::clamp`): a clip rect that starts inside the
+//!   region and extends past it is trimmed to the region's edge, and a clip rect that falls
+//!   entirely outside collapses to a zero-size rect pinned at the nearest corner — either
+//!   way, always a valid, in-bounds rect, never an omitted one.
+//! * The canvas-background [`DisplayItem::Rect`] (below) is never culled: it is always
+//!   exactly the viewport's own bounds, trivially within any margin around them.
+//!
+//! The margin itself ([`crate::validate::OFFSCREEN_MARGIN_PX`]) is shared through one public
+//! constant rather than two independently-chosen numbers, specifically so this module's
+//! culling and `validate`'s own check can never silently drift apart in *how far* they each
+//! allow — only in *what* they check at that distance (full geometry here, since dropping an
+//! item is a real content change; the identical rect/point test `validate` itself applies,
+//! for exactly the reason above).
+//!
 //! # Canvas background propagation (CSS 2.1 §14.2, css-backgrounds-3 §2.11.2)
 //!
 //! Before any fragment is visited, the walk decides the *canvas* background: if the
@@ -72,18 +122,21 @@
 use cl_dom::{Document, LocalName, local_name};
 use cl_layout::{
     Au, Fragment, FragmentId, FragmentKind, FragmentTree, LayoutStyle, Overflow, Point, Rect,
-    Rgba8, Sides, StyleId,
+    Rgba8, Sides, Size, StyleId,
 };
 
 use crate::list::{DisplayItem, DisplayList};
+use crate::validate::OFFSCREEN_MARGIN_PX;
 
 /// Builds the paint-order display list for `tree`, resolving element identity (for canvas
-/// background propagation) against `doc`. See the module docs for the full paint order and
-/// the totality guarantees.
+/// background propagation) against `doc`. See the module docs for the full paint order, the
+/// offscreen-item culling that keeps a tall/wide page's list within
+/// [`crate::validate::validate`]'s bounds, and the totality guarantees.
 #[must_use]
 pub fn build(tree: &FragmentTree, doc: &Document) -> DisplayList {
     let bounds = Rect::new(Point::default(), tree.viewport);
     let mut items = Vec::new();
+    let viewport = InflatedViewport::new(bounds);
 
     let canvas = canvas_background(tree, doc);
     if let Some(color) = canvas.color
@@ -95,9 +148,92 @@ pub fn build(tree: &FragmentTree, doc: &Document) -> DisplayList {
         });
     }
 
-    walk(tree, canvas.suppressed_fragment, &mut items);
+    walk(tree, canvas.suppressed_fragment, &viewport, &mut items);
 
     DisplayList { items, bounds }
+}
+
+/// The viewport rect widened by [`OFFSCREEN_MARGIN_PX`] on every side — see the module docs'
+/// "Culling offscreen items" for why `build` needs this and why its two containment checks
+/// deliberately mirror [`crate::validate::validate`]'s own, rather than using a looser test.
+#[derive(Clone, Copy)]
+struct InflatedViewport {
+    /// The region's top-left corner.
+    min: Point,
+    /// The region's bottom-right corner.
+    max: Point,
+}
+
+impl InflatedViewport {
+    /// Widens `viewport_bounds` (the exact viewport rect `build` rasterises into) by
+    /// [`OFFSCREEN_MARGIN_PX`] on every side, saturating rather than overflowing — matching
+    /// [`crate::validate`]'s own `inflate` (not shared as code, since that function is
+    /// private to its module and returns a differently-shaped type, but computed from the
+    /// exact same public constant so the two regions are always identical in practice).
+    fn new(viewport_bounds: Rect) -> Self {
+        let margin = Au::from_px(OFFSCREEN_MARGIN_PX);
+        InflatedViewport {
+            min: Point {
+                x: viewport_bounds.origin.x.saturating_sub(margin),
+                y: viewport_bounds.origin.y.saturating_sub(margin),
+            },
+            max: Point {
+                x: viewport_bounds.right().saturating_add(margin),
+                y: viewport_bounds.bottom().saturating_add(margin),
+            },
+        }
+    }
+
+    /// Whether `rect` lies entirely within this region — deliberately the *exact* condition
+    /// [`crate::validate::validate`] itself checks for a `Rect`/`Border` item's rect
+    /// (mirroring that module's own private `InflatedBounds::contains_rect`), rather than a
+    /// looser "any overlap at all" test: an earlier version of this culling used intersection
+    /// (a rect overlapping the region survives, regardless of how far past its far edge
+    /// extends), which let a rect straddling the boundary through culling only for `validate`
+    /// to still reject it there — reachable by nothing more exotic than ~90 ordinary
+    /// paragraphs stacking up to exactly the `600 + 4096px` cutoff (see
+    /// `crates/testshell/tests/smoke.rs`'s 1MB fixture, which is what surfaced it). Matching
+    /// `validate`'s own test exactly means an item that survives this call is *guaranteed* to
+    /// pass the corresponding `validate` check, not merely likely to.
+    fn contains_rect(self, rect: Rect) -> bool {
+        rect.origin.x >= self.min.x
+            && rect.origin.y >= self.min.y
+            && rect.right() <= self.max.x
+            && rect.bottom() <= self.max.y
+    }
+
+    /// Whether `point` lies within this region — the exact condition
+    /// [`crate::validate::validate`] checks against a [`DisplayItem::Text`] run's
+    /// `GlyphRun::origin` (it does not itself bound a run's individual glyph offsets against
+    /// the viewport at all, only their arithmetic — see that function's `check_text_run`), so
+    /// this is what a `Text` item is culled against: no bounding-box estimate is needed, and
+    /// none can be more correct than checking the exact thing `validate` checks.
+    fn contains_point(self, point: Point) -> bool {
+        point.x >= self.min.x
+            && point.x <= self.max.x
+            && point.y >= self.min.y
+            && point.y <= self.max.y
+    }
+
+    /// Clamps `rect` to lie entirely within this region, without ever dropping it: a `rect`
+    /// that starts inside the region and extends past it is trimmed at the region's edge; a
+    /// `rect` that does not intersect the region at all collapses to a zero-size rect pinned
+    /// at the nearest corner. Either way the result always satisfies
+    /// [`crate::validate::validate`]'s full-containment check — used only for a clip rect
+    /// (see the module docs), which must never disappear or the clip stack would unbalance.
+    fn clamp(self, rect: Rect) -> Rect {
+        let left = rect.origin.x.clamp(self.min.x, self.max.x);
+        let top = rect.origin.y.clamp(self.min.y, self.max.y);
+        let right = rect.right().clamp(self.min.x, self.max.x).max(left);
+        let bottom = rect.bottom().clamp(self.min.y, self.max.y).max(top);
+        Rect {
+            origin: Point { x: left, y: top },
+            size: Size {
+                w: right.saturating_sub(left),
+                h: bottom.saturating_sub(top),
+            },
+        }
+    }
 }
 
 /// One entry of [`walk`]'s explicit stack: either a fragment still to be painted, or a
@@ -124,11 +260,14 @@ struct CanvasBackground {
 
 /// Walks `tree` from its root, appending every [`DisplayItem`] in paint order to `items`.
 /// `suppressed_fragment`, when set, is the one fragment whose own background
-/// [`paint_fragment`] must skip (see [`CanvasBackground`]). See the module docs for the
-/// algorithm and its totality guarantees.
+/// [`paint_fragment`] must skip (see [`CanvasBackground`]). `viewport` is the region
+/// [`paint_fragment`] culls offscreen items against, and that a clip rect is clamped into
+/// (see the module docs' "Culling offscreen items"). See the module docs for the algorithm
+/// and its totality guarantees.
 fn walk(
     tree: &FragmentTree,
     suppressed_fragment: Option<FragmentId>,
+    viewport: &InflatedViewport,
     items: &mut Vec<DisplayItem>,
 ) {
     let mut stack = vec![Frame::Fragment(tree.root)];
@@ -149,12 +288,15 @@ fn walk(
                 let style = resolve_style(tree, fragment.style);
                 let suppress_background = suppressed_fragment == Some(id);
 
-                paint_fragment(fragment, &style, suppress_background, items);
+                paint_fragment(fragment, &style, suppress_background, viewport, items);
 
                 let push_clip = style.overflow == Overflow::Hidden;
                 if push_clip {
                     items.push(DisplayItem::PushClip {
-                        rect: fragment.padding_box,
+                        // Clamped, never dropped: an offscreen `overflow: hidden` fragment's
+                        // clip must still balance its matching `PopClip` — see the module
+                        // docs.
+                        rect: viewport.clamp(fragment.padding_box),
                     });
                     stack.push(Frame::PopClip);
                 }
@@ -169,15 +311,22 @@ fn walk(
 
 /// Emits the background and border items for one fragment (steps 1-2 of the module docs'
 /// paint order), or its glyph runs if it is a `Text` fragment. A `Line`/`AnonymousBlock`
-/// fragment never has its own background or border.
+/// fragment never has its own background or border. Culls any item whose geometry does not
+/// intersect `viewport` — see the module docs' "Culling offscreen items" — independently per
+/// item (a `Block`'s background/border share one culling decision since they share one rect;
+/// each of a `Text` fragment's runs is culled on its own).
 fn paint_fragment(
     fragment: &Fragment,
     style: &LayoutStyle,
     suppress_background: bool,
+    viewport: &InflatedViewport,
     items: &mut Vec<DisplayItem>,
 ) {
     match &fragment.kind {
         FragmentKind::Block => {
+            if !viewport.contains_rect(fragment.border_box) {
+                return;
+            }
             if !suppress_background && style.background.a > 0 && !fragment.border_box.is_empty() {
                 items.push(DisplayItem::Rect {
                     rect: fragment.border_box,
@@ -195,7 +344,10 @@ fn paint_fragment(
         FragmentKind::AnonymousBlock | FragmentKind::Line => {}
         FragmentKind::Text { runs } => {
             for run in runs {
-                if !run.glyphs.is_empty() {
+                if run.glyphs.is_empty() {
+                    continue;
+                }
+                if viewport.contains_point(run.origin) {
                     items.push(DisplayItem::Text { run: run.clone() });
                 }
             }
