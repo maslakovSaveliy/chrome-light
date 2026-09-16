@@ -266,6 +266,120 @@ fn padding_should_prevent_margin_collapsing() {
     );
 }
 
+/// Top-margin collapsing chains through *every* generation of first-in-flow-block children,
+/// not just one level (CSS 2.1 §8.3.1) — `<body><div><div><div>x</div></div></div></body>` is
+/// a three-deep chain of `margin-top: 10px`/`20px`/`30px`, nothing (no padding, no border)
+/// separating any two adjacent boxes in it, so the whole chain collapses to one value: the
+/// greatest of the three. That collapsed `30px` is used exactly once — to position `#outer`
+/// relative to whatever precedes it (here, `<body>`, itself flush against the viewport) — and
+/// every box inside the chain sits flush against its own parent's content edge (the margin
+/// was "spent" positioning the outermost box, not re-applied at each level), so `#outer` and
+/// `#inner` end up at the *same* absolute `y`.
+#[test]
+fn parent_and_first_child_top_margins_should_collapse_through_a_chain() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #outer { margin-top: 10px }
+            #mid { margin-top: 20px }
+            #inner { margin-top: 30px }
+        </style>
+        <body><div id="outer"><div id="mid"><div id="inner">x</div></div></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let outer = fragment_by_id(&tree, styled.document(), "outer");
+    let mid = fragment_by_id(&tree, styled.document(), "mid");
+    let inner = fragment_by_id(&tree, styled.document(), "inner");
+    assert_eq!(
+        outer.border_box.origin,
+        Point {
+            x: px(0.0),
+            y: px(30.0)
+        }
+    );
+    assert_eq!(
+        mid.border_box.origin,
+        Point {
+            x: px(0.0),
+            y: px(30.0)
+        }
+    );
+    assert_eq!(
+        inner.border_box.origin,
+        Point {
+            x: px(0.0),
+            y: px(30.0)
+        }
+    );
+}
+
+/// The bottom-margin mirror of the top-margin chain test above: `#inner`'s, `#mid`'s and
+/// `#outer`'s bottom margins (`30px`/`20px`/`10px`) all collapse into one `30px` gap after
+/// `#outer` (each of `#outer`/`#mid` has `height: auto`, no padding/border and no `min-height`
+/// — CSS 2.1 §8.3.1's eligibility for the bottom case), rather than three independent gaps
+/// (which would total `60px`) or only the outermost pair collapsing (which would give `20px`,
+/// missing `#inner`'s `30px`).
+#[test]
+fn bottom_margins_should_collapse_through_a_chain() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #outer { margin-bottom: 10px }
+            #mid { margin-bottom: 20px }
+            #inner { height: 5px; margin-bottom: 30px }
+            #after { height: 5px }
+        </style>
+        <body><div id="outer"><div id="mid"><div id="inner">x</div></div></div><div id="after"></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let after = fragment_by_id(&tree, styled.document(), "after");
+    // #outer sits at y=0 (body's only preceding content), is 5px tall (all three boxes'
+    // border boxes have zero internal gap, only #inner's own 5px height contributes), so
+    // #after starts at 5px (#outer's own bottom) + 30px (the collapsed chain) = 35px.
+    assert_eq!(
+        after.border_box.origin,
+        Point {
+            x: px(0.0),
+            y: px(35.0)
+        }
+    );
+}
+
+/// Padding stops the margin chain exactly where it occurs, but does not erase the margin
+/// collected *above* that point: `#outer`'s own `margin-top: 10px` still applies in full
+/// (nothing above `#outer` to collapse it away further — `<body>` has no margin of its own
+/// here), but `#outer`'s `padding-top: 1px` means `#outer`'s relationship with `#inner` is not
+/// "nothing separating them", so `#inner`'s `margin-top: 20px` creates a real internal gap
+/// rather than being folded into `#outer`'s own `effective_margin_top`.
+#[test]
+fn padding_should_stop_margin_chain() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #outer { margin-top: 10px; padding-top: 1px }
+            #inner { margin-top: 20px }
+        </style>
+        <body><div id="outer"><div id="inner">x</div></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let outer = fragment_by_id(&tree, styled.document(), "outer");
+    let inner = fragment_by_id(&tree, styled.document(), "inner");
+    assert_eq!(
+        outer.border_box.origin,
+        Point {
+            x: px(0.0),
+            y: px(10.0)
+        }
+    );
+    assert_eq!(
+        inner.border_box.origin,
+        Point {
+            x: px(0.0),
+            y: px(31.0)
+        }
+    );
+}
+
 /// `position: relative` shifts a fragment (and its whole subtree, if it has one) without
 /// affecting layout flow: `#b`'s `top`/`left` move only `#b` itself, and `#c` — which comes
 /// after it — is positioned exactly as if `#b` had never been offset.

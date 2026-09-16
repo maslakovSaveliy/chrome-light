@@ -37,19 +37,44 @@
 //! children are always inline-level too, so it is only ever encountered while *flattening* a
 //! leaf's inline content, never as a block-formatting-context participant in its own right.
 //!
-//! # Margin collapsing: single-level, not chained
+//! # Margin collapsing: chained through first/last-child, not just one level
 //!
 //! CSS 2.1 §8.3.1 lets a box's top (or bottom) margin collapse through an unbroken chain of
-//! first-child (or last-child) empty-looking boxes, arbitrarily deep. M1a's ruling scopes
-//! this to exactly two relationships — adjacent siblings, and a container with its direct
-//! first/last child — and this implementation takes that literally: `effective_margin_top`/
-//! `effective_margin_bottom` peek at most one level down (a box's *direct* first/last
-//! block-level child's own specified margin, a plain style read, not that child's own
-//! `effective_margin_*`), never further. A chain of three or more nested margin-only boxes
-//! therefore collapses only pairwise at the outermost level in this implementation, not all
-//! the way through to the innermost margin — a deliberate, documented scope limit, not a
-//! bug: the 12 required tests and the 5 golden documents exercise at most one level of
-//! parent/child collapsing.
+//! first-child (or last-child) boxes with nothing separating them, arbitrarily deep —
+//! `<body><div><p>text</p></div></body>` is the ordinary case: `<body>`'s top margin, `<div>`'s
+//! top margin and `<p>`'s top margin are all one adjoining set, collapsing together to a
+//! single value, not three independent pairwise collapses. `effective_margin_top`/
+//! `effective_margin_bottom` implement exactly this: each walks its box's first/last-in-flow-
+//! block-child chain with a loop (not recursion — see "The walk has no recursion" above),
+//! collecting every box's own specified margin along the way for as long as each box in the
+//! chain has nothing separating it from its own next child (no top/bottom padding or border;
+//! for the bottom case, additionally `height: auto` and `min-height: 0` — a definite height or
+//! a positive `min-height` gives the box's content a floor a collapsed-through margin would
+//! silently violate), then combines the *whole* collected set at once via
+//! `collapse_margin_set` — not by folding pairwise, which would discard information for a
+//! chain of three or more mixed-sign margins (see that function's docs for a worked
+//! counterexample). Resolving each step's percentage margin needs that step's own containing
+//! block width, which is the *previous* step's content width, so the walk re-resolves each
+//! intermediate box's box model via `resolve_box_model` as it descends — the same computation
+//! that box gets "for real" once the main layout walk reaches it as a `Frame`/leaf; redoing it
+//! here is bounded by the chain's length (bounded by document depth, like every walk in this
+//! crate) and mutates nothing.
+//!
+//! What is still *not* implemented, deliberately out of M1a's scope:
+//! - **Negative-margin edge cases beyond the max-positive/min-negative rule** (e.g. CSS 2.1's
+//!   notes on clamping when a collapsed negative margin would pull a box's content above its
+//!   containing block) — `collapse_margin_set`'s general rule is applied uniformly and never
+//!   special-cased further.
+//! - **Self-collapsing empty blocks** (CSS 2.1 §8.3.1: a block with `height: auto`, no
+//!   padding/border and no in-flow content collapses its own top and bottom margins
+//!   *together*, then that combined margin can itself adjoin its neighbours' margins). This
+//!   crate's chains only ever walk *into* a box's children, never treat a box's own top and
+//!   bottom as adjoining each other.
+//! - **Clearance** (`clear` interacting with floats) — M1a implements no floats at all.
+//! - **BFC roots stopping the chain** — `overflow` other than `visible` establishes a new
+//!   block formatting context per CSS 2.1 §9.4.1, which must not let margins collapse through
+//!   it; this crate reads `overflow` into `LayoutStyle` (for paint, per the controller ruling)
+//!   but does not yet consult it here. Not exercised by any of the 12 tests or 5 goldens.
 //!
 //! # Margins never collapse through the document root
 //!
@@ -355,6 +380,7 @@ fn place_child(
         model.padding.bottom,
         model.border.bottom,
         model.known_height.is_none(),
+        model.min_height,
         model.content_width,
     );
 
@@ -979,10 +1005,23 @@ fn resolve_height(
     })
 }
 
-/// The used gap contributed above a box for margin-collapsing purposes (CSS 2.1 §8.3.1):
-/// its own top margin, collapsed with its direct first block-level child's top margin when
-/// eligible (no padding-top, no border-top — see the module docs' "Margin collapsing" section
-/// for why this peeks at most one level deep).
+/// The used gap contributed above a box for margin-collapsing purposes (CSS 2.1 §8.3.1): its
+/// own top margin, collapsed together with the top margins of its *whole* first-in-flow-
+/// block-child chain — its first block-level child, that child's first block-level child, and
+/// so on — for as long as each box in the chain has no top padding and no top border (nothing
+/// separating it from its own first child). See the module docs' "Margin collapsing" section:
+/// this walks the chain with a loop, not recursion, and combines every margin in the chain at
+/// once via [`collapse_margin_set`] (not pairwise — see that function's docs for why pairwise
+/// would give a wrong answer for a chain of three or more mixed-sign margins).
+///
+/// A box further down the chain's own containing block is the previous box's *content* width,
+/// not `content_width` (the box named by `box_id`'s containing block) — so each step resolves
+/// that child's box model (for its margin, and for its own content width/padding/border, to
+/// decide whether the chain continues and what the *next* step's containing block is) via
+/// [`resolve_box_model`], the same computation that child will get "for real" once the main
+/// layout walk reaches it as a [`Frame`]/leaf. Recomputing it here is bounded by the chain's
+/// length (itself bounded by document depth, like every other walk in this crate) and mutates
+/// nothing.
 fn effective_margin_top(
     box_tree: &BoxTree,
     box_id: BoxId,
@@ -991,21 +1030,36 @@ fn effective_margin_top(
     border_top: Au,
     content_width: Au,
 ) -> Au {
-    if padding_top != Au::ZERO || border_top != Au::ZERO {
-        return own_margin_top;
+    let mut margins = vec![own_margin_top];
+    let mut eligible = padding_top == Au::ZERO && border_top == Au::ZERO;
+    let mut current = box_id;
+    let mut current_content_width = content_width;
+    let mut remaining = box_tree.len();
+
+    while eligible && remaining > 0 {
+        remaining -= 1;
+        let Some(child_id) = first_block_child(box_tree, current) else {
+            break;
+        };
+        let Some(child) = box_tree.get(child_id) else {
+            break;
+        };
+        let child_model = resolve_box_model(&child.style, current_content_width, None);
+        margins.push(child_model.margin_top);
+        eligible = child_model.padding.top == Au::ZERO && child_model.border.top == Au::ZERO;
+        current_content_width = child_model.content_width;
+        current = child_id;
     }
-    match first_block_child(box_tree, box_id).and_then(|id| box_tree.get(id)) {
-        Some(child) => {
-            let child_margin_top = resolve_len_zero(child.style.margin.top, content_width);
-            collapse_margins(own_margin_top, child_margin_top)
-        }
-        None => own_margin_top,
-    }
+
+    collapse_margin_set(&margins)
 }
 
-/// The bottom-margin mirror of [`effective_margin_top`]: additionally requires the box's own
-/// height to be indefinite (`known_height_is_none`) — CSS 2.1 §8.3.1's bottom-margin case
-/// only collapses through a box whose height is `auto`.
+/// The bottom-margin mirror of [`effective_margin_top`], walking the *last*-in-flow-block-
+/// child chain instead. CSS 2.1 §8.3.1's bottom-margin case additionally requires each box in
+/// the chain to have a definite `height` of `auto` and `min-height` of `0` (a definite height
+/// or a positive `min-height` gives the box's content a floor that a collapsed-through margin
+/// would silently violate) — checked at every step, not just the first, via each step's own
+/// [`resolve_box_model`] result exactly as [`effective_margin_top`] re-derives padding/border.
 fn effective_margin_bottom(
     box_tree: &BoxTree,
     box_id: BoxId,
@@ -1013,18 +1067,37 @@ fn effective_margin_bottom(
     padding_bottom: Au,
     border_bottom: Au,
     known_height_is_none: bool,
+    min_height: Au,
     content_width: Au,
 ) -> Au {
-    if !known_height_is_none || padding_bottom != Au::ZERO || border_bottom != Au::ZERO {
-        return own_margin_bottom;
+    let mut margins = vec![own_margin_bottom];
+    let mut eligible = known_height_is_none
+        && min_height == Au::ZERO
+        && padding_bottom == Au::ZERO
+        && border_bottom == Au::ZERO;
+    let mut current = box_id;
+    let mut current_content_width = content_width;
+    let mut remaining = box_tree.len();
+
+    while eligible && remaining > 0 {
+        remaining -= 1;
+        let Some(child_id) = last_block_child(box_tree, current) else {
+            break;
+        };
+        let Some(child) = box_tree.get(child_id) else {
+            break;
+        };
+        let child_model = resolve_box_model(&child.style, current_content_width, None);
+        margins.push(child_model.margin_bottom);
+        eligible = child_model.known_height.is_none()
+            && child_model.min_height == Au::ZERO
+            && child_model.padding.bottom == Au::ZERO
+            && child_model.border.bottom == Au::ZERO;
+        current_content_width = child_model.content_width;
+        current = child_id;
     }
-    match last_block_child(box_tree, box_id).and_then(|id| box_tree.get(id)) {
-        Some(child) => {
-            let child_margin_bottom = resolve_len_zero(child.style.margin.bottom, content_width);
-            collapse_margins(own_margin_bottom, child_margin_bottom)
-        }
-        None => own_margin_bottom,
-    }
+
+    collapse_margin_set(&margins)
 }
 
 /// `box_id`'s first box-tree child, if it is block-level (`Block`/`AnonymousBlock`) —
@@ -1143,15 +1216,38 @@ fn clamp_au(v: Au, min: Au, max: Option<Au>) -> Au {
     }
 }
 
-/// Collapses two adjoining margins per CSS 2.1 §8.3.1: the greater of the two when both are
-/// non-negative; otherwise the largest positive value plus the most negative (smallest)
-/// value, so a positive/negative pair partially cancels rather than one dominating outright.
+/// Collapses two adjoining margins per CSS 2.1 §8.3.1 — a thin wrapper over
+/// [`collapse_margin_set`] for the common two-margin case (sibling collapsing, which only
+/// ever adjoins exactly one box's bottom margin with the next box's top margin).
 fn collapse_margins(a: Au, b: Au) -> Au {
-    if a.0 >= 0 && b.0 >= 0 {
-        return a.max(b);
+    collapse_margin_set(&[a, b])
+}
+
+/// Collapses a whole set of adjoining margins per CSS 2.1 §8.3.1's general rule: if every
+/// margin in the set is non-negative, the result is the greatest of them; otherwise, the
+/// largest positive value in the set plus the most negative (smallest) value in the set, so a
+/// positive/negative mix partially cancels rather than one value dominating outright.
+///
+/// This must be computed over the *whole* set at once, not by folding [`collapse_margins`]
+/// pairwise over the set one element at a time: pairwise folding re-clamps each intermediate
+/// result, which can discard a more extreme value seen earlier. For example, folding
+/// `[5, -3, -2]` pairwise gives `collapse(collapse(5, -3), -2) = collapse(2, -2) = 0`, but the
+/// spec's actual answer (computed over the whole set: max positive `5`, min negative `-3`) is
+/// `2` — the `-2` never gets to compete with the original `5` once it has already been
+/// blended into an intermediate `2`. [`effective_margin_top`]/[`effective_margin_bottom`]'s
+/// first/last-child chains rely on this being computed set-wise, not pairwise, to collapse
+/// correctly through a chain of three or more nested margins.
+///
+/// An empty set collapses to `0` (never actually passed — [`effective_margin_top`]/
+/// [`effective_margin_bottom`] always seed the set with the box's own margin — but kept total
+/// rather than assuming a non-empty slice).
+fn collapse_margin_set(margins: &[Au]) -> Au {
+    let mut max_positive = Au::ZERO;
+    let mut min_negative = Au::ZERO;
+    for &m in margins {
+        max_positive = max_positive.max(m.max(Au::ZERO));
+        min_negative = min_negative.min(m.min(Au::ZERO));
     }
-    let max_positive = a.max(Au::ZERO).max(b.max(Au::ZERO));
-    let min_negative = a.min(Au::ZERO).min(b.min(Au::ZERO));
     max_positive.saturating_add(min_negative)
 }
 
