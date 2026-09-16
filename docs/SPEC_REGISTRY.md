@@ -37,6 +37,7 @@
 | css-grid-2 | grid | `cl-layout::grid` (taffy) | wpt/css/css-grid | todo | |
 | css-position-3 | positioned layout | `cl-layout::positioned` | wpt/css/css-position | todo | |
 | css-transforms-2, css-color-4, filter-effects-1 | paint | `cl-paint` | reftests, wpt/css/css-transforms | todo | |
+| CSS2 Appendix E (порядок отрисовки), css-backgrounds-3 §2.11.2 (фон канвы) | построение display list | `cl-paint::build` | `crates/paint/tests/build.rs`, `display_list_goldens.rs` | partial | M1a: только фон + сплошные рамки + текст + клип `overflow:hidden`; фон/рамки инлайновых элементов не рисуются; нет border-radius/изображений/теней. |
 | html.spec.whatwg.org#event-loops | event loop | `cl-js::event_loop` | wpt/html/webappapis/scripting | todo | |
 | webidl.spec.whatwg.org | bindings semantics | `cl-bindings` | wpt/WebIDL, wpt/dom/idlharness | todo | |
 | fetch.spec.whatwg.org#fetching | fetch algorithm, CORS | `cl-net::fetch` | wpt/fetch, wpt/cors | todo | |

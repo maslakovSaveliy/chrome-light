@@ -1,0 +1,9 @@
+---
+source: crates/paint/tests/display_list_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
+---
+DisplayList bounds=(0.00, 0.00, 800.00, 600.00) items=4
+Text font=FontKey(1) size=20.00 origin=(8.00, 50.77) glyphs=6 #000080ff
+Text font=FontKey(1) size=20.00 origin=(59.40, 50.77) glyphs=5 #000080ff
+Text font=FontKey(1) size=20.00 origin=(107.72, 50.77) glyphs=5 #000080ff
+Text font=FontKey(1) size=20.00 origin=(154.00, 50.77) glyphs=4 #000080ff

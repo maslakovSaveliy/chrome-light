@@ -1,0 +1,31 @@
+[package]
+name = "cl-paint"
+description = "ChromeLight paint: display list building from a fragment tree in CSS2 paint order"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_paint"
+
+[dependencies]
+# `cl-dom` is not in the controller ruling's plain dependency list (it names cl-dom as a
+# dev-dependency only), but `build`'s signature takes `doc: &cl_dom::Document` — a type this
+# crate's own public API names in `src/build.rs` — so it must be a normal dependency, exactly
+# like `cl-layout` itself needed it as a normal (not dev) dependency for
+# `dump::fragment_tree_dump`'s identical `&Document` parameter. See task-19-report.md
+# "Deviations" for the full reasoning.
+cl-dom.workspace = true
+cl-fonts.workspace = true
+cl-layout.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+cl-html.workspace = true
+cl-net.workspace = true
+cl-style.workspace = true
+insta.workspace = true
+
+[lints]
+workspace = true

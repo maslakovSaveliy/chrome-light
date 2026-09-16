@@ -272,6 +272,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cl-paint"
+version = "0.0.1"
+dependencies = [
+ "cl-dom",
+ "cl-fonts",
+ "cl-html",
+ "cl-layout",
+ "cl-net",
+ "cl-style",
+ "insta",
+ "thiserror",
+]
+
+[[package]]
 name = "cl-platform"
 version = "0.0.1"
 dependencies = [

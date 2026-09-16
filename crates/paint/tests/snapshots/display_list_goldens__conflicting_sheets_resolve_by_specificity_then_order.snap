@@ -1,0 +1,7 @@
+---
+source: crates/paint/tests/display_list_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\"))"
+---
+DisplayList bounds=(0.00, 0.00, 800.00, 600.00) items=2
+Text font=FontKey(1) size=16.00 origin=(8.00, 41.10) glyphs=15 #0000ffff
+Text font=FontKey(1) size=22.00 origin=(339.23, 104.72) glyphs=11 #008000ff

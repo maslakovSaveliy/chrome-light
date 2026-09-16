@@ -33,6 +33,58 @@ pub struct Rect {
     pub size: Size,
 }
 
+impl Rect {
+    /// Builds a rect from CSS pixel coordinates, converting each through [`Au::from_px`].
+    ///
+    /// A convenience for callers (largely `cl-paint`, and this module's own tests) that
+    /// think in CSS pixels rather than app units; layout code that already has [`Point`]s
+    /// and [`Size`]s in hand should use [`Rect::new`] instead of round-tripping through
+    /// `f32`.
+    #[must_use]
+    pub fn from_px(x: f32, y: f32, w: f32, h: f32) -> Rect {
+        Rect {
+            origin: Point {
+                x: Au::from_px(x),
+                y: Au::from_px(y),
+            },
+            size: Size {
+                w: Au::from_px(w),
+                h: Au::from_px(h),
+            },
+        }
+    }
+
+    /// Builds a rect from an already-computed origin and size.
+    #[must_use]
+    pub fn new(origin: Point, size: Size) -> Rect {
+        Rect { origin, size }
+    }
+
+    /// The rect's right edge: `origin.x + size.w`, saturating rather than overflowing (see
+    /// [`Au::saturating_add`]).
+    #[must_use]
+    pub fn right(&self) -> Au {
+        self.origin.x.saturating_add(self.size.w)
+    }
+
+    /// The rect's bottom edge: `origin.y + size.h`, saturating rather than overflowing (see
+    /// [`Au::saturating_add`]).
+    #[must_use]
+    pub fn bottom(&self) -> Au {
+        self.origin.y.saturating_add(self.size.h)
+    }
+
+    /// Whether the rect has zero or negative area, i.e. paints nothing: either dimension is
+    /// `<= 0`. A layout bug could in principle produce a negative size (nothing in this
+    /// crate's arithmetic panics — see [`crate::au`] — so a pathological containing block
+    /// can still saturate to a nonsensical size); treating that the same as an empty rect
+    /// keeps a downstream paint pass from emitting a degenerate draw call for it.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.size.w <= Au::ZERO || self.size.h <= Au::ZERO
+    }
+}
+
 /// A CSS box's four sides (top, right, bottom, left — CSS's own clockwise-from-top order,
 /// matching how `margin`/`padding`/`border-width` shorthands enumerate their four values),
 /// each holding one `T`.
@@ -384,5 +436,87 @@ impl LayoutStyle {
             white_space: self.white_space,
             ..LayoutStyle::initial()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rect_from_px_should_convert_every_field_through_au_from_px() {
+        let r = Rect::from_px(1.0, 2.0, 3.0, 4.0);
+        assert_eq!(
+            r,
+            Rect {
+                origin: Point {
+                    x: Au::from_px(1.0),
+                    y: Au::from_px(2.0),
+                },
+                size: Size {
+                    w: Au::from_px(3.0),
+                    h: Au::from_px(4.0),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn rect_new_should_pair_the_given_origin_and_size_unchanged() {
+        let origin = Point {
+            x: Au::from_px(5.0),
+            y: Au::from_px(6.0),
+        };
+        let size = Size {
+            w: Au::from_px(7.0),
+            h: Au::from_px(8.0),
+        };
+        assert_eq!(Rect::new(origin, size), Rect { origin, size });
+    }
+
+    #[test]
+    fn rect_right_and_bottom_should_add_origin_and_size() {
+        let r = Rect::from_px(10.0, 20.0, 30.0, 40.0);
+        assert_eq!(r.right(), Au::from_px(40.0));
+        assert_eq!(r.bottom(), Au::from_px(60.0));
+    }
+
+    #[test]
+    fn rect_right_and_bottom_should_saturate_instead_of_overflowing() {
+        let r = Rect {
+            origin: Point {
+                x: Au::MAX,
+                y: Au::MAX,
+            },
+            size: Size {
+                w: Au::from_px(1.0),
+                h: Au::from_px(1.0),
+            },
+        };
+        assert_eq!(r.right(), Au::MAX);
+        assert_eq!(r.bottom(), Au::MAX);
+    }
+
+    #[test]
+    fn rect_is_empty_should_be_false_for_a_positive_area_rect() {
+        assert!(!Rect::from_px(0.0, 0.0, 1.0, 1.0).is_empty());
+    }
+
+    #[test]
+    fn rect_is_empty_should_be_true_for_zero_width_or_height() {
+        assert!(Rect::from_px(0.0, 0.0, 0.0, 10.0).is_empty());
+        assert!(Rect::from_px(0.0, 0.0, 10.0, 0.0).is_empty());
+    }
+
+    #[test]
+    fn rect_is_empty_should_be_true_for_negative_width_or_height() {
+        let negative_w = Rect {
+            origin: Point::default(),
+            size: Size {
+                w: Au(-1),
+                h: Au::from_px(10.0),
+            },
+        };
+        assert!(negative_w.is_empty());
     }
 }
