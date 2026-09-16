@@ -245,6 +245,13 @@ impl Document {
     /// attached somewhere. Cycle is checked before "already attached" so that
     /// re-attaching an existing ancestor lower in its own subtree is reported as the
     /// more specific `Cycle`, not `NotDetached`.
+    ///
+    /// # Complexity
+    ///
+    /// `O(1)` whenever `child` has no children of its own — the case every insert from
+    /// html5ever's tree builder is in, and the reason building a deeply nested document is
+    /// linear rather than quadratic. `O(depth)` otherwise (the full `is_ancestor_or_self`
+    /// walk). See the comment on the check itself.
     fn check_attach(&self, parent: NodeId, child: NodeId) -> Result<(), DomError> {
         if self.get(parent).is_none() {
             return Err(DomError::NoSuchNode(parent));
@@ -253,7 +260,21 @@ impl Document {
         if child == self.root() {
             return Err(DomError::IsDocument);
         }
-        if self.is_ancestor_or_self(child, parent) {
+        // A childless `child` has no descendants, so it can be nobody's ancestor: the only way
+        // attaching it under `parent` could make a cycle is `child == parent` itself. Taking
+        // that shortcut is not an optimisation of a rare path — it *is* the parse path.
+        // html5ever appends every element it creates while it is still empty, so without the
+        // shortcut building an `n`-deep document costs `1 + 2 + … + n = O(n²)` ancestor steps
+        // (each insert re-walks `parent`'s whole chain to the root) on entirely ordinary,
+        // attacker-controllable input. See `deep_append_chain_should_be_linear`. The full walk
+        // still runs for a `child` that has children — and for `reparent_children`, which moves
+        // populated subtrees.
+        let makes_cycle = if child_node.first_child().is_none() {
+            child == parent
+        } else {
+            self.is_ancestor_or_self(child, parent)
+        };
+        if makes_cycle {
             return Err(DomError::Cycle {
                 ancestor: child,
                 descendant: parent,
@@ -615,6 +636,92 @@ mod tests {
     fn get_should_return_none_for_unknown_id() {
         let doc = Document::new("about:blank");
         assert!(doc.get(NodeId::from_index(99)).is_none());
+    }
+
+    /// The wall-clock budget for [`deep_append_chain_should_be_linear`]: 2s normally, 6s under
+    /// `CL_SMOKE_SLOW=1` — the same escape hatch this repo's other smoke tests use for a slow
+    /// or loaded CI runner (`docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`).
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "`std::env::var` is restricted to `cl-platform` in production code so env \
+                  access stays centralized/testable there; this is a test-only smoke-test \
+                  escape hatch matching the repo's documented convention for this exact env \
+                  var, not production configuration"
+    )]
+    fn smoke_time_limit() -> std::time::Duration {
+        if std::env::var("CL_SMOKE_SLOW").as_deref() == Ok("1") {
+            std::time::Duration::from_secs(6)
+        } else {
+            std::time::Duration::from_secs(2)
+        }
+    }
+
+    /// Building a deeply nested document is `create` + `append_child` repeated, which is
+    /// exactly what html5ever's tree builder does for every element on a page — and the
+    /// document's nesting depth is attacker-controlled. `check_attach`'s cycle check used to
+    /// walk `parent`'s whole ancestor chain on every insert, so an `n`-deep chain cost
+    /// `1 + 2 + … + n = O(n²)` ancestor steps: at `n = 50_000` that is ~1.25 billion steps, minutes
+    /// in a debug build. The short-circuit in `check_attach` (a childless `child` can be nobody's
+    /// ancestor, so the check is exactly `child == parent`) makes each insert `O(1)`.
+    ///
+    /// The bound is deliberately loose — an `O(n)` build finishes in tens of milliseconds, so 2s
+    /// is a ~100× margin, not a close call — because the point is to catch a return to quadratic,
+    /// not to police constant factors.
+    #[test]
+    fn deep_append_chain_should_be_linear() {
+        const DEPTH: usize = 50_000;
+
+        let start = std::time::Instant::now();
+        let mut doc = Document::new("about:blank");
+        let mut parent = doc.root();
+        for _ in 0..DEPTH {
+            let child = el(&mut doc, "div");
+            doc.append_child(parent, child)
+                .expect("a freshly created node is detached and is never the root");
+            parent = child;
+        }
+        let elapsed = start.elapsed();
+
+        assert_eq!(doc.len(), DEPTH + 1, "root plus one element per level");
+        let limit = smoke_time_limit();
+        assert!(
+            elapsed < limit,
+            "building a {DEPTH}-deep chain took {elapsed:?}, expected well under {limit:?} — \
+             this smells like `check_attach`'s cycle check went back to walking the whole \
+             ancestor chain per insert. Set CL_SMOKE_SLOW=1 to raise the bound on a \
+             slow/loaded machine."
+        );
+    }
+
+    /// The short-circuit must not weaken the cycle check it short-circuits: a node *with*
+    /// children still gets the full ancestor walk, and a childless node attached under itself
+    /// is still a `Cycle`, not an `Ok`.
+    #[test]
+    fn cycle_check_should_still_reject_an_ancestor_reattached_under_its_own_descendant() {
+        let mut doc = Document::new("about:blank");
+        let root = doc.root();
+        let a = el(&mut doc, "a");
+        let b = el(&mut doc, "b");
+        let c = el(&mut doc, "c");
+        doc.append_child(root, a).expect("a");
+        doc.append_child(a, b).expect("b");
+        doc.append_child(b, c).expect("c");
+
+        // `a` has children, so the full walk runs: `c`'s ancestor chain reaches `a`.
+        assert!(matches!(
+            doc.append_child(c, a),
+            Err(DomError::Cycle {
+                ancestor, descendant
+            }) if ancestor == a && descendant == c
+        ));
+
+        // A childless node under itself: the short-circuited path must still catch it.
+        assert!(matches!(
+            doc.append_child(c, c),
+            Err(DomError::Cycle {
+                ancestor, descendant
+            }) if ancestor == c && descendant == c
+        ));
     }
 
     proptest! {

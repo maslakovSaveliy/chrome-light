@@ -2,15 +2,20 @@
 //! [`cl_dom::Document`].
 //!
 //! [`DomSink`] wraps its state in two `RefCell`s — the arena `Document` (`doc`) and the
-//! collected parse-error messages (`errors`) — the *only* `RefCell`s anywhere in this
-//! pipeline (`docs/CODING_STANDARDS.md` §1 forbids `Rc`/`RefCell` everywhere else): every
-//! `TreeSink` method takes `&self` (html5ever's own trait shape, not a choice we get to make —
-//! see the Task 8 report for the registry source this was verified against), so interior
-//! mutability is the only way to mutate either field from behind that `&self`. Neither escapes
-//! this module: [`DomSink::finish`] takes `self` by value (html5ever's `TreeSink::finish`
-//! signature, not `&self`) and unwraps both `RefCell`s with `into_inner`, handing the caller a
-//! plain owned [`cl_dom::Document`] and `Vec<String>` of parse errors (wrapped together into
-//! [`ParseOutputInner`]).
+//! collected parse-error messages (`errors`) — plus one `Cell` (`errors_suppressed`, a plain
+//! `usize`). Those are the *only* `RefCell`s anywhere in this pipeline
+//! (`docs/CODING_STANDARDS.md` §1 forbids `Rc`/`RefCell` everywhere else): every `TreeSink`
+//! method takes `&self` (html5ever's own trait shape, not a choice we get to make — see the
+//! Task 8 report for the registry source this was verified against), so interior mutability is
+//! the only way to mutate any of them from behind that `&self`. None escapes this module:
+//! [`DomSink::finish`] takes `self` by value (html5ever's `TreeSink::finish` signature, not
+//! `&self`) and unwraps all three with `into_inner`, handing the caller a plain owned
+//! [`cl_dom::Document`], `Vec<String>` of parse errors, and suppressed-error count (wrapped
+//! together into [`ParseOutputInner`]).
+//!
+//! Parse errors are capped at [`crate::MAX_PARSE_ERRORS`] and the rest counted, since how many
+//! of them a document produces — and therefore how many `String`s this sink allocates — is
+//! entirely under the document author's control.
 //!
 //! Every method here is written to never panic, even though several of the trait's own doc
 //! comments say "feel free to panic!" for cases html5ever promises never to trigger (e.g.
@@ -22,9 +27,18 @@
 //! back to an empty [`QualName`] instead of unwrapping a missing lookup, and
 //! [`TreeSink::get_template_contents`] falls back to returning the handle it was given instead
 //! of unwrapping `Element::template_contents`.
+//!
+//! One contract this sink cannot enforce and does not try to: [`TreeSink::elem_name`] returns a
+//! `Ref<'_, QualName>` borrowed out of the `doc` `RefCell`, so html5ever must not call another
+//! `&self` method that borrows `doc` mutably while that guard is alive or the `RefCell` panics
+//! at runtime. That ordering is upstream html5ever's to honour (its own `TreeSink` associated
+//! type `ElemName<'a>` is designed for exactly this borrow shape, and `markup5ever`'s reference
+//! `RcDom` sink returns the same kind of guard); nothing this module can write would make a
+//! violation safe, so the guard is kept as short-lived as the trait allows and the contract is
+//! recorded here rather than silently assumed.
 
 use std::borrow::Cow;
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::sync::LazyLock;
 
 use cl_dom::{Attr, Doctype, Document, Element, Node, NodeId, NodeKind, QuirksMode};
@@ -48,8 +62,11 @@ static UNKNOWN_ELEMENT_NAME: LazyLock<QualName> =
 pub(crate) struct ParseOutputInner {
     /// The parsed document tree.
     pub(crate) document: Document,
-    /// Every parse error html5ever reported while building the tree, in report order.
+    /// The first [`crate::MAX_PARSE_ERRORS`] parse errors html5ever reported while building the
+    /// tree, in report order.
     pub(crate) parse_errors: Vec<String>,
+    /// How many further parse errors were reported once `parse_errors` hit the cap.
+    pub(crate) parse_errors_suppressed: usize,
 }
 
 /// Bridges html5ever's [`TreeSink`] callbacks onto a [`cl_dom::Document`].
@@ -61,7 +78,12 @@ pub(crate) struct ParseOutputInner {
 /// [`TreeSink::finish`].
 pub(crate) struct DomSink {
     doc: RefCell<Document>,
+    /// The kept parse-error messages, never longer than [`crate::MAX_PARSE_ERRORS`].
     errors: RefCell<Vec<String>>,
+    /// How many parse errors arrived after `errors` was full — see
+    /// [`crate::ParseOutput::parse_errors_suppressed`]. A `Cell`, not a `RefCell`: a `usize` is
+    /// `Copy`, so it never needs a borrow guard.
+    errors_suppressed: Cell<usize>,
 }
 
 impl DomSink {
@@ -70,6 +92,7 @@ impl DomSink {
         Self {
             doc: RefCell::new(Document::new(base_url)),
             errors: RefCell::new(Vec::new()),
+            errors_suppressed: Cell::new(0),
         }
     }
 }
@@ -107,11 +130,21 @@ impl TreeSink for DomSink {
         ParseOutputInner {
             document: self.doc.into_inner(),
             parse_errors: self.errors.into_inner(),
+            parse_errors_suppressed: self.errors_suppressed.into_inner(),
         }
     }
 
     fn parse_error(&self, msg: Cow<'static, str>) {
-        self.errors.borrow_mut().push(msg.into_owned());
+        let mut errors = self.errors.borrow_mut();
+        if errors.len() < crate::MAX_PARSE_ERRORS {
+            errors.push(msg.into_owned());
+        } else {
+            // Counted, not kept: how many parse errors a document produces is entirely
+            // author-controlled, and each kept message is an allocation. See
+            // `crate::MAX_PARSE_ERRORS`.
+            self.errors_suppressed
+                .set(self.errors_suppressed.get().saturating_add(1));
+        }
     }
 
     fn get_document(&self) -> Self::Handle {
@@ -531,6 +564,29 @@ mod tests {
     fn parse_errors_should_be_collected_not_fatal() {
         let output = parse_document_str("</p>", &base()).expect("still Ok, not Err");
         assert!(!output.parse_errors.is_empty());
+        assert_eq!(output.parse_errors_suppressed, 0);
+    }
+
+    /// Every parse error html5ever reports is a heap-allocated `String`, and the number of them
+    /// is entirely attacker-controlled: one stray end tag is one error, so a document that is
+    /// nothing but stray end tags costs memory linear in its own size *on top of* the tree. Keep
+    /// the first `MAX_PARSE_ERRORS` (enough to diagnose anything a human would read) and count
+    /// the rest. Parsing still succeeds — a parse error is diagnostic, never fatal.
+    #[test]
+    fn parse_errors_should_be_capped_and_the_rest_counted() {
+        let html = "</x>".repeat(10_000);
+        let output = parse_document_str(&html, &base()).expect("still Ok, not Err");
+
+        assert_eq!(
+            output.parse_errors.len(),
+            crate::MAX_PARSE_ERRORS,
+            "the kept errors must stop at the cap"
+        );
+        assert!(
+            output.parse_errors_suppressed >= 9_000,
+            "the rest must be counted, not dropped silently: {}",
+            output.parse_errors_suppressed
+        );
     }
 
     #[test]

@@ -89,6 +89,17 @@ impl Url {
         // must not be able to turn a "local file" load into an SMB fetch that bypasses the
         // network policy `load_file` does not have. `localhost` and the empty host both mean
         // "this machine" per the URL Standard and are accepted.
+        //
+        // In practice the `localhost` arm never fires: the URL Standard's file-host parser
+        // normalises a `localhost` host to the empty host ("If host is `localhost`, then set
+        // host to the empty string"), and the `url` crate implements that — `file://localhost/x`
+        // parses with `host_str() == None`. The arm is kept as defence in depth against a
+        // future `url` version that stops normalising, not because it is reachable today.
+        //
+        // An IP-literal loopback host (`file://127.0.0.1/x`, `file://[::1]/x`) is deliberately
+        // *not* special-cased and falls to the `Some(_) => None` arm. That is spec-correct: the
+        // URL Standard normalises only the literal string `localhost`, and nothing says a
+        // loopback address names this machine's filesystem.
         match self.0.host_str() {
             None | Some("" | "localhost") => self.0.to_file_path().ok(),
             Some(_) => None,
@@ -165,13 +176,38 @@ mod tests {
         // `to_file_path` legitimately requires a drive letter.
         let path = std::env::temp_dir().join("cl-net-host-test");
         let empty = Url::from_file_path(&path).expect("temp dir is absolute");
-        assert!(empty.to_file_path().is_some());
+        assert_eq!(
+            empty.to_file_path().as_deref(),
+            Some(path.as_path()),
+            "the empty host is this machine: the URL must map back to the path it was built from"
+        );
 
         // Same URL with an explicit `localhost` host: per the URL Standard it still means
-        // "this machine", so it must resolve to the same path.
+        // "this machine", so it must resolve to the same concrete path. Asserted against
+        // `path` itself, not against `empty.to_file_path()` — comparing the two results with
+        // each other would still pass if both were `None`, which is exactly the failure this
+        // test exists to catch.
         let with_localhost = Url::parse(&empty.as_str().replacen("file://", "file://localhost", 1))
             .expect("still a valid file URL");
-        assert_eq!(with_localhost.to_file_path(), empty.to_file_path());
+        assert_eq!(
+            with_localhost.to_file_path().as_deref(),
+            Some(path.as_path()),
+            "an explicit `localhost` host must map to the same local path as the empty host"
+        );
+    }
+
+    #[test]
+    fn from_file_path_should_reject_a_relative_path() {
+        // Deliberately platform-independent: `a/b` is relative on Unix and on Windows alike,
+        // so this asserts the same thing on every CI runner. `from_file_path` takes only
+        // absolute paths — a relative one has no well-defined `file:` URL without a notion of
+        // "the current directory", which nothing in this engine may depend on.
+        let err = Url::from_file_path(std::path::Path::new("a/b"))
+            .expect_err("a relative path has no file URL");
+        assert!(
+            matches!(err, NetError::Url(ref msg) if msg.contains("not a valid absolute file path")),
+            "expected a Url error naming the path, got {err:?}"
+        );
     }
 
     #[test]

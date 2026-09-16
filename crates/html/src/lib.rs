@@ -54,13 +54,34 @@ pub struct ParseOutput {
     pub encoding: &'static Encoding,
     /// Which stage of encoding sniffing chose [`ParseOutput::encoding`].
     pub encoding_source: EncodingSource,
-    /// Every parse error html5ever reported while building the tree, in report order. The HTML
-    /// tree-construction algorithm is defined to always recover from a parse error rather than
-    /// abort (see <https://html.spec.whatwg.org/multipage/parsing.html#parse-errors>), so this
-    /// is diagnostic-only: a non-empty list does not mean parsing failed, and [`parse_document`]
+    /// Every parse error html5ever reported while building the tree, in report order — capped
+    /// at the first [`MAX_PARSE_ERRORS`], with the remainder counted in
+    /// [`ParseOutput::parse_errors_suppressed`]. The HTML tree-construction algorithm is
+    /// defined to always recover from a parse error rather than abort (see
+    /// <https://html.spec.whatwg.org/multipage/parsing.html#parse-errors>), so this is
+    /// diagnostic-only: a non-empty list does not mean parsing failed, and [`parse_document`]
     /// returns `Ok` regardless of whether any were reported.
     pub parse_errors: Vec<String>,
+    /// How many further parse errors were reported after [`ParseOutput::parse_errors`] reached
+    /// [`MAX_PARSE_ERRORS`] and stopped keeping them. `0` for any document under the cap.
+    ///
+    /// The count is kept rather than the messages so that "this document was catastrophically
+    /// malformed" stays visible to a caller (a conformance harness, a `chrome://` diagnostic)
+    /// without the messages themselves being an attacker-controlled allocation — see
+    /// [`MAX_PARSE_ERRORS`].
+    pub parse_errors_suppressed: usize,
 }
+
+/// How many parse-error messages a single [`ParseOutput`] keeps before it starts counting them
+/// instead (see [`ParseOutput::parse_errors_suppressed`]).
+///
+/// Every message is a heap-allocated `String`, and how many of them a document produces is
+/// entirely under the author's control: one stray end tag is one parse error, so a document of
+/// nothing but stray end tags allocates a message list linear in its own length on top of the
+/// tree it builds — a cheap amplification from a hostile page. 256 is far more than a human or
+/// a diagnostic tool reads before the picture is clear, and small enough to be irrelevant next
+/// to the tree itself.
+pub const MAX_PARSE_ERRORS: usize = 256;
 
 /// Parses `bytes` — a document's raw, possibly attacker-controlled bytes — into a
 /// [`ParseOutput`].
@@ -94,6 +115,7 @@ pub fn parse_document(
         encoding,
         encoding_source,
         parse_errors: output.parse_errors,
+        parse_errors_suppressed: output.parse_errors_suppressed,
     })
 }
 
@@ -120,6 +142,7 @@ pub fn parse_document_str(html: &str, base_url: &Url) -> Result<ParseOutput, Htm
         encoding: encoding_rs::UTF_8,
         encoding_source: EncodingSource::Default,
         parse_errors: output.parse_errors,
+        parse_errors_suppressed: output.parse_errors_suppressed,
     })
 }
 

@@ -63,6 +63,11 @@ h4 { font-size: 1em;    margin: 1.33em 0; }
 h5 { font-size: 0.83em; margin: 1.67em 0; }
 h6 { font-size: 0.67em; margin: 2.33em 0; }
 
+/* Headings are bold (HTML §15.3.7). M1a bundles only Regular faces and synthesises no bold,
+ * so this changes the computed value, not the rendering — see `docs/SPEC_REGISTRY.md`'s
+ * css-fonts row. */
+h1, h2, h3, h4, h5, h6 { font-weight: bold; }
+
 /* Preformatted text keeps its source whitespace and renders in the browser's monospace
  * font rather than the page's default sans-serif. */
 pre { white-space: pre; font-family: monospace; }

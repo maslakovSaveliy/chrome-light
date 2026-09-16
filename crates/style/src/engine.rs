@@ -493,4 +493,41 @@ mod tests {
              coincidentally-matching default, after the engine that produced it is dropped"
         );
     }
+
+    /// HTML §15.3.7 ("Sections and headings") gives `h1`-`h6` `font-weight: bold`; the UA sheet
+    /// had their `font-size`/`margin` steps but not their weight, so a heading computed to the
+    /// initial `normal` (400). `bold` is the keyword's numeric 700.
+    ///
+    /// M1a bundles only Regular faces and synthesises no bold, so this changes no *rendering*
+    /// (see `docs/SPEC_REGISTRY.md`'s css-fonts row) — it changes the computed value, which is
+    /// what a style golden, a future `cl-devtools` and any synthetic-bold work later will read.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn headings_should_compute_font_weight_bold() {
+        let doc = parse("<h1>a</h1><h3>b</h3><h6>c</h6><p>d</p>");
+        let mut engine = StyleEngine::new((800.0, 600.0), 1.0).expect("engine");
+        engine.add_ua_sheet().expect("ua sheet");
+        let styled = engine.resolve(doc).expect("resolve");
+
+        for tag in ["h1", "h3", "h6"] {
+            let el = find(styled.document(), tag).expect("heading in the parsed document");
+            let weight = styled
+                .computed(el)
+                .expect("styled heading")
+                .clone_font_weight();
+            assert_eq!(
+                weight,
+                style::values::computed::FontWeight::from_float(700.0),
+                "<{tag}> must compute font-weight: bold (700)"
+            );
+        }
+
+        let p = find(styled.document(), "p").expect("<p> in the parsed document");
+        let weight = styled.computed(p).expect("styled <p>").clone_font_weight();
+        assert_eq!(
+            weight,
+            style::values::computed::FontWeight::from_float(400.0),
+            "the rule must be scoped to headings: <p> stays at the initial normal (400)"
+        );
+    }
 }

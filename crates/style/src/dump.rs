@@ -9,6 +9,15 @@
 //!
 //! Only elements appear. Text, comments and doctypes have no computed style of their own,
 //! and printing them would double the size of every golden for no information.
+//!
+//! One deliberate divergence from `html5lib_tree`, despite the shared layout: a
+//! `<template>` element's contents are **not** walked. `html5lib_tree` renders them under a
+//! synthetic `content` line because the corpus requires the parsed shape to be visible; here
+//! there is nothing to show — template contents are inert, never styled by
+//! `StyleEngine::resolve` (which walks the element tree, and a template's content fragment is
+//! not part of it), so every line would report the same "no computed style" placeholder. A
+//! `<template>` therefore prints as a single element line with its own computed values and no
+//! children.
 
 use std::fmt::Write as _;
 

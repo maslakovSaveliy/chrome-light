@@ -52,6 +52,11 @@ use crate::{Namespace, ns};
 ///   [`crate::Element::template_contents`]); they render under a synthetic `content` line
 ///   one level deeper than the `<template>` element itself, with the actual contents one
 ///   level deeper again.
+/// - **Newlines**: lines are joined by `\n`, with no leading and no trailing newline — the
+///   returned `String` starts at the `#` of `#document` and ends at the last character of the
+///   last node's line. That is the corpus's own convention for a `#document` block, so a
+///   harness can compare the result to a `.dat` section verbatim; a caller printing it to a
+///   terminal adds the final newline itself.
 ///
 /// A [`NodeKind::ProcessingInstruction`] is not part of this contract: HTML5 tree
 /// construction never produces one (a `<?...?>` in HTML source becomes a bogus comment —
