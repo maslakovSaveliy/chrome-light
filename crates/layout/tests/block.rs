@@ -59,6 +59,25 @@ fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
     }
 }
 
+/// The wall-clock budget for [`deep_first_child_chain_should_lay_out_in_linear_time`]: 5s
+/// normally, 15s when `CL_SMOKE_SLOW=1` is set — the same escape hatch the plan's other smoke
+/// tests (`docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`) use for a slow or loaded
+/// CI runner.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "`std::env::var` is restricted to `cl-platform` in production code so env access \
+              stays centralized/testable there; this is a test-only smoke-test escape hatch \
+              matching the plan's own documented convention for this exact env var, not \
+              production configuration"
+)]
+fn smoke_time_limit() -> std::time::Duration {
+    if std::env::var("CL_SMOKE_SLOW").as_deref() == Ok("1") {
+        std::time::Duration::from_secs(15)
+    } else {
+        std::time::Duration::from_secs(5)
+    }
+}
+
 /// `width: auto` on a child of an 800px-wide containing block fills it exactly (CSS 2.1
 /// §10.3.3): a 10px-tall, no-margin `<div>` becomes an 800×10 border box at the origin.
 #[test]
@@ -143,6 +162,43 @@ fn min_width_should_clamp_percent_result() {
     let (tree, styled) = common::layout_html(html);
     let target = fragment_by_id(&tree, styled.document(), "target");
     assert_eq!(target.border_box, rect(0.0, 0.0, 100.0, 10.0));
+}
+
+/// When `min-width` exceeds `max-width`, CSS 2.1 §10.4 treats `max-width` as if it equalled
+/// `min-width` — so the used width is `min-width`, not `max-width` (which is lower) and not
+/// the unclamped specified `width` (which is higher). This is the exact regression a bug in
+/// `clamp_au` produced: clamping to `min` first and only then checking `max < min` left an
+/// oversized `v` unclamped whenever it already exceeded `min`, returning `300px` instead of
+/// the correct `200px` here.
+#[test]
+fn min_width_greater_than_max_width_should_use_min() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #target { width: 300px; min-width: 200px; max-width: 50px; height: 10px }
+        </style>
+        <body><div id="target"></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let target = fragment_by_id(&tree, styled.document(), "target");
+    assert_eq!(target.border_box, rect(0.0, 0.0, 200.0, 10.0));
+}
+
+/// The height mirror of [`min_width_greater_than_max_width_should_use_min`] (CSS 2.1 §10.7):
+/// `min-height: 200px` exceeding `max-height: 50px` means the used height is `200px`, not the
+/// unclamped specified `300px`.
+#[test]
+fn min_height_greater_than_max_height_should_use_min() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #target { width: 100px; height: 300px; min-height: 200px; max-height: 50px }
+        </style>
+        <body><div id="target"></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let target = fragment_by_id(&tree, styled.document(), "target");
+    assert_eq!(target.border_box, rect(0.0, 0.0, 100.0, 200.0));
 }
 
 /// `max-height` clamps an `auto`-computed content height (CSS 2.1 §10.7): two 30px children
@@ -492,6 +548,76 @@ fn nested_blocks_should_stack_vertically() {
         Size {
             w: px(200.0),
             h: px(60.0)
+        }
+    );
+}
+
+/// A single-child chain `DEPTH` boxes deep — `<div style="margin-top:1px">` nested `DEPTH`
+/// times — is exactly the shape `effective_margin_top`'s memoization exists to defend against
+/// (see its "Complexity" doc section): without it, placing each of the `n` boxes in the chain
+/// would re-walk the remainder of the chain below it, `n + (n-1) + … + 1 = O(n²)` total. Every
+/// margin in this fixture is `1px` (all non-negative), so the whole chain collapses to `1px`,
+/// applied once between `<html>` and `<body>` (the root/viewport boundary — see the module
+/// docs — is the only place nothing absorbs it further); every box below `<body>`, all the
+/// way down to `#innermost`, then sits flush against its parent's content edge, so
+/// `#innermost`'s border box ends up at the same absolute `y = 1px` as `<body>` itself. The
+/// HTML string is built with a loop, not recursion, matching this crate's own no-recursion
+/// discipline for anything sized by a hostile/pathological document.
+///
+/// `DEPTH = 5_000`, not the 50,000 the review that requested this test named: measured with a
+/// throwaway per-stage timer (parse → style → box tree → layout) before picking a depth,
+/// `cl_html::parse_document_str` and `cl_style::StyleEngine::resolve` are themselves
+/// quadratic in nesting depth — a pre-existing characteristic of those two crates, unrelated
+/// to this fix — costing (this machine, debug build) `parse=2.67s style=1.97s` at depth
+/// 8,000 alone and climbing so steeply that depth 50,000 did not finish parsing+styling in
+/// several minutes (killed, not measured to completion). `cl_layout::box_tree::build` and
+/// `cl_layout::block::layout` (this task's own code) were confirmed **linear** at every depth
+/// sampled up to 8,000 (`layout`: `1.7ms → 2.4ms → 4.7ms → 9.2ms → 18.7ms` at depths `500,
+/// 1000, 2000, 4000, 8000` — each depth doubling roughly doubles the time, not quadruples it).
+/// At `DEPTH = 5_000`, total pipeline wall time measured `≈ 1.9s` — comfortable under the 5s
+/// bound below — while still being deep enough that a regression back to `O(n²)` in *this*
+/// crate's own margin-chain walk (the thing this test actually guards) would cost on the
+/// order of `n/2 ≈ 2,500×` this run's `layout` time alone (chain-node visits go from `O(n)` to
+/// `O(n²/2)`), i.e. tens of seconds — decisively over budget, not a close call. See the fix
+/// report for the full per-depth measurement table.
+///
+/// Bounded at 5s total (parse + style + box tree + layout — an `O(n)` `layout` at this depth
+/// finishes in milliseconds; the 5s budget is almost entirely `parse`/`style`'s own,
+/// unavoidable cost at this depth, not this crate's). `CL_SMOKE_SLOW=1` raises the bound to
+/// 15s, the same escape hatch the plan's other smoke tests use, for a slow/loaded CI runner.
+#[test]
+fn deep_first_child_chain_should_lay_out_in_linear_time() {
+    const DEPTH: usize = 5_000;
+
+    let mut html = String::from(r#"<body style="margin:0">"#);
+    for _ in 0..DEPTH - 1 {
+        html.push_str(r#"<div style="margin-top:1px">"#);
+    }
+    html.push_str(r#"<div id="innermost" style="margin-top:1px">x</div>"#);
+    for _ in 0..DEPTH - 1 {
+        html.push_str("</div>");
+    }
+    html.push_str("</body>");
+
+    let start = std::time::Instant::now();
+    let (tree, styled) = common::layout_html(&html);
+    let elapsed = start.elapsed();
+
+    let limit = smoke_time_limit();
+    assert!(
+        elapsed < limit,
+        "layout of a {DEPTH}-deep first-child chain took {elapsed:?}, expected well under \
+         {limit:?} — an O(n) walk should take milliseconds; this smells like the margin-chain \
+         memoization regressed to O(n^2). Set CL_SMOKE_SLOW=1 to raise the bound to 15s on a \
+         slow/loaded machine."
+    );
+
+    let innermost = fragment_by_id(&tree, styled.document(), "innermost");
+    assert_eq!(
+        innermost.border_box.origin,
+        Point {
+            x: px(0.0),
+            y: px(1.0)
         }
     );
 }

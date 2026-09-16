@@ -211,9 +211,30 @@ struct Frame {
 
 /// Runs the whole block-formatting-context walk for `box_tree` against `viewport` and
 /// returns the finished [`FragmentTree`]. See the module docs for the algorithm's shape.
+/// Per-[`BoxId`] memo for [`effective_margin_top`]/[`effective_margin_bottom`], so the total
+/// work `layout()` spends walking first/last-child margin-collapsing chains across the whole
+/// document is `O(n)`, not `O(n²)` for an `n`-deep single-child chain (`<div><div><div>…`) —
+/// see [`effective_margin_top`]'s docs for the complexity argument and why memoizing by
+/// `BoxId` alone (no other key) is sound.
+struct MarginMemo {
+    top: Vec<Option<Au>>,
+    bottom: Vec<Option<Au>>,
+}
+
+impl MarginMemo {
+    /// Builds an empty memo sized for a box tree of `len` boxes (`BoxTree::len`).
+    fn new(len: usize) -> MarginMemo {
+        MarginMemo {
+            top: vec![None; len],
+            bottom: vec![None; len],
+        }
+    }
+}
+
 fn run(box_tree: &BoxTree, viewport: Viewport) -> FragmentTree {
     let mut fragments: Vec<Fragment> = Vec::new();
     let mut styles: Vec<LayoutStyle> = Vec::new();
+    let mut memo = MarginMemo::new(box_tree.len());
 
     let root_id = box_tree.root;
     let Some(root_box) = box_tree.get(root_id) else {
@@ -267,7 +288,7 @@ fn run(box_tree: &BoxTree, viewport: Viewport) -> FragmentTree {
             .map(|top| top.next_child < top.block_children.len())
         {
             if has_next {
-                advance_child(box_tree, &mut stack, &mut fragments, &mut styles);
+                advance_child(box_tree, &mut stack, &mut fragments, &mut styles, &mut memo);
             } else if let Some(tree) =
                 finalize_top(&mut stack, &mut fragments, &mut styles, viewport)
             {
@@ -363,6 +384,7 @@ fn place_child(
     child_box_id: BoxId,
     style: &LayoutStyle,
     parent: &ParentContext,
+    memo: &mut MarginMemo,
 ) -> ChildPlacement {
     let model = resolve_box_model(style, parent.content_width, parent.cb_height);
     let eff_top = effective_margin_top(
@@ -372,16 +394,20 @@ fn place_child(
         model.padding.top,
         model.border.top,
         model.content_width,
+        &mut memo.top,
     );
     let eff_bottom = effective_margin_bottom(
         box_tree,
         child_box_id,
-        model.margin_bottom,
-        model.padding.bottom,
-        model.border.bottom,
-        model.known_height.is_none(),
-        model.min_height,
+        &OwnBottomMargin {
+            margin_bottom: model.margin_bottom,
+            padding_bottom: model.padding.bottom,
+            border_bottom: model.border.bottom,
+            known_height_is_none: model.known_height.is_none(),
+            min_height: model.min_height,
+        },
         model.content_width,
+        &mut memo.bottom,
     );
 
     let gap_before = match parent.prev_margin_bottom {
@@ -417,6 +443,7 @@ fn advance_child(
     stack: &mut Vec<Frame>,
     fragments: &mut Vec<Fragment>,
     styles: &mut Vec<LayoutStyle>,
+    memo: &mut MarginMemo,
 ) {
     let Some(top) = stack.last_mut() else {
         return;
@@ -437,7 +464,7 @@ fn advance_child(
     let Some(child) = box_tree.get(child_box_id) else {
         return;
     };
-    let placement = place_child(box_tree, child_box_id, &child.style, &parent);
+    let placement = place_child(box_tree, child_box_id, &child.style, &parent, memo);
 
     if is_block_container(box_tree, child_box_id) {
         push_container_frame(stack, fragments.len(), child, &placement);
@@ -1011,8 +1038,8 @@ fn resolve_height(
 /// so on — for as long as each box in the chain has no top padding and no top border (nothing
 /// separating it from its own first child). See the module docs' "Margin collapsing" section:
 /// this walks the chain with a loop, not recursion, and combines every margin in the chain at
-/// once via [`collapse_margin_set`] (not pairwise — see that function's docs for why pairwise
-/// would give a wrong answer for a chain of three or more mixed-sign margins).
+/// once via [`memoize_suffix_collapse`] (not pairwise — see [`collapse_margin_set`]'s docs for
+/// why pairwise would give a wrong answer for a chain of three or more mixed-sign margins).
 ///
 /// A box further down the chain's own containing block is the previous box's *content* width,
 /// not `content_width` (the box named by `box_id`'s containing block) — so each step resolves
@@ -1021,7 +1048,48 @@ fn resolve_height(
 /// [`resolve_box_model`], the same computation that child will get "for real" once the main
 /// layout walk reaches it as a [`Frame`]/leaf. Recomputing it here is bounded by the chain's
 /// length (itself bounded by document depth, like every other walk in this crate) and mutates
-/// nothing.
+/// nothing but `memo`.
+///
+/// # Complexity: `O(n)` over the whole document, not `O(n)` per box
+///
+/// A naive version of this function (walk the chain, don't remember anything) costs `O(k)`
+/// for a box `k` links from the end of its chain — call [`place_child`] on every box of an
+/// `n`-deep single-child chain (`<div><div><div>…`, the shape this crate's whole no-recursion
+/// design exists to defend against) and the *total* cost is `k=1 + 2 + … + n = O(n²)`, exactly
+/// the blow-up a hostile document could trigger.
+///
+/// `memo` fixes this: every box has exactly one parent, so it can appear as a *descendant* in
+/// at most one first-child chain-walk (the one started by its own parent, if that parent is
+/// itself eligible and this box is its first child) — never two. So the walk below, on
+/// discovering a chain `[box_id, child, grandchild, …]`, does not just return `box_id`'s own
+/// answer: it hands the *whole chain* to [`memoize_suffix_collapse`], which fills in `memo`
+/// for every box in it at once, in one backward pass over the chain (`O(chain length)`, not
+/// `O(chain length²)` — see that function's docs for why a backward accumulation, not
+/// `n` separate calls to [`collapse_margin_set`], is what makes that pass linear). By the time
+/// the real layout walk (`advance_child`) later reaches `child`, `grandchild`, etc. as their
+/// own `place_child` calls, each is a memo hit — an `O(1)` lookup, not a re-walk. Every edge
+/// of the box tree is therefore walked by at most one chain-walk, total work `O(n)` over the
+/// whole document.
+///
+/// This holds only because `run`'s traversal always finalizes a box's *own* `place_child` call
+/// (and therefore this function, for that box) strictly before descending into any of that
+/// box's children's own `place_child` calls — see `advance_child`'s docs — so no descendant
+/// can already be memoized by an unrelated walk when this function is building a fresh chain;
+/// the `memo.get(child_id...).is_some()` check inside the loop is a defensive stop (correctness
+/// net, not a normal code path) for exactly that invariant, not something this proof depends
+/// on holding by luck.
+///
+/// # Memo safety: keyed by `BoxId` alone, no other input
+///
+/// Percent margins resolve against a containing block *width*, and this function's own
+/// `content_width` parameter (as well as each subsequent step's, derived from it) is *always*
+/// the same value for a given `box_id`, regardless of which call path computed it: content
+/// width resolution is purely top-down — a function of a box's own style and its ancestors'
+/// styles alone, computed identically by [`resolve_box_model`] whether that call came from an
+/// ancestor's speculative chain-walk (as here) or from that box's own, later, "real"
+/// [`place_child`] call. There is no scenario where the same `box_id` legitimately needs two
+/// different `content_width`s within one [`layout`] call, so memoizing by `BoxId` alone (no
+/// width in the key) cannot serve a stale answer.
 fn effective_margin_top(
     box_tree: &BoxTree,
     box_id: BoxId,
@@ -1029,8 +1097,13 @@ fn effective_margin_top(
     padding_top: Au,
     border_top: Au,
     content_width: Au,
+    memo: &mut [Option<Au>],
 ) -> Au {
-    let mut margins = vec![own_margin_top];
+    if let Some(cached) = memo.get(box_id.index()).copied().flatten() {
+        return cached;
+    }
+
+    let mut chain: Vec<(BoxId, Au)> = vec![(box_id, own_margin_top)];
     let mut eligible = padding_top == Au::ZERO && border_top == Au::ZERO;
     let mut current = box_id;
     let mut current_content_width = content_width;
@@ -1041,17 +1114,38 @@ fn effective_margin_top(
         let Some(child_id) = first_block_child(box_tree, current) else {
             break;
         };
+        // See this function's "Complexity" docs: unreachable in correct operation (a
+        // descendant cannot already be memoized while its ancestor's own chain-walk is
+        // still in progress), kept as a defensive stop rather than an assumption.
+        if memo.get(child_id.index()).copied().flatten().is_some() {
+            break;
+        }
         let Some(child) = box_tree.get(child_id) else {
             break;
         };
         let child_model = resolve_box_model(&child.style, current_content_width, None);
-        margins.push(child_model.margin_top);
+        chain.push((child_id, child_model.margin_top));
         eligible = child_model.padding.top == Au::ZERO && child_model.border.top == Au::ZERO;
         current_content_width = child_model.content_width;
         current = child_id;
     }
 
-    collapse_margin_set(&margins)
+    memoize_suffix_collapse(&chain, memo);
+    memo.get(box_id.index())
+        .copied()
+        .flatten()
+        .unwrap_or(own_margin_top)
+}
+
+/// [`effective_margin_bottom`]'s inputs describing `box_id`'s *own* box model — bundled into
+/// one value (rather than four more scalar parameters) to keep that function's argument count
+/// under `clippy::too_many_arguments`' threshold once the `memo` parameter is added.
+struct OwnBottomMargin {
+    margin_bottom: Au,
+    padding_bottom: Au,
+    border_bottom: Au,
+    known_height_is_none: bool,
+    min_height: Au,
 }
 
 /// The bottom-margin mirror of [`effective_margin_top`], walking the *last*-in-flow-block-
@@ -1060,21 +1154,30 @@ fn effective_margin_top(
 /// or a positive `min-height` gives the box's content a floor that a collapsed-through margin
 /// would silently violate) — checked at every step, not just the first, via each step's own
 /// [`resolve_box_model`] result exactly as [`effective_margin_top`] re-derives padding/border.
+/// See that function's docs for the complexity/memo-safety argument, which applies here
+/// unchanged (with one addition: every step along the way is only reached at all because the
+/// *previous* step's height was `auto`, i.e. indefinite — CSS 2.1 §10.5's "a percentage height
+/// against an indefinite containing block computes as auto" rule — so passing `None` as
+/// [`resolve_box_model`]'s `cb_height` at every step, rather than threading a real height
+/// down, is not an approximation: it is what every step in an eligible chain always resolves
+/// to anyway).
 fn effective_margin_bottom(
     box_tree: &BoxTree,
     box_id: BoxId,
-    own_margin_bottom: Au,
-    padding_bottom: Au,
-    border_bottom: Au,
-    known_height_is_none: bool,
-    min_height: Au,
+    own: &OwnBottomMargin,
     content_width: Au,
+    memo: &mut [Option<Au>],
 ) -> Au {
-    let mut margins = vec![own_margin_bottom];
-    let mut eligible = known_height_is_none
-        && min_height == Au::ZERO
-        && padding_bottom == Au::ZERO
-        && border_bottom == Au::ZERO;
+    let own_margin_bottom = own.margin_bottom;
+    if let Some(cached) = memo.get(box_id.index()).copied().flatten() {
+        return cached;
+    }
+
+    let mut chain: Vec<(BoxId, Au)> = vec![(box_id, own_margin_bottom)];
+    let mut eligible = own.known_height_is_none
+        && own.min_height == Au::ZERO
+        && own.padding_bottom == Au::ZERO
+        && own.border_bottom == Au::ZERO;
     let mut current = box_id;
     let mut current_content_width = content_width;
     let mut remaining = box_tree.len();
@@ -1084,11 +1187,16 @@ fn effective_margin_bottom(
         let Some(child_id) = last_block_child(box_tree, current) else {
             break;
         };
+        // See `effective_margin_top`'s "Complexity" docs for why this is unreachable in
+        // correct operation and only a defensive stop.
+        if memo.get(child_id.index()).copied().flatten().is_some() {
+            break;
+        }
         let Some(child) = box_tree.get(child_id) else {
             break;
         };
         let child_model = resolve_box_model(&child.style, current_content_width, None);
-        margins.push(child_model.margin_bottom);
+        chain.push((child_id, child_model.margin_bottom));
         eligible = child_model.known_height.is_none()
             && child_model.min_height == Au::ZERO
             && child_model.padding.bottom == Au::ZERO
@@ -1097,7 +1205,36 @@ fn effective_margin_bottom(
         current = child_id;
     }
 
-    collapse_margin_set(&margins)
+    memoize_suffix_collapse(&chain, memo);
+    memo.get(box_id.index())
+        .copied()
+        .flatten()
+        .unwrap_or(own_margin_bottom)
+}
+
+/// Fills `memo[id]` for every `(BoxId, margin)` pair in `chain`, with the collapsed value of
+/// *that box's own suffix* of the chain (its own margin combined with every margin after it in
+/// `chain`) — i.e. `memo[chain[i].0]` ends up equal to what
+/// `collapse_margin_set(&chain[i..].map(|(_, m)| m))` would compute, for every `i`, but
+/// without `collapse_margin_set`'s `O(len)` cost paid once per suffix (which would make the
+/// whole pass `O(len²)` again, defeating the point).
+///
+/// Instead, this walks `chain` once, back to front, keeping a running `(max_positive,
+/// min_negative)` accumulator: processing the *last* element seeds it with a length-1 suffix;
+/// each element processed after that folds one more margin *in* to the running accumulator
+/// (never resets it), so by the time element `i` is processed, the accumulator already
+/// reflects every margin from `i` to the end — exactly the suffix collapse for `i` — computed
+/// in `O(1)` additional work per element, `O(len)` total.
+fn memoize_suffix_collapse(chain: &[(BoxId, Au)], memo: &mut [Option<Au>]) {
+    let mut max_positive = Au::ZERO;
+    let mut min_negative = Au::ZERO;
+    for &(id, margin) in chain.iter().rev() {
+        max_positive = max_positive.max(margin.max(Au::ZERO));
+        min_negative = min_negative.min(margin.min(Au::ZERO));
+        if let Some(slot) = memo.get_mut(id.index()) {
+            *slot = Some(max_positive.saturating_add(min_negative));
+        }
+    }
 }
 
 /// `box_id`'s first box-tree child, if it is block-level (`Block`/`AnonymousBlock`) —
@@ -1206,11 +1343,16 @@ fn resolve_len_against_height(l: Length, against: Option<Au>) -> Au {
 }
 
 /// Clamps `v` to `[min, max]` per CSS 2.1 §10.4/§10.7: `min` always wins when the two
-/// conflict (a `max` below `min` is treated as if it were `min`).
+/// conflict — a `max` below `min` is treated as if it were `min` itself, so the result is
+/// exactly `min` whenever `v >= min` but the (raised) `max` is also `min`, not `v` left
+/// unclamped. Fold `max` up to `min` *before* clamping `v`, not after: clamping `v` to `min`
+/// first and only then checking whether `max < min` (the previous, buggy shape of this
+/// function) leaves an oversized `v` unclamped whenever `v` already exceeds `min`, since the
+/// `max < min` branch returned `v` verbatim instead of the folded `max` (i.e. `min`).
 fn clamp_au(v: Au, min: Au, max: Option<Au>) -> Au {
+    let effective_max = max.map(|m| m.max(min));
     let v = v.max(min);
-    match max {
-        Some(m) if m < min => v,
+    match effective_max {
         Some(m) => v.min(m),
         None => v,
     }
