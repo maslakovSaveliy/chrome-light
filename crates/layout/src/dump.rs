@@ -254,12 +254,17 @@ fn sides_str<T: Copy>(sides: &Sides<T>, mut render: impl FnMut(T) -> String) -> 
 ///
 /// ```text
 /// #fragments
-/// | Block <html> border=(0.00, 0.00, 800.00, 22.00) content=(0.00, 0.00, 800.00, 22.00)
-/// |   Block <body> border=(8.00, 8.00, 784.00, 6.00) content=(8.00, 8.00, 784.00, 6.00)
-/// |     Line border=(8.00, 8.00, 32.00, 19.20) content=(8.00, 8.00, 32.00, 19.20)
-/// |       Text runs=1 border=(8.00, 8.00, 32.00, 19.20) content=(8.00, 8.00, 32.00, 19.20)
-/// |         Run font=Ahem size=16.00 origin=(8.00, 20.80) glyphs=2 advance=32.00
+/// | Block <html> border=(0.00, 0.00, 800.00, 51.20) content=(0.00, 0.00, 800.00, 51.20)
+/// |   Block <body> border=(8.00, 16.00, 784.00, 19.20) content=(8.00, 16.00, 784.00, 19.20)
+/// |     Block <p> border=(8.00, 16.00, 784.00, 19.20) content=(8.00, 16.00, 784.00, 19.20)
+/// |       Line border=(8.00, 16.00, 784.00, 19.20) content=(8.00, 16.00, 784.00, 19.20)
+/// |         Text runs=1 border=(8.00, 16.00, 14.02, 19.20) content=(8.00, 16.00, 14.02, 19.20)
+/// |           Run font=Noto Sans size=16.00 origin=(8.00, 33.10) glyphs=2 advance=14.02
 /// ```
+///
+/// (verbatim from `tests/snapshots/fragment_tree_goldens__minimal_document.snap`). Note the
+/// `Line`: it spans its containing block's whole content width (784px — CSS 2.1 §9.4.2), not
+/// the 14.02px its two glyphs actually cover; the `Text` child carries the glyphs' own extent.
 ///
 /// A `Text` fragment's line carries its run count (`runs=N`), and each of its runs gets one
 /// line of its own, indented one further level: the family the run was shaped with, its font

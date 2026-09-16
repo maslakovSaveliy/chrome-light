@@ -184,6 +184,72 @@ fn min_width_greater_than_max_width_should_use_min() {
     assert_eq!(target.border_box, rect(0.0, 0.0, 200.0, 10.0));
 }
 
+/// CSS 2.1 §10.4's min/max clamp applies to an `auto` width too, not only to a specified one:
+/// the tentative used width (`auto` → fill the containing block, 800px here) is clamped by
+/// `max-width`, and because the clamp *bound*, the width/auto-margin equation of §10.3.3 is
+/// re-run with the clamped `400px` as a definite width — so `margin: 0 auto` now has 400px of
+/// free space to split and centers the box at `x = 200`. Before the fix `resolve_width_and_margins`
+/// returned early for `Length::Auto` before reading min/max at all, giving a full-width 800px box
+/// at `x = 0`.
+#[test]
+fn auto_width_should_be_clamped_by_max_width_and_centred_by_auto_margins() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #target { max-width: 400px; margin: 0 auto; height: 50px }
+        </style>
+        <body><div id="target"></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let target = fragment_by_id(&tree, styled.document(), "target");
+    assert_eq!(target.border_box, rect(200.0, 0.0, 400.0, 50.0));
+}
+
+/// The `min-width` mirror of [`auto_width_should_be_clamped_by_max_width_and_centred_by_auto_margins`]
+/// (CSS 2.1 §10.4): an `auto` width tentatively fills its 200px containing block, `min-width`
+/// clamps it *up* to 400px, and the re-run of §10.3.3 with that definite width leaves a
+/// negative remainder (`200 - 400`) for the two `auto` margins — floored to zero rather than
+/// pulling the box left, so the box overflows its containing block to the right from `x = 0`.
+#[test]
+fn auto_width_should_be_clamped_by_min_width() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #outer { width: 200px }
+            #target { min-width: 400px; margin: 0 auto; height: 50px }
+        </style>
+        <body><div id="outer"><div id="target"></div></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let target = fragment_by_id(&tree, styled.document(), "target");
+    assert_eq!(target.border_box, rect(0.0, 0.0, 400.0, 50.0));
+}
+
+/// `box-sizing: border-box` describes the *border* box for `min-width`/`max-width`/
+/// `min-height`/`max-height` exactly as it does for `width`/`height` (css-sizing-3 §6.2 — the
+/// property applies to "the box's size properties", not only to the two definite ones): a
+/// `min-width: 180px` border box is a `140px` content-box floor with 20px of padding on each
+/// side, so it does not bind against the `160px` content width that `width: 200px` already
+/// resolves to, and the used border box stays exactly 200×100. Before the fix the raw `180px`
+/// was compared against the content width and inflated the border box to 220px.
+#[test]
+fn box_sizing_border_box_should_apply_to_min_and_max_bounds() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #target {
+                box-sizing: border-box;
+                width: 200px; min-width: 180px; height: 100px; min-height: 80px; padding: 20px;
+            }
+        </style>
+        <body><div id="target"></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let target = fragment_by_id(&tree, styled.document(), "target");
+    assert_eq!(target.border_box, rect(0.0, 0.0, 200.0, 100.0));
+    assert_eq!(target.content_box, rect(20.0, 20.0, 160.0, 60.0));
+}
+
 /// The height mirror of [`min_width_greater_than_max_width_should_use_min`] (CSS 2.1 §10.7):
 /// `min-height: 200px` exceeding `max-height: 50px` means the used height is `200px`, not the
 /// unclamped specified `300px`.
@@ -467,6 +533,102 @@ fn padding_should_stop_margin_chain() {
             y: px(31.0)
         }
     );
+}
+
+/// A positive `min-height` gives a box's content a floor, which is exactly what stops its last
+/// child's bottom margin from collapsing out through it (CSS 2.1 §8.3.1: the parent's bottom
+/// margin adjoins its last child's only if the parent's `height` is `auto` *and* its
+/// `min-height` is `0`). `effective_margin_bottom` already checked `min-height` when walking a
+/// chain; the `Frame` flag that decides whether the trailing margin is added to the parent's own
+/// content height did not, so the 20px margin was dropped on both sides and the box collapsed to
+/// its 50px floor instead of the 40 + 20 = 60px its content actually occupies.
+#[test]
+fn min_height_should_keep_the_last_child_bottom_margin_inside() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #target { min-height: 50px }
+            #target p { margin: 0 0 20px; height: 40px }
+        </style>
+        <body><div id="target"><p></p></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let target = fragment_by_id(&tree, styled.document(), "target");
+    assert_eq!(target.border_box, rect(0.0, 0.0, 800.0, 60.0));
+}
+
+/// `overflow` other than `visible` establishes a new block formatting context (CSS 2.1 §9.4.1),
+/// and margins never collapse across a BFC boundary (§8.3.1): `#target`'s own top margin does
+/// not absorb its first child's, so `#target` stays flush at `y = 0` and the child's 20px
+/// `margin-top` becomes a real gap *inside* `#target`, whose auto height then covers both the
+/// margin and the child (20 + 10 = 30px). Before the fix `overflow` was read into `LayoutStyle`
+/// for paint but never consulted here, so the child's margin escaped and pushed `#target` itself
+/// down to `y = 20`.
+#[test]
+fn overflow_hidden_should_establish_a_bfc_and_stop_margin_collapsing() {
+    let html = r#"
+        <style>
+            body { margin: 0 }
+            #target { overflow: hidden }
+            #inner { margin: 20px 0 0; height: 10px }
+        </style>
+        <body><div id="target"><p id="inner"></p></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let target = fragment_by_id(&tree, styled.document(), "target");
+    let inner = fragment_by_id(&tree, styled.document(), "inner");
+    assert_eq!(target.border_box, rect(0.0, 0.0, 800.0, 30.0));
+    assert_eq!(inner.border_box, rect(0.0, 20.0, 800.0, 10.0));
+}
+
+/// A block with no children at all contributes no content height (`layout_leaf`'s
+/// `children.is_empty()` short-circuit, documented in `crate::block`'s module docs): an empty
+/// `<div>` with `height: auto` is an 800×0 border box, not one line box tall.
+#[test]
+fn empty_leaf_block_should_have_zero_content_height() {
+    let html = r#"
+        <style>body { margin: 0 }</style>
+        <body><div id="target"></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let target = fragment_by_id(&tree, styled.document(), "target");
+    assert_eq!(target.border_box, rect(0.0, 0.0, 800.0, 0.0));
+    assert_eq!(target.content_box, rect(0.0, 0.0, 800.0, 0.0));
+    assert!(target.children.is_empty());
+}
+
+/// A `<br>` following a block sibling is an inline-level run of its own, so CSS 2.1 §9.2.1.1
+/// wraps it in an anonymous block — which is a real inline formatting context and generates
+/// exactly one line box, `line-height: normal` (1.2 × the 16px default `font-size` = 19.2px)
+/// tall, even though the `<br>` itself contributes no glyph. Not two lines (the forced break
+/// ends the only line there is; nothing follows it to start another) and not zero (a `<br>` is
+/// not collapsible white space — `crate::box_tree` drops those runs, but never this one).
+#[test]
+fn line_break_after_a_block_sibling_should_produce_exactly_one_line() {
+    let html = r#"
+        <style>body { margin: 0 }</style>
+        <body><div id="target"><p>a</p><br></div></body>
+    "#;
+    let (tree, styled) = common::layout_html(html);
+    let target = fragment_by_id(&tree, styled.document(), "target");
+    let anon_id = *target
+        .children
+        .last()
+        .expect("the <br> must generate an anonymous block after the <p>");
+    let anon = tree.get(anon_id).expect("anonymous block fragment");
+    assert_eq!(anon.kind, cl_layout::FragmentKind::AnonymousBlock);
+    assert_eq!(
+        anon.children.len(),
+        1,
+        "the <br> must generate exactly one line box, got {:?}",
+        anon.children
+    );
+    let line_id = *anon.children.first().expect("one line box");
+    let line = tree
+        .get(line_id)
+        .expect("the anonymous block's line fragment");
+    assert_eq!(line.kind, cl_layout::FragmentKind::Line);
+    assert_eq!(line.border_box.size.h, px(19.2));
 }
 
 /// `position: relative` shifts a fragment (and its whole subtree, if it has one) without

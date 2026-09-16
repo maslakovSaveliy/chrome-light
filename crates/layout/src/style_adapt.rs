@@ -402,10 +402,13 @@ fn generic_family_name(generic: GenericFontFamily) -> &'static str {
 /// border-width/border-style trap [`adapt`] documents), the resolved color (`currentcolor`
 /// against `self_color`), and whether the side is `solid`.
 ///
-/// `width`/`color` are taken by reference (`style`/`self_color` are cheap `Copy` types small
-/// enough that a reference would cost more than the value): both are read once and never
-/// moved, so cloning the caller's owned `clone_border_*_width`/`clone_border_*_color` result
-/// into this function would be a wasted copy.
+/// `width`/`color` are taken by reference because stylo's `BorderSideWidth` and computed
+/// `Color` are not `Copy`: this function only ever *reads* them (one field access and one
+/// `resolve_to_absolute` call) and never stores or returns them, so taking `&` rather than
+/// ownership is the crate-wide default (`docs/CODING_STANDARDS.md`: pass a reference unless
+/// ownership is actually transferred), and it keeps the signature from claiming an ownership
+/// transfer that does not happen. `style`/`self_color` are `Copy` and small enough that a
+/// reference would cost more than the value, so those are passed by value.
 fn adapt_border_side(
     width: &BorderSideWidth,
     style: BorderStyle,

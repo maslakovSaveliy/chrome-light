@@ -38,10 +38,14 @@
 //! `effective_margin_bottom` implement exactly this: each walks its box's first/last-in-flow-
 //! block-child chain with a loop (not recursion — see "The walk has no recursion" above),
 //! collecting every box's own specified margin along the way for as long as each box in the
-//! chain has nothing separating it from its own next child (no top/bottom padding or border;
-//! for the bottom case, additionally `height: auto` and `min-height: 0` — a definite height or
-//! a positive `min-height` gives the box's content a floor a collapsed-through margin would
-//! silently violate), then combines the *whole* collected set at once via
+//! chain has nothing separating it from its own next child (no top/bottom padding or border,
+//! and `overflow: visible` — a box with any other `overflow` establishes a new block formatting
+//! context per CSS 2.1 §9.4.1, and §8.3.1's "adjoining" requires both margins to live in the
+//! same one, so the chain stops *at* such a box: its own margin still adjoins whatever is
+//! outside it, but never its children's. See `establishes_bfc`; for the bottom case,
+//! additionally `height: auto` and `min-height: 0` — a definite height or a positive
+//! `min-height` gives the box's content a floor a collapsed-through margin would silently
+//! violate), then combines the *whole* collected set at once via
 //! `collapse_margin_set` — not by folding pairwise, which would discard information for a
 //! chain of three or more mixed-sign margins (see that function's docs for a worked
 //! counterexample). Resolving each step's percentage margin needs that step's own containing
@@ -62,10 +66,10 @@
 //!   crate's chains only ever walk *into* a box's children, never treat a box's own top and
 //!   bottom as adjoining each other.
 //! - **Clearance** (`clear` interacting with floats) — M1a implements no floats at all.
-//! - **BFC roots stopping the chain** — `overflow` other than `visible` establishes a new
-//!   block formatting context per CSS 2.1 §9.4.1, which must not let margins collapse through
-//!   it; this crate reads `overflow` into `LayoutStyle` (for paint, per the controller ruling)
-//!   but does not yet consult it here. Not exercised by any of the 12 tests or 5 goldens.
+//! - **CSS 2.1 §10.3.3's over-constrained fixup** ("ignore `margin-right` in a
+//!   left-to-right containing block") — `resolve_width_and_margins` uses both specified
+//!   margins verbatim instead, and floors a negative both-`auto` remainder at zero rather than
+//!   splitting it. Both are recorded as deviations in `docs/SPEC_REGISTRY.md`.
 //!
 //! # Margins never collapse through the document root
 //!
@@ -82,7 +86,7 @@ use crate::au::Au;
 use crate::box_tree::{BoxId, BoxKind, BoxTree, LayoutBox, build};
 use crate::error::LayoutError;
 use crate::fragment::{Fragment, FragmentId, FragmentKind, FragmentTree, StyleId, Viewport};
-use crate::geom::{BoxSizing, LayoutStyle, Length, Point, Position, Rect, Sides, Size};
+use crate::geom::{BoxSizing, LayoutStyle, Length, Overflow, Point, Position, Rect, Sides, Size};
 use crate::inline::{self, InlineArgs, InlineContext};
 use crate::text::TextShaper;
 
@@ -192,12 +196,18 @@ struct Frame {
     /// This box's own containing block's height, mirroring [`Frame::cb_width`].
     cb_height: Option<Au>,
     /// Whether this box's top margin collapses with its first block-level child's top
-    /// margin (CSS 2.1 §8.3.1: no padding, no border, nothing else separating them).
+    /// margin (CSS 2.1 §8.3.1: no padding, no border, nothing else separating them, and this
+    /// box does not establish a block formatting context — see [`establishes_bfc`]).
     /// Hardcoded `false` for the document root regardless of its own padding/border — see
     /// the module docs' "Margins never collapse through the document root" section.
     first_child_collapse_eligible: bool,
     /// Whether this box's bottom margin collapses with its last block-level child's bottom
-    /// margin (CSS 2.1 §8.3.1: `height: auto`, no padding, no border).
+    /// margin (CSS 2.1 §8.3.1: `height: auto`, `min-height: 0`, no padding, no border, and not
+    /// a block-formatting-context root). A positive `min-height` matters here for the same
+    /// reason it does in [`effective_margin_bottom`]: it gives this box's content a floor that
+    /// a margin collapsed out through the bottom edge would silently violate, so the trailing
+    /// margin stays *inside* this box's own content height instead of being dropped on both
+    /// sides.
     bottom_collapse_eligible: bool,
     /// This box's block-level box-tree children (guaranteed non-empty and all block-level —
     /// see [`is_block_container`] — whenever a `Frame` exists for it at all).
@@ -400,12 +410,16 @@ fn place_child(
     memo: &mut MarginMemo,
 ) -> ChildPlacement {
     let model = resolve_box_model(style, parent.content_width, parent.cb_height);
+    let is_bfc_root = establishes_bfc(style);
     let eff_top = effective_margin_top(
         box_tree,
         child_box_id,
-        model.margin_top,
-        model.padding.top,
-        model.border.top,
+        &OwnTopMargin {
+            margin_top: model.margin_top,
+            padding_top: model.padding.top,
+            border_top: model.border.top,
+            is_bfc_root,
+        },
         model.content_width,
         &mut memo.top,
     );
@@ -418,6 +432,7 @@ fn place_child(
             border_bottom: model.border.bottom,
             known_height_is_none: model.known_height.is_none(),
             min_height: model.min_height,
+            is_bfc_root,
         },
         model.content_width,
         &mut memo.bottom,
@@ -497,9 +512,13 @@ fn push_container_frame(
     placement: &ChildPlacement,
 ) {
     let content_origin = content_origin_of(placement.origin, &placement.model);
-    let first_child_collapse_eligible =
-        placement.model.padding.top == Au::ZERO && placement.model.border.top == Au::ZERO;
-    let bottom_collapse_eligible = placement.model.known_height.is_none()
+    let is_bfc_root = establishes_bfc(&child.style);
+    let first_child_collapse_eligible = !is_bfc_root
+        && placement.model.padding.top == Au::ZERO
+        && placement.model.border.top == Au::ZERO;
+    let bottom_collapse_eligible = !is_bfc_root
+        && placement.model.known_height.is_none()
+        && placement.model.min_height == Au::ZERO
         && placement.model.padding.bottom == Au::ZERO
         && placement.model.border.bottom == Au::ZERO;
     stack.push(Frame {
@@ -789,10 +808,19 @@ fn resolve_box_model(style: &LayoutStyle, cb_width: Au, cb_height: Option<Au>) -
     let margin_top = resolve_len_zero(style.margin.top, cb_width);
     let margin_bottom = resolve_len_zero(style.margin.bottom, cb_width);
 
-    let min_height = resolve_len_zero(style.min_height, cb_height.unwrap_or(Au::ZERO));
-    let max_height = style
-        .max_height
-        .map(|l| resolve_len_zero(l, cb_height.unwrap_or(Au::ZERO)));
+    let v_non_content = vertical_non_content(padding, border);
+    let min_height = used_content_size(
+        resolve_len_zero(style.min_height, cb_height.unwrap_or(Au::ZERO)),
+        style.box_sizing,
+        v_non_content,
+    );
+    let max_height = style.max_height.map(|l| {
+        used_content_size(
+            resolve_len_zero(l, cb_height.unwrap_or(Au::ZERO)),
+            style.box_sizing,
+            v_non_content,
+        )
+    });
     let known_height = resolve_height(style, cb_height, padding, border)
         .map(|h| clamp_au(h, min_height, max_height));
 
@@ -810,8 +838,16 @@ fn resolve_box_model(style: &LayoutStyle, cb_width: Au, cb_height: Option<Au>) -
 }
 
 /// The width half of [`resolve_box_model`] — CSS 2.1 §10.3.3 (the auto-width/auto-margin
-/// equation) then §10.4 (min/max-width clamp, with auto margins re-solved against the
-/// clamped width).
+/// equation) then §10.4 (min/max-width clamp, with the whole equation re-run against the
+/// clamped width whenever the clamp binds).
+///
+/// §10.4's clamp applies to an `auto` width exactly as it does to a specified one: the
+/// tentative used width is computed first (for `auto`, "fill what the margins leave"), then
+/// clamped by `max-width` and `min-width`. If — and only if — that clamp *changed* the value,
+/// the section's "the rules above are applied again, but this time using the [clamped] value as
+/// the computed value for `width`" kicks in: the width is now definite, so `auto` margins stop
+/// being forced to zero and get the free space to split (centering). A clamp that did not bind
+/// leaves an `auto` width behaving as `auto` throughout, autos-become-zero included.
 fn resolve_width_and_margins(
     style: &LayoutStyle,
     cb_width: Au,
@@ -829,25 +865,35 @@ fn resolve_width_and_margins(
     let margin_left0 = resolve_len_zero(style.margin.left, cb_width);
     let margin_right0 = resolve_len_zero(style.margin.right, cb_width);
 
-    if matches!(style.width, Length::Auto) {
+    let width_is_auto = matches!(style.width, Length::Auto);
+    let tentative = if width_is_auto {
         // CSS 2.1 §10.3.3, "otherwise, if 'width' is set to 'auto' …": any other 'auto'
         // value (i.e. an auto margin) becomes 0, and width fills the rest — no centering.
-        let filled = cb_width
+        cb_width
             .saturating_sub(margin_left0)
             .saturating_sub(non_content)
             .saturating_sub(margin_right0)
-            .max(Au::ZERO);
-        return (filled, margin_left0, margin_right0);
-    }
-
-    let specified = resolve_len_zero(style.width, cb_width);
-    let mut content_width = match style.box_sizing {
-        BoxSizing::ContentBox => specified,
-        BoxSizing::BorderBox => specified.saturating_sub(non_content).max(Au::ZERO),
+            .max(Au::ZERO)
+    } else {
+        used_content_size(
+            resolve_len_zero(style.width, cb_width),
+            style.box_sizing,
+            non_content,
+        )
     };
-    let min_width = resolve_len_zero(style.min_width, cb_width);
-    let max_width = style.max_width.map(|l| resolve_len_zero(l, cb_width));
-    content_width = clamp_au(content_width, min_width, max_width);
+    let min_width = used_content_size(
+        resolve_len_zero(style.min_width, cb_width),
+        style.box_sizing,
+        non_content,
+    );
+    let max_width = style
+        .max_width
+        .map(|l| used_content_size(resolve_len_zero(l, cb_width), style.box_sizing, non_content));
+    let content_width = clamp_au(tentative, min_width, max_width);
+
+    if width_is_auto && content_width == tentative {
+        return (content_width, margin_left0, margin_right0);
+    }
 
     let non_margin_total = non_content.saturating_add(content_width);
     let (margin_left, margin_right) = if margin_left_auto && margin_right_auto {
@@ -856,6 +902,15 @@ fn resolve_width_and_margins(
             let half = remaining.0 / 2;
             (Au(half), Au(remaining.0 - half))
         } else {
+            // CSS 2.1 §10.3.3: "If both 'margin-left' and 'margin-right' are 'auto', their
+            // used values are equal" — and §10.4's re-run can make the box *wider* than its
+            // containing block (a bound `min-width`, or a `width` larger than `cb_width`),
+            // leaving a negative remainder to share. Halving it would be equal but would pull
+            // the box left, out of its containing block on the side the writing mode starts
+            // from; CSS 2.1 has no fixup for this case (§10.3.3's equality is stated for the
+            // ordinary, non-negative one), so both used margins are floored at zero and the
+            // box overflows to the right only. Documented as a deviation in
+            // `docs/SPEC_REGISTRY.md`.
             (Au::ZERO, Au::ZERO)
         }
     } else if margin_left_auto {
@@ -897,17 +952,34 @@ fn resolve_height(
         Length::Px(au) => Some(au),
         Length::Percent(p) => cb_height.map(|h| h.mul_by_f32(p / 100.0)),
     };
-    specified.map(|h| match style.box_sizing {
-        BoxSizing::ContentBox => h,
-        BoxSizing::BorderBox => {
-            let non_content = padding
-                .top
-                .saturating_add(padding.bottom)
-                .saturating_add(border.top)
-                .saturating_add(border.bottom);
-            h.saturating_sub(non_content).max(Au::ZERO)
-        }
-    })
+    specified.map(|h| used_content_size(h, style.box_sizing, vertical_non_content(padding, border)))
+}
+
+/// A box's border+padding along the block axis — the part `box-sizing: border-box` carves out
+/// of a specified `height`/`min-height`/`max-height`.
+fn vertical_non_content(padding: Sides<Au>, border: Sides<Au>) -> Au {
+    padding
+        .top
+        .saturating_add(padding.bottom)
+        .saturating_add(border.top)
+        .saturating_add(border.bottom)
+}
+
+/// Turns one specified box dimension into the *content*-box value layout works in, applying
+/// `box-sizing`: `border-box` means the specified length describes the border box, so this
+/// box's own border+padding along that axis (`non_content`) is carved out of it (floored at
+/// zero — a border alone can exceed the specified size); `content-box` passes it through.
+///
+/// Applies to `min-width`/`max-width`/`min-height`/`max-height` exactly as it does to
+/// `width`/`height`: css-sizing-3 §6.2 defines `box-sizing` over "the box's size properties",
+/// which is all six of them, not just the two definite ones. Clamping a content-box width
+/// against a raw border-box bound instead is what made `box-sizing: border-box; width: 200px;
+/// min-width: 180px; padding: 20px` inflate its border box to 220px.
+fn used_content_size(specified: Au, box_sizing: BoxSizing, non_content: Au) -> Au {
+    match box_sizing {
+        BoxSizing::ContentBox => specified,
+        BoxSizing::BorderBox => specified.saturating_sub(non_content).max(Au::ZERO),
+    }
 }
 
 /// The used gap contributed above a box for margin-collapsing purposes (CSS 2.1 §8.3.1): its
@@ -971,18 +1043,18 @@ fn resolve_height(
 fn effective_margin_top(
     box_tree: &BoxTree,
     box_id: BoxId,
-    own_margin_top: Au,
-    padding_top: Au,
-    border_top: Au,
+    own: &OwnTopMargin,
     content_width: Au,
     memo: &mut [Option<Au>],
 ) -> Au {
+    let own_margin_top = own.margin_top;
     if let Some(cached) = memo.get(box_id.index()).copied().flatten() {
         return cached;
     }
 
     let mut chain: Vec<(BoxId, Au)> = vec![(box_id, own_margin_top)];
-    let mut eligible = padding_top == Au::ZERO && border_top == Au::ZERO;
+    let mut eligible =
+        !own.is_bfc_root && own.padding_top == Au::ZERO && own.border_top == Au::ZERO;
     let mut current = box_id;
     let mut current_content_width = content_width;
     let mut remaining = box_tree.len();
@@ -1003,7 +1075,9 @@ fn effective_margin_top(
         };
         let child_model = resolve_box_model(&child.style, current_content_width, None);
         chain.push((child_id, child_model.margin_top));
-        eligible = child_model.padding.top == Au::ZERO && child_model.border.top == Au::ZERO;
+        eligible = !establishes_bfc(&child.style)
+            && child_model.padding.top == Au::ZERO
+            && child_model.border.top == Au::ZERO;
         current_content_width = child_model.content_width;
         current = child_id;
     }
@@ -1015,8 +1089,23 @@ fn effective_margin_top(
         .unwrap_or(own_margin_top)
 }
 
+/// [`effective_margin_top`]'s inputs describing `box_id`'s *own* box model and style —
+/// bundled into one value (rather than four more scalar parameters) to keep that function's
+/// argument count under `clippy::too_many_arguments`' threshold, mirroring
+/// [`OwnBottomMargin`].
+struct OwnTopMargin {
+    margin_top: Au,
+    padding_top: Au,
+    border_top: Au,
+    /// Whether this box establishes a block formatting context ([`establishes_bfc`]): if it
+    /// does, margins never collapse between it and its own children (CSS 2.1 §9.4.1/§8.3.1),
+    /// so the chain never descends past it — but its own margin still adjoins whatever is
+    /// outside it, so it still seeds the chain.
+    is_bfc_root: bool,
+}
+
 /// [`effective_margin_bottom`]'s inputs describing `box_id`'s *own* box model — bundled into
-/// one value (rather than four more scalar parameters) to keep that function's argument count
+/// one value (rather than five more scalar parameters) to keep that function's argument count
 /// under `clippy::too_many_arguments`' threshold once the `memo` parameter is added.
 struct OwnBottomMargin {
     margin_bottom: Au,
@@ -1024,6 +1113,8 @@ struct OwnBottomMargin {
     border_bottom: Au,
     known_height_is_none: bool,
     min_height: Au,
+    /// The bottom-side mirror of [`OwnTopMargin::is_bfc_root`].
+    is_bfc_root: bool,
 }
 
 /// The bottom-margin mirror of [`effective_margin_top`], walking the *last*-in-flow-block-
@@ -1052,7 +1143,8 @@ fn effective_margin_bottom(
     }
 
     let mut chain: Vec<(BoxId, Au)> = vec![(box_id, own_margin_bottom)];
-    let mut eligible = own.known_height_is_none
+    let mut eligible = !own.is_bfc_root
+        && own.known_height_is_none
         && own.min_height == Au::ZERO
         && own.padding_bottom == Au::ZERO
         && own.border_bottom == Au::ZERO;
@@ -1075,7 +1167,8 @@ fn effective_margin_bottom(
         };
         let child_model = resolve_box_model(&child.style, current_content_width, None);
         chain.push((child_id, child_model.margin_bottom));
-        eligible = child_model.known_height.is_none()
+        eligible = !establishes_bfc(&child.style)
+            && child_model.known_height.is_none()
             && child_model.min_height == Au::ZERO
             && child_model.padding.bottom == Au::ZERO
             && child_model.border.bottom == Au::ZERO;
@@ -1152,6 +1245,20 @@ fn is_block_container(box_tree: &BoxTree, box_id: BoxId) -> bool {
 /// `is_block_level`.
 fn is_block_level(kind: &BoxKind) -> bool {
     matches!(kind, BoxKind::Block | BoxKind::AnonymousBlock)
+}
+
+/// Whether a box with this style establishes a new block formatting context — in M1a's CSS
+/// scope, exactly "`overflow` is not `visible`" (CSS 2.1 §9.4.1: "Floats, absolutely
+/// positioned elements, block containers … that have `overflow` other than `visible`
+/// establish new block formatting contexts"; M1a implements no floats, no
+/// `display: inline-block`/`table-cell`, and folds `position: absolute`/`fixed` onto `static`,
+/// so `overflow` is the only trigger that can occur). A BFC root's margins never collapse with
+/// its own in-flow children's (§8.3.1's "adjoining" requires the two boxes to be in the same
+/// block formatting context), which is what [`OwnTopMargin::is_bfc_root`] and the two `Frame`
+/// eligibility flags consult; its *own* margins still adjoin its siblings' and its parent's,
+/// since those live outside the context it establishes.
+fn establishes_bfc(style: &LayoutStyle) -> bool {
+    style.overflow != Overflow::Visible
 }
 
 /// Whether a box kind is [`BoxKind::AnonymousBlock`] — the one bit [`FragmentKind::Block`]

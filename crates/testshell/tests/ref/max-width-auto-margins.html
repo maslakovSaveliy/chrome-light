@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- expects: black bar at (200,0) 400x50 (width is auto, so it tentatively fills the 800px
+     viewport; max-width:400px clamps it, and because the clamp bound, CSS 2.1 SS10.4 re-runs
+     SS10.3.3 with 400px as a definite width - margin-left/right:auto then split the remaining
+     400px, 200px each side. Before the fix min/max-width were never read for an auto width and
+     this rendered as a full-width 800x50 bar at x=0.) -->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  div { max-width: 400px; height: 50px; margin: 0 auto; background: #000; }
+</style>
+</head>
+<body>
+<div></div>
+</body>
+</html>

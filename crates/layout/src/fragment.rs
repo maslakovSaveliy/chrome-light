@@ -83,9 +83,12 @@ pub enum FragmentKind {
     Block,
     /// The fragment for a [`crate::box_tree::BoxKind::AnonymousBlock`] box.
     AnonymousBlock,
-    /// One line box of an inline formatting context: its rects span from where `text-align`
-    /// put the line to the end of its content (a hanging trailing space excluded), and are
-    /// the container's `line-height` tall.
+    /// One line box of an inline formatting context: its rects span the full *content width*
+    /// of the containing block (CSS 2.1 §9.4.2 — "line boxes … the width of a line box is
+    /// determined by a containing block"), regardless of how much of it the line's glyphs
+    /// actually cover or where `text-align` put them, and are the container's `line-height`
+    /// tall. Where the glyphs sit inside that span is carried by the `Text` children's own
+    /// rects, not by this one.
     Line,
     /// One source text node's contribution to one line, always a child of a `Line` fragment.
     ///

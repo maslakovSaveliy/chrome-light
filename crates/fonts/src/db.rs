@@ -109,25 +109,36 @@ impl FontDb {
 
     /// Resolves a CSS `font-family` value to a bundled face.
     ///
-    /// Matches the family's exact bundled name first (`"Ahem"`, `"Noto Sans"`).
-    /// Failing that, the M1a generic-family subset maps both `sans-serif` and
-    /// `monospace` to Noto Sans -- `ChromeLight` does not bundle a distinct
-    /// monospace face yet, so the generic keyword still resolves to a real,
-    /// deterministic face rather than falling through. Any other name (a system
-    /// font, `serif`, `cursive`, `fantasy`, an unbundled web font) returns `None`;
-    /// there is nothing else this crate can hand back without reading the host.
+    /// Matches the family's bundled name first (`"Ahem"`, `"Noto Sans"`). Failing
+    /// that, the M1a generic-family subset maps both `sans-serif` and `monospace`
+    /// to Noto Sans -- `ChromeLight` does not bundle a distinct monospace face yet,
+    /// so the generic keyword still resolves to a real, deterministic face rather
+    /// than falling through. Any other name (a system font, `serif`, `cursive`,
+    /// `fantasy`, an unbundled web font) returns `None`; there is nothing else this
+    /// crate can hand back without reading the host.
+    ///
+    /// Matching is **ASCII case-insensitive** on both paths: css-fonts-4 §3.1 matches
+    /// a `<family-name>` case-insensitively, and the generic keywords are CSS
+    /// keywords, which are ASCII case-insensitive by definition -- so
+    /// `font-family: ahem` and `font-family: SANS-SERIF` resolve exactly as their
+    /// canonical spellings do. Only ASCII case is folded: full Unicode case folding
+    /// is locale-sensitive, and nothing this engine does may depend on a locale.
     pub fn key_for(&self, family: &str) -> Option<FontKey> {
-        if let Some(face) = self.faces.iter().find(|face| face.family == family) {
+        if let Some(face) = self
+            .faces
+            .iter()
+            .find(|face| face.family.eq_ignore_ascii_case(family))
+        {
             return Some(face.key);
         }
-        match family {
-            "sans-serif" | "monospace" => self
+        if family.eq_ignore_ascii_case("sans-serif") || family.eq_ignore_ascii_case("monospace") {
+            return self
                 .faces
                 .iter()
                 .find(|face| face.family == NOTO_SANS_FAMILY)
-                .map(|face| face.key),
-            _ => None,
+                .map(|face| face.key);
         }
+        None
     }
 
     /// Borrows the underlying `fontique` collection and source cache, for
@@ -284,6 +295,34 @@ mod tests {
         assert!(db.face(bogus_key).is_none());
     }
 
+    /// CSS font family names are matched ASCII case-insensitively (css-fonts-4 §3.1: a
+    /// `<family-name>` is matched "using a case-insensitive comparison" for ASCII, and the
+    /// generic keywords are CSS keywords, which are ASCII case-insensitive by definition), so
+    /// `font-family: ahem` and `font-family: SANS-SERIF` must resolve exactly as `Ahem` and
+    /// `sans-serif` do. Non-ASCII case folding is deliberately *not* applied — that would be
+    /// locale-dependent and non-deterministic.
+    #[test]
+    fn key_for_should_match_family_names_ascii_case_insensitively() {
+        let db = FontDb::bundled().expect("bundled db builds");
+        for spelling in ["ahem", "AHEM", "aHeM"] {
+            let key = db
+                .key_for(spelling)
+                .expect("Ahem resolves in any ASCII case");
+            let face = db.face(key).expect("key resolves to a face");
+            assert_eq!(face.family, AHEM_FAMILY, "{spelling} must resolve to Ahem");
+        }
+        for spelling in ["noto sans", "NOTO SANS", "Sans-Serif", "MONOSPACE"] {
+            let key = db
+                .key_for(spelling)
+                .expect("Noto Sans resolves in any ASCII case");
+            let face = db.face(key).expect("key resolves to a face");
+            assert_eq!(
+                face.family, NOTO_SANS_FAMILY,
+                "{spelling} must resolve to Noto Sans"
+            );
+        }
+    }
+
     #[test]
     fn key_for_should_return_none_for_unknown_family() {
         let db = FontDb::bundled().expect("bundled db builds");
@@ -327,11 +366,22 @@ mod tests {
             .expect("advance width must be available for 'x'");
 
         // Ahem's advances are exact integers in font units, so an exact-equality assertion is
-        // meaningful here; clippy's float_cmp lint is about accumulated error, which cannot arise
-        // from a single unscaled metric lookup.
-        assert!(
-            (advance - f32::from(units_per_em)).abs() < f32::EPSILON,
-            "Ahem advance {advance} != units_per_em {units_per_em}"
-        );
+        // what this test actually means; clippy's `float_cmp` lint is about accumulated error,
+        // which cannot arise from a single unscaled metric lookup. `< f32::EPSILON` would be
+        // *weaker* than equality here and wrong in general (`f32::EPSILON` is the gap between
+        // 1.0 and its successor -- at the magnitude of a 1000+-unit em it is far below one ULP,
+        // so the comparison would only ever pass for values that are already bit-identical, and
+        // would silently stop being a tolerance at all). Assert the equality outright instead.
+        #[allow(
+            clippy::float_cmp,
+            reason = "both sides are exact small integers in font units, read once from an \
+                      unscaled metric lookup -- no arithmetic, so no accumulated error"
+        )]
+        {
+            assert!(
+                advance == f32::from(units_per_em),
+                "Ahem advance {advance} != units_per_em {units_per_em}"
+            );
+        }
     }
 }

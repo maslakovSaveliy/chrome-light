@@ -11,9 +11,9 @@
 ///
 /// Ahem is a CC0/public-domain test font (Todd Fahrner, distributed by the Web
 /// Platform Tests project) whose defining property is that every glyph is a solid
-/// black square exactly one em on a side -- see
-/// [`ahem_glyph_should_be_square_em`](../tests) for the test that proves these
-/// bytes really are Ahem.
+/// black square exactly one em on a side -- `crate::db`'s private
+/// `ahem_glyph_should_be_square_em` test proves these bytes really are Ahem by
+/// parsing their glyph metrics, rather than trusting the embedded family name.
 pub static AHEM_BYTES: &[u8] = include_bytes!("../assets/Ahem.ttf");
 
 /// The family name embedded in [`AHEM_BYTES`]'s `name` table, and the name
