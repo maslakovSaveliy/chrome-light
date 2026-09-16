@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- Reference for background-body-propagation.html: an 800x600 div carries the same colour
+     directly (a <body>/<html> background here would propagate to the canvas exactly like the
+     page under test, so it is deliberately NOT used - a plain div is the feature-free way to
+     paint the same rectangle). -->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  div { width: 800px; height: 600px; background: #0a5; }
+</style>
+</head>
+<body>
+<div></div>
+</body>
+</html>

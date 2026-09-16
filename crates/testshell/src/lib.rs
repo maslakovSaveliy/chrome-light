@@ -6,6 +6,7 @@
 
 pub mod dump;
 pub mod pipeline;
+pub mod reftest;
 
 use std::path::Path;
 
@@ -107,26 +108,32 @@ pub fn compare_png(a: &Path, b: &Path) -> Result<Diff, ShellError> {
             cause: e.to_string(),
         })
     };
-    let pa = load(a)?;
-    let pb = load(b)?;
-    if (pa.width(), pa.height()) != (pb.width(), pb.height()) {
+    compare_pixmaps(&load(a)?, &load(b)?)
+}
+
+/// Count differing pixels between two already-decoded pixmaps of equal size — the in-memory
+/// core [`compare_png`] loads two PNGs into before delegating here, and what
+/// [`reftest::run_pair`] uses directly (a reftest pair is rendered straight to a [`Pixmap`],
+/// so round-tripping it through a PNG file just to diff it would be pure overhead).
+pub fn compare_pixmaps(a: &Pixmap, b: &Pixmap) -> Result<Diff, ShellError> {
+    if (a.width(), a.height()) != (b.width(), b.height()) {
         return Err(ShellError::SizeMismatch {
-            a_w: pa.width(),
-            a_h: pa.height(),
-            b_w: pb.width(),
-            b_h: pb.height(),
+            a_w: a.width(),
+            a_h: a.height(),
+            b_w: b.width(),
+            b_h: b.height(),
         });
     }
-    let differing_pixels = pa
+    let differing_pixels = a
         .pixels()
         .iter()
-        .zip(pb.pixels())
+        .zip(b.pixels())
         .filter(|(x, y)| x != y)
         .count() as u64;
     Ok(Diff {
         differing_pixels,
-        width: pa.width(),
-        height: pa.height(),
+        width: a.width(),
+        height: a.height(),
     })
 }
 

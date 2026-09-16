@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- expects: a black bar (0,0)-(80,20) then a black bar (0,20)-(40,40). white-space:pre
+     preserves every space and breaks at every newline (CSS Text 3 SS3): "a  b\ncd" becomes
+     two lines, "a  b" (4 Ahem glyphs - a, space, space, b, all full em squares - 80px wide)
+     and "cd" (2 glyphs, 40px wide), stacked directly below with no gap. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  pre { font-family: Ahem; font-size: 20px; line-height: 20px; margin: 0; }
+</style>
+</head>
+<body>
+<pre>a  b
+cd</pre>
+</body>
+</html>

@@ -60,6 +60,13 @@ jobs:
           # CL_SMOKE_SLOW=1").
           CL_SMOKE_SLOW: "1"
       - run: cargo test --workspace --doc --locked
+      - run: cargo run -p cl-testshell -- reftest
+      - name: upload reftest failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reftest-failures-${{ matrix.os }}
+          path: target/reftest-failures
       - name: release build refuses unsandboxed renderer (Gate S0)
         shell: bash
         run: |

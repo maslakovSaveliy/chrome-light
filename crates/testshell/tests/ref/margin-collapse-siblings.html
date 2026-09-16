@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- expects: two 800x10 black bars, at (0,0) and (0,30). Sibling vertical margins collapse
+     to the greater of the two (CSS 2.1 SS8.3.1), not their sum: 20px margin-bottom meeting
+     10px margin-top collapses to 20px, so the second bar starts at 10 (first bar height) +
+     20 (collapsed margin) = 30. The two <div>s are adjacent in the source with no whitespace
+     between them: M1a does not implement self-collapsing empty blocks
+     (crates/layout/src/block.rs), so a whitespace-only text node between them would generate
+     a real (zero-height) anonymous block that breaks the direct sibling collapse into two
+     separate hops and sums the margins (30px) instead of taking their max (20px). -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { font-family: Ahem; font-size: 20px; line-height: 20px; height: 10px; background: #000; }
+  #first { margin-bottom: 20px; }
+  #second { margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="first"></div><div id="second"></div>
+</body>
+</html>
