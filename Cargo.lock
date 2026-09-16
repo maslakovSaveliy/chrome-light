@@ -362,7 +362,16 @@ name = "cl-testshell"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "cl-dom",
+ "cl-fonts",
+ "cl-gfx",
+ "cl-html",
+ "cl-layout",
+ "cl-net",
+ "cl-paint",
+ "cl-style",
  "clap",
+ "thiserror",
  "tiny-skia",
 ]
 
