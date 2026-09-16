@@ -1,0 +1,22 @@
+---
+source: crates/layout/tests/fragment_tree_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/inline-spans.html\"))"
+---
+#fragments
+| Block <html> border=(0.00, 0.00, 800.00, 143.60) content=(0.00, 0.00, 800.00, 143.60)
+|   AnonymousBlock border=(0.00, 0.00, 800.00, 19.20) content=(0.00, 0.00, 800.00, 19.20)
+|     Line border=(0.00, 0.00, 800.00, 19.20) content=(0.00, 0.00, 800.00, 19.20)
+|       Text border=(0.00, 0.00, 0.00, 0.00) content=(0.00, 0.00, 0.00, 0.00)
+|   Block <body> border=(8.00, 27.20, 784.00, 108.40) content=(8.00, 27.20, 784.00, 108.40)
+|     AnonymousBlock border=(8.00, 27.20, 784.00, 19.20) content=(8.00, 27.20, 784.00, 19.20)
+|       Line border=(8.00, 27.20, 784.00, 19.20) content=(8.00, 27.20, 784.00, 19.20)
+|         Text border=(8.00, 27.20, 0.00, 0.00) content=(8.00, 27.20, 0.00, 0.00)
+|     Block <p> border=(8.00, 66.40, 784.00, 30.00) content=(8.00, 66.40, 784.00, 30.00)
+|       Line border=(8.00, 66.40, 784.00, 30.00) content=(8.00, 66.40, 784.00, 30.00)
+|         Text border=(8.00, 66.40, 0.00, 0.00) content=(8.00, 66.40, 0.00, 0.00)
+|         Text border=(8.00, 66.40, 0.00, 0.00) content=(8.00, 66.40, 0.00, 0.00)
+|         Text border=(8.00, 66.40, 0.00, 0.00) content=(8.00, 66.40, 0.00, 0.00)
+|         Text border=(8.00, 66.40, 0.00, 0.00) content=(8.00, 66.40, 0.00, 0.00)
+|     AnonymousBlock border=(8.00, 116.40, 784.00, 19.20) content=(8.00, 116.40, 784.00, 19.20)
+|       Line border=(8.00, 116.40, 784.00, 19.20) content=(8.00, 116.40, 784.00, 19.20)
+|         Text border=(8.00, 116.40, 0.00, 0.00) content=(8.00, 116.40, 0.00, 0.00)

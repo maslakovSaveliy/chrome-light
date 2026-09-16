@@ -11,6 +11,7 @@ name = "cl_layout"
 
 [dependencies]
 cl-dom.workspace = true
+cl-fonts.workspace = true
 cl-style.workspace = true
 stylo.workspace = true
 thiserror.workspace = true

@@ -1,0 +1,19 @@
+---
+source: crates/layout/tests/fragment_tree_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
+---
+#fragments
+| Block <html> border=(0.00, 0.00, 800.00, 140.80) content=(0.00, 0.00, 800.00, 140.80)
+|   AnonymousBlock border=(0.00, 0.00, 800.00, 19.20) content=(0.00, 0.00, 800.00, 19.20)
+|     Line border=(0.00, 0.00, 800.00, 19.20) content=(0.00, 0.00, 800.00, 19.20)
+|       Text border=(0.00, 0.00, 0.00, 0.00) content=(0.00, 0.00, 0.00, 0.00)
+|   Block <body> border=(8.00, 27.20, 784.00, 105.60) content=(8.00, 27.20, 784.00, 105.60)
+|     AnonymousBlock border=(8.00, 27.20, 784.00, 19.20) content=(8.00, 27.20, 784.00, 19.20)
+|       Line border=(8.00, 27.20, 784.00, 19.20) content=(8.00, 27.20, 784.00, 19.20)
+|         Text border=(8.00, 27.20, 0.00, 0.00) content=(8.00, 27.20, 0.00, 0.00)
+|     Block <pre> border=(8.00, 62.40, 784.00, 35.20) content=(16.00, 70.40, 768.00, 19.20)
+|       Line border=(16.00, 70.40, 768.00, 19.20) content=(16.00, 70.40, 768.00, 19.20)
+|         Text border=(16.00, 70.40, 0.00, 0.00) content=(16.00, 70.40, 0.00, 0.00)
+|     AnonymousBlock border=(8.00, 113.60, 784.00, 19.20) content=(8.00, 113.60, 784.00, 19.20)
+|       Line border=(8.00, 113.60, 784.00, 19.20) content=(8.00, 113.60, 784.00, 19.20)
+|         Text border=(8.00, 113.60, 0.00, 0.00) content=(8.00, 113.60, 0.00, 0.00)

@@ -249,6 +249,7 @@ name = "cl-layout"
 version = "0.0.1"
 dependencies = [
  "cl-dom",
+ "cl-fonts",
  "cl-html",
  "cl-net",
  "cl-style",

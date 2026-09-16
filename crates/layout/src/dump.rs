@@ -17,10 +17,13 @@
 
 use std::fmt::Write as _;
 
+use cl_dom::{Document, Element, ns};
+
 use crate::au::Au;
 use crate::box_tree::{BoxId, BoxKind, BoxTree, LayoutBox};
+use crate::fragment::{Fragment, FragmentId, FragmentKind, FragmentTree};
 use crate::geom::{
-    BoxSizing, Display, Length, Overflow, Position, Rgba8, Sides, TextAlign, WhiteSpace,
+    BoxSizing, Display, Length, Overflow, Position, Rect, Rgba8, Sides, TextAlign, WhiteSpace,
 };
 
 /// Renders every box of `tree` with its kind and layout-relevant style fields.
@@ -226,4 +229,118 @@ fn sides_str<T: Copy>(sides: &Sides<T>, mut render: impl FnMut(T) -> String) -> 
         render(sides.left)
     );
     out
+}
+
+/// Renders every fragment of `tree` with its kind, originating tag (when it has one) and
+/// geometry, for snapshot tests and for eyeballing what [`crate::block::layout`] actually
+/// produced.
+///
+/// `doc` is the [`Document`] the [`cl_style::StyledDocument`] passed to
+/// [`crate::block::layout`] was built from — needed to print a `Block`/`AnonymousBlock`
+/// fragment's originating tag, the one thing [`box_tree_dump`] never needed (it only ever
+/// printed a node's raw index; see that function's docs for why). This is otherwise the same
+/// deliberate deviation `computed_style_dump` takes for the same reason: a [`FragmentTree`]
+/// does not borrow the `Document` it was laid out from any more than a
+/// [`crate::box_tree::BoxTree`] does (see `crate::box_tree::build`'s docs), so a dump that
+/// wants a tag name must be handed one to look it up in.
+///
+/// # Format
+///
+/// ```text
+/// #fragments
+/// | Block <html> border=(0.00, 0.00, 800.00, 22.00) content=(0.00, 0.00, 800.00, 22.00)
+/// |   Block <body> border=(8.00, 8.00, 784.00, 6.00) content=(8.00, 8.00, 784.00, 6.00)
+/// ```
+///
+/// Every rect is `(x, y, w, h)`, each printed as CSS pixels with two decimal places, and —
+/// unlike a typical fragment tree, and worth calling out explicitly — **absolute**: relative
+/// to the viewport origin, never to the fragment's own parent (see [`Fragment::border_box`]'s
+/// docs). Only `border_box` and `content_box` are shown (`padding_box` sits exactly between
+/// the two and does not earn a third column in an already-wide line). A `Block`/
+/// `AnonymousBlock`/`Line`/`Text` fragment's kind name always appears; only `Block` prints a
+/// tag (an element fragment — `<html>`/`<body>` included), matching the controller ruling
+/// that shaped this format. The walk uses one explicit stack, bounded by [`FragmentTree::len`]
+/// like [`box_tree_dump`]'s, for the same hostile-input reason.
+#[must_use]
+pub fn fragment_tree_dump(tree: &FragmentTree, doc: &Document) -> String {
+    let mut lines = vec![String::from("#fragments")];
+    let mut stack: Vec<(FragmentId, usize)> = vec![(tree.root, 0)];
+    let mut remaining = tree.len();
+
+    while let Some((id, depth)) = stack.pop() {
+        if remaining == 0 {
+            break;
+        }
+        remaining -= 1;
+
+        let Some(f) = tree.get(id) else {
+            continue;
+        };
+
+        lines.push(format!("| {}{}", indent(depth), fragment_label(f, doc)));
+
+        let mut children = f.children.clone();
+        children.reverse();
+        stack.extend(children.into_iter().map(|child| (child, depth + 1)));
+    }
+
+    let mut out = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(line);
+    }
+    out
+}
+
+/// One fragment's dump line: its kind (plus tag, for a `Block`) and its `border`/`content`
+/// rects.
+fn fragment_label(f: &Fragment, doc: &Document) -> String {
+    let kind = match &f.kind {
+        FragmentKind::Block => "Block",
+        FragmentKind::AnonymousBlock => "AnonymousBlock",
+        FragmentKind::Line => "Line",
+        FragmentKind::Text { .. } => "Text",
+    };
+    let name = match (&f.kind, f.node) {
+        (FragmentKind::Block, Some(node)) => match doc.element(node) {
+            Some(element) => format!("{kind} {}", tag(element)),
+            None => kind.to_owned(),
+        },
+        _ => kind.to_owned(),
+    };
+    format!(
+        "{name} border={} content={}",
+        rect_str(f.border_box),
+        rect_str(f.content_box)
+    )
+}
+
+/// An element's rendering: `<tag>`, or `<svg tag>` / `<math tag>` for the two foreign
+/// namespaces — the same convention `cl_style::dump::computed_style_dump` and
+/// `cl_dom::serialize::html5lib_tree` use.
+fn tag(element: &Element) -> String {
+    let local = &element.name.local;
+    if element.name.ns == ns!(svg) {
+        format!("<svg {local}>")
+    } else if element.name.ns == ns!(mathml) {
+        format!("<math {local}>")
+    } else {
+        format!("<{local}>")
+    }
+}
+
+/// One rect as `(x, y, w, h)`, each coordinate a CSS pixel value with two decimal places —
+/// see [`fragment_tree_dump`]'s docs for why two decimals (not the bare, variable-precision
+/// `{}px` [`px_str`] uses for a box-tree dump's style values): a geometry dump benefits from
+/// column-like alignment a variable-width float render would not give it.
+fn rect_str(r: Rect) -> String {
+    format!(
+        "({:.2}, {:.2}, {:.2}, {:.2})",
+        r.origin.x.to_px(),
+        r.origin.y.to_px(),
+        r.size.w.to_px(),
+        r.size.h.to_px()
+    )
 }

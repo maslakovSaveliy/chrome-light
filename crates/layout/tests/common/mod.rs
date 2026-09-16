@@ -12,6 +12,8 @@
 )]
 
 use cl_dom::{Document, Element, NodeId};
+use cl_fonts::FontDb;
+use cl_layout::{FragmentTree, Viewport};
 use cl_net::{NetError, Url};
 use cl_style::{StyleEngine, StyledDocument};
 
@@ -49,6 +51,24 @@ pub fn styled_document(html: &str) -> StyledDocument {
     );
 
     engine.resolve(doc).expect("resolve")
+}
+
+/// Runs the full pipeline (parse, style, build the box tree, lay it out) over `html` against
+/// [`VIEWPORT`] and returns both the resulting fragment tree and the [`StyledDocument`] it
+/// was built from — callers that need to look a fragment up by its originating element (via
+/// [`find_element`] or an `id` attribute) need the latter too, and re-parsing `html` a second
+/// time to get one would only add a (harmless, but needless) reliance on the parser producing
+/// identical `NodeId`s across two independent runs.
+#[allow(
+    dead_code,
+    reason = "not every test binary that includes this module calls this"
+)]
+pub fn layout_html(html: &str) -> (FragmentTree, StyledDocument) {
+    let styled = styled_document(html);
+    let mut fonts = FontDb::bundled().expect("bundled font db");
+    let viewport = Viewport::new(VIEWPORT.0, VIEWPORT.1);
+    let tree = cl_layout::layout(&styled, viewport, &mut fonts).expect("layout");
+    (tree, styled)
 }
 
 /// The first node in document order whose element matches `predicate`.

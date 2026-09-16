@@ -21,23 +21,44 @@
 //! [`dump::box_tree_dump`] renders a [`box_tree::BoxTree`] for snapshot tests, the same way
 //! `cl_style::dump::computed_style_dump` renders a `StyledDocument`.
 //!
-//! Everything downstream of this crate (Task 17 onward: the block formatting context,
-//! fragment tree, painting) reads only [`geom::LayoutStyle`] and [`box_tree::BoxTree`] —
-//! never a stylo type directly.
+//! Task 17 adds the block formatting context and the fragment tree it produces:
+//!
+//! * [`block`] — [`block::layout`], which walks a [`box_tree::BoxTree`] into a positioned,
+//!   sized [`fragment::FragmentTree`] (CSS 2.1 §10 box dimensions, §8.3.1 margin collapsing).
+//!   Its module docs cover the M1a inline-layout placeholder (real inline layout is Task 18)
+//!   in detail;
+//! * [`fragment`] — [`fragment::Fragment`]/[`fragment::FragmentTree`]/[`fragment::Viewport`],
+//!   the immutable output of [`block::layout`];
+//! * [`text`] — [`text::Glyph`]/[`text::GlyphRun`], the plain shaped-text data types
+//!   [`fragment::FragmentKind::Text`] carries; Task 18 introduces the shaper that actually
+//!   fills them in.
+//!
+//! [`dump::fragment_tree_dump`] renders a [`fragment::FragmentTree`] the same way
+//! [`dump::box_tree_dump`] renders a [`box_tree::BoxTree`].
+//!
+//! Everything downstream of this crate (Task 19 onward: painting) reads only
+//! [`fragment::FragmentTree`] — never a stylo type directly, and never [`box_tree::BoxTree`]
+//! either (that is an implementation detail of [`block::layout`]).
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
 pub mod au;
+pub mod block;
 pub mod box_tree;
 pub mod dump;
 pub mod error;
+pub mod fragment;
 pub mod geom;
 pub mod style_adapt;
+pub mod text;
 
 pub use au::Au;
+pub use block::layout;
 pub use box_tree::{BoxId, BoxKind, BoxTree, LayoutBox, build};
 pub use error::LayoutError;
+pub use fragment::{Fragment, FragmentId, FragmentKind, FragmentTree, StyleId, Viewport};
 pub use geom::{
     BoxSizing, Display, LayoutStyle, Length, Overflow, Point, Position, Rect, Rgba8, Sides, Size,
     TextAlign, WhiteSpace,
 };
+pub use text::{Glyph, GlyphRun};

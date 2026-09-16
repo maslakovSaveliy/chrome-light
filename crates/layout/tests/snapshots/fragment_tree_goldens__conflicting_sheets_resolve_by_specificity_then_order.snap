@@ -1,0 +1,25 @@
+---
+source: crates/layout/tests/fragment_tree_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/cascade-conflict.html\"))"
+---
+#fragments
+| Block <html> border=(0.00, 0.00, 800.00, 214.40) content=(0.00, 0.00, 800.00, 214.40)
+|   AnonymousBlock border=(0.00, 0.00, 800.00, 19.20) content=(0.00, 0.00, 800.00, 19.20)
+|     Line border=(0.00, 0.00, 800.00, 19.20) content=(0.00, 0.00, 800.00, 19.20)
+|       Text border=(0.00, 0.00, 0.00, 0.00) content=(0.00, 0.00, 0.00, 0.00)
+|   Block <body> border=(8.00, 27.20, 784.00, 179.20) content=(8.00, 27.20, 784.00, 179.20)
+|     AnonymousBlock border=(8.00, 27.20, 784.00, 19.20) content=(8.00, 27.20, 784.00, 19.20)
+|       Line border=(8.00, 27.20, 784.00, 19.20) content=(8.00, 27.20, 784.00, 19.20)
+|         Text border=(8.00, 27.20, 0.00, 0.00) content=(8.00, 27.20, 0.00, 0.00)
+|     Block <p> border=(8.00, 62.40, 784.00, 19.20) content=(8.00, 62.40, 784.00, 19.20)
+|       Line border=(8.00, 62.40, 784.00, 19.20) content=(8.00, 62.40, 784.00, 19.20)
+|         Text border=(8.00, 62.40, 0.00, 0.00) content=(8.00, 62.40, 0.00, 0.00)
+|     AnonymousBlock border=(8.00, 97.60, 784.00, 19.20) content=(8.00, 97.60, 784.00, 19.20)
+|       Line border=(8.00, 97.60, 784.00, 19.20) content=(8.00, 97.60, 784.00, 19.20)
+|         Text border=(8.00, 97.60, 0.00, 0.00) content=(8.00, 97.60, 0.00, 0.00)
+|     Block <p> border=(8.00, 138.80, 784.00, 26.40) content=(8.00, 138.80, 784.00, 26.40)
+|       Line border=(8.00, 138.80, 784.00, 26.40) content=(8.00, 138.80, 784.00, 26.40)
+|         Text border=(8.00, 138.80, 0.00, 0.00) content=(8.00, 138.80, 0.00, 0.00)
+|     AnonymousBlock border=(8.00, 187.20, 784.00, 19.20) content=(8.00, 187.20, 784.00, 19.20)
+|       Line border=(8.00, 187.20, 784.00, 19.20) content=(8.00, 187.20, 784.00, 19.20)
+|         Text border=(8.00, 187.20, 0.00, 0.00) content=(8.00, 187.20, 0.00, 0.00)
