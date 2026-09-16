@@ -12,9 +12,9 @@
  *
  * Deliberately left out, because M1a's layout/selector subset cannot honour it and a rule
  * here would just be dead weight: list markers (`list-style`, `li` stays `display:block`
- * rather than `list-item`), table display types, `<hr>`'s border/height, `<fieldset>`'s
- * border/padding, `<dd>`'s indent, form control widgets, `<base>`/`<noscript>`'s
- * `display:none`, and `:visited` (Task 11 implements only `:link`/`:any-link`).
+ * rather than `list-item`), table display types, `<fieldset>`'s border/padding, `<dd>`'s
+ * indent, form control widgets, `<base>`/`<noscript>`'s `display:none`, and `:visited`
+ * (Task 11 implements only `:link`/`:any-link`).
  */
 
 /* The two elements every real page always needs box generation for. */
@@ -45,6 +45,13 @@ p, blockquote, ul, ol, dl, pre, h1, h2, h3, h4, h5, h6 { margin: 1em 0; }
 
 /* A blockquote additionally indents from both edges to set it off from surrounding text. */
 blockquote { margin: 1em 40px; }
+
+/* HTML Standard §15.3.11: a thematic break renders as a half-em-indented horizontal rule.
+ * The spec's own suggested rendering is `border-style: inset`; M1a's paint subset only
+ * understands `solid`/`none` (`crates/paint/src/build.rs`), so `solid` stands in for `inset`
+ * here — a real, if slightly flatter-looking, deviation recorded in
+ * `docs/SPEC_REGISTRY.md`'s UA-stylesheet row rather than left silent. */
+hr { color: gray; border-style: solid; border-width: 1px; margin: 0.5em auto; height: 0; }
 
 /* Heading sizes step down from 2em (h1) to 0.67em (h6); each heading's own vertical
  * margin grows the opposite way, so consecutive headings and body text keep roughly the
