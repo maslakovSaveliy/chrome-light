@@ -6,6 +6,8 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 
 ## Движок
 
+`parley` и `fontique` подключены как `default-features = false, features = ["std"]`: это выключает `system` (fontconfig/DirectWrite/CoreText) — движок рендерит только свои встроенные шрифты (детерминизм reftest'ов, ADR-0009) — и `complex-scripts` (словарный перенос строк для CJK/тайского/кхмерского; решение Task 18, вернуться к нему вместе с поддержкой этих письменностей).
+
 | Crate | Роль | Почему этот | Альтернативы | Риск |
 |---|---|---|---|---|
 | `html5ever`, `markup5ever` | HTML tokenizer/tree builder | spec-conformant, Servo, WPT-проверен, `Atom` | свой парсер | средний — API меняется |
@@ -15,7 +17,8 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 | `stylo` (+`stylo_atoms`, `stylo_dom`, `selectors`, `servo_arc`) | CSS cascade/computed style | Firefox-grade, параллельный, огромное покрытие | свой cascade (годы) | высокий — unsafe в cl-style, Python 3 на сборке (ADR-0015) |
 | `euclid` 0.22 | typed 2D geometry (`Size2D`, `Scale`) для `style::device::Device::new` (viewport/device-pixel-ratio) | версия, которую сам `stylo` 0.20 использует внутри (`style_traits`/`app_units`); не реэкспортируется из `style::`, поэтому нужен как прямая зависимость `cl-style` (обнаружено в task-2 build spike) | — | низкий |
 | `taffy` | flex/grid/block math | CSS-корректный, используется Blitz/Bevy | свой | низкий |
-| `parley`, `swash`, `fontdb`, `skrifa` | text layout, shaping, fonts | Linebender-стек, чистый Rust | harfbuzz-rs (C), cosmic-text | средний — pre-1.0 |
+| `parley` 0.11 (Apache-2.0 OR MIT) | shaping + line breaking + `text-align` внутри `cl-layout` (Task 18: inline formatting context); тянет `harfrust` (shaper), `skrifa`, `parley_data`, `icu_segmenter` | Linebender-стек, чистый Rust, тот же `fontique`, что и `cl-fonts` | harfbuzz-rs (C), cosmic-text | средний — pre-1.0 |
+| `swash`, `fontdb` | (пока не используются) raster/metrics, font DB | Linebender-стек, чистый Rust | harfbuzz-rs (C) | средний — pre-1.0 |
 | `fontique` | font discovery | Linebender-стек | system fontconfig | низкий |
 | `tendril` | веб-строки (rope/small-string для текстовых узлов) | Servo | — | низкий — **не прямая зависимость**: приходит через `markup5ever` и берётся как `markup5ever::tendril` (у markup5ever 0.39 это tendril 0.5; отдельный пин 0.4 дал бы два несовместимых `StrTendril`) |
 | `vello`, `wgpu`, `peniko`, `kurbo` | 2D GPU raster, GPU abstraction | чистый Rust, Metal/DX12/Vulkan | skia-safe (C++), tiny-skia only | средний — wgpu breaking каждый релиз |

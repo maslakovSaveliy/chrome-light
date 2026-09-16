@@ -69,30 +69,33 @@ impl StyleId {
 
 /// What kind of fragment a [`Fragment`] is.
 ///
-/// Mirrors [`crate::box_tree::BoxKind`] at the granularity Task 17 needs: every
+/// Mirrors [`crate::box_tree::BoxKind`] at the granularity M1a needs: every
 /// [`crate::box_tree::BoxKind::Block`]/[`crate::box_tree::BoxKind::AnonymousBlock`] box
 /// becomes exactly one `Block`/`AnonymousBlock` fragment; a [`crate::box_tree::BoxKind::Inline`]
-/// box produces no fragment of its own in M1a (its content is flattened into its
-/// containing block's line groups — see `crate::block`'s module docs) and neither does a
-/// [`crate::box_tree::BoxKind::LineBreak`] (it only ends a line group); each line group
-/// becomes one `Line` fragment, and each [`crate::box_tree::BoxKind::InlineText`] box within
-/// a group becomes one `Text` fragment, a child of that `Line`.
+/// box produces no fragment of its own in M1a (only its descendants' text, shaped with its
+/// inherited style — so M1a paints no inline border, padding or background) and neither does
+/// a [`crate::box_tree::BoxKind::LineBreak`] (it only forces a break); each line the shaper
+/// produced becomes one `Line` fragment, whose children are one `Text` fragment per source
+/// text node contributing to that line.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FragmentKind {
     /// The fragment for an element's own `Block`-level box.
     Block,
     /// The fragment for a [`crate::box_tree::BoxKind::AnonymousBlock`] box.
     AnonymousBlock,
-    /// One line box of an inline formatting context — M1a's placeholder for real inline
-    /// layout (Task 18): see `crate::block`'s module docs for exactly how line groups are
-    /// formed and sized.
+    /// One line box of an inline formatting context: its rects span from where `text-align`
+    /// put the line to the end of its content (a hanging trailing space excluded), and are
+    /// the container's `line-height` tall.
     Line,
-    /// The fragment for one [`crate::box_tree::BoxKind::InlineText`] box, always a child of
-    /// a `Line` fragment. `runs` is always empty in M1a (the placeholder shapes no text);
-    /// Task 18 fills it in.
+    /// One source text node's contribution to one line, always a child of a `Line` fragment.
+    ///
+    /// [`Fragment::node`] is that text node and [`Fragment::style`] the style it inherited,
+    /// so a `<b>` inside a `<p>` produces its own `Text` fragment with its own
+    /// `font-weight`. Empty only for a line with no glyphs at all.
     Text {
-        /// The run(s) of shaped glyphs this text fragment paints. Always empty until
-        /// Task 18.
+        /// The runs of shaped glyphs this text fragment paints, in visual order. A run is
+        /// uniform in font, size and colour; a fragment has more than one only where font
+        /// fallback split its text.
         runs: Vec<GlyphRun>,
     },
 }
@@ -103,7 +106,8 @@ pub struct Fragment {
     /// The DOM node this fragment's box was generated for. `None` for an `AnonymousBlock`
     /// or a `Line` (neither has an originating element at all). A `Text` fragment carries
     /// the [`crate::box_tree::BoxKind::InlineText`] box's own node — the text node itself,
-    /// not an element — exactly as that box did.
+    /// not an element — exactly as that box did (`None` only in the degenerate case of a run
+    /// no text node claims, which `crate::block::layout` does not produce).
     pub node: Option<NodeId>,
     /// What kind of fragment this is.
     pub kind: FragmentKind,

@@ -18,6 +18,7 @@
 use std::fmt::Write as _;
 
 use cl_dom::{Document, Element, ns};
+use cl_fonts::FontDb;
 
 use crate::au::Au;
 use crate::box_tree::{BoxId, BoxKind, BoxTree, LayoutBox};
@@ -25,6 +26,7 @@ use crate::fragment::{Fragment, FragmentId, FragmentKind, FragmentTree};
 use crate::geom::{
     BoxSizing, Display, Length, Overflow, Position, Rect, Rgba8, Sides, TextAlign, WhiteSpace,
 };
+use crate::text::GlyphRun;
 
 /// Renders every box of `tree` with its kind and layout-relevant style fields.
 ///
@@ -244,13 +246,29 @@ fn sides_str<T: Copy>(sides: &Sides<T>, mut render: impl FnMut(T) -> String) -> 
 /// [`crate::box_tree::BoxTree`] does (see `crate::box_tree::build`'s docs), so a dump that
 /// wants a tag name must be handed one to look it up in.
 ///
+/// `fonts` is the same [`FontDb`] the tree was laid out with — needed to turn a glyph run's
+/// `cl_fonts::FontKey` (an opaque index, meaningful only against the database that issued it)
+/// back into a family name.
+///
 /// # Format
 ///
 /// ```text
 /// #fragments
 /// | Block <html> border=(0.00, 0.00, 800.00, 22.00) content=(0.00, 0.00, 800.00, 22.00)
 /// |   Block <body> border=(8.00, 8.00, 784.00, 6.00) content=(8.00, 8.00, 784.00, 6.00)
+/// |     Line border=(8.00, 8.00, 32.00, 19.20) content=(8.00, 8.00, 32.00, 19.20)
+/// |       Text runs=1 border=(8.00, 8.00, 32.00, 19.20) content=(8.00, 8.00, 32.00, 19.20)
+/// |         Run font=Ahem size=16.00 origin=(8.00, 20.80) glyphs=2 advance=32.00
 /// ```
+///
+/// A `Text` fragment's line carries its run count (`runs=N`), and each of its runs gets one
+/// line of its own, indented one further level: the family the run was shaped with, its font
+/// size, its origin (the left end of its baseline, absolute like every other coordinate
+/// here), how many glyphs it holds, and their total advance — all in CSS pixels to two
+/// decimals. Individual glyphs are deliberately *not* printed: a glyph-per-line dump would
+/// bury the geometry these goldens exist to check under hundreds of lines, and glyph ids are
+/// font-build-specific in a way the rest of this format is not. `cl-layout`'s
+/// `tests/inline.rs` asserts per-glyph positions directly instead.
 ///
 /// Every rect is `(x, y, w, h)`, each printed as CSS pixels with two decimal places, and —
 /// unlike a typical fragment tree, and worth calling out explicitly — **absolute**: relative
@@ -262,7 +280,7 @@ fn sides_str<T: Copy>(sides: &Sides<T>, mut render: impl FnMut(T) -> String) -> 
 /// that shaped this format. The walk uses one explicit stack, bounded by [`FragmentTree::len`]
 /// like [`box_tree_dump`]'s, for the same hostile-input reason.
 #[must_use]
-pub fn fragment_tree_dump(tree: &FragmentTree, doc: &Document) -> String {
+pub fn fragment_tree_dump(tree: &FragmentTree, doc: &Document, fonts: &FontDb) -> String {
     let mut lines = vec![String::from("#fragments")];
     let mut stack: Vec<(FragmentId, usize)> = vec![(tree.root, 0)];
     let mut remaining = tree.len();
@@ -278,6 +296,11 @@ pub fn fragment_tree_dump(tree: &FragmentTree, doc: &Document) -> String {
         };
 
         lines.push(format!("| {}{}", indent(depth), fragment_label(f, doc)));
+        if let FragmentKind::Text { runs } = &f.kind {
+            for run in runs {
+                lines.push(format!("| {}{}", indent(depth + 1), run_line(run, fonts)));
+            }
+        }
 
         let mut children = f.children.clone();
         children.reverse();
@@ -294,8 +317,8 @@ pub fn fragment_tree_dump(tree: &FragmentTree, doc: &Document) -> String {
     out
 }
 
-/// One fragment's dump line: its kind (plus tag, for a `Block`) and its `border`/`content`
-/// rects.
+/// One fragment's dump line: its kind (plus tag, for a `Block`; plus run count, for a
+/// `Text`) and its `border`/`content` rects.
 fn fragment_label(f: &Fragment, doc: &Document) -> String {
     let kind = match &f.kind {
         FragmentKind::Block => "Block",
@@ -308,6 +331,7 @@ fn fragment_label(f: &Fragment, doc: &Document) -> String {
             Some(element) => format!("{kind} {}", tag(element)),
             None => kind.to_owned(),
         },
+        (FragmentKind::Text { runs }, _) => format!("{kind} runs={}", runs.len()),
         _ => kind.to_owned(),
     };
     format!(
@@ -342,5 +366,27 @@ fn rect_str(r: Rect) -> String {
         r.origin.y.to_px(),
         r.size.w.to_px(),
         r.size.h.to_px()
+    )
+}
+
+/// One glyph run's dump line — see [`fragment_tree_dump`]'s format docs.
+///
+/// A run whose [`cl_fonts::FontKey`] does not resolve in `fonts` prints `font=?`: the dump is
+/// a debugging aid and must stay total even for a hand-assembled tree, and
+/// [`crate::block::layout`] itself reports that condition as
+/// [`crate::error::LayoutError::FontNotBundled`] rather than producing such a run.
+fn run_line(run: &GlyphRun, fonts: &FontDb) -> String {
+    let family = fonts.face(run.font).map_or("?", |face| face.family);
+    let advance = run
+        .glyphs
+        .iter()
+        .fold(Au::ZERO, |sum, glyph| sum.saturating_add(glyph.advance));
+    format!(
+        "Run font={family} size={:.2} origin=({:.2}, {:.2}) glyphs={} advance={:.2}",
+        run.size.to_px(),
+        run.origin.x.to_px(),
+        run.origin.y.to_px(),
+        run.glyphs.len(),
+        advance.to_px()
     )
 }

@@ -13,6 +13,7 @@ name = "cl_layout"
 cl-dom.workspace = true
 cl-fonts.workspace = true
 cl-style.workspace = true
+parley.workspace = true
 stylo.workspace = true
 thiserror.workspace = true
 

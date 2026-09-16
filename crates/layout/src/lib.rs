@@ -21,17 +21,22 @@
 //! [`dump::box_tree_dump`] renders a [`box_tree::BoxTree`] for snapshot tests, the same way
 //! `cl_style::dump::computed_style_dump` renders a `StyledDocument`.
 //!
-//! Task 17 adds the block formatting context and the fragment tree it produces:
+//! Task 17 adds the block formatting context and the fragment tree it produces, and Task 18
+//! the inline formatting context inside it:
 //!
 //! * [`block`] — [`block::layout`], which walks a [`box_tree::BoxTree`] into a positioned,
-//!   sized [`fragment::FragmentTree`] (CSS 2.1 §10 box dimensions, §8.3.1 margin collapsing).
-//!   Its module docs cover the M1a inline-layout placeholder (real inline layout is Task 18)
-//!   in detail;
+//!   sized [`fragment::FragmentTree`] (CSS 2.1 §10 box dimensions, §8.3.1 margin collapsing);
 //! * [`fragment`] — [`fragment::Fragment`]/[`fragment::FragmentTree`]/[`fragment::Viewport`],
 //!   the immutable output of [`block::layout`];
 //! * [`text`] — [`text::Glyph`]/[`text::GlyphRun`], the plain shaped-text data types
-//!   [`fragment::FragmentKind::Text`] carries; Task 18 introduces the shaper that actually
-//!   fills them in.
+//!   [`fragment::FragmentKind::Text`] carries, plus the private `parley` shaper that fills
+//!   them in.
+//!
+//! Three private modules implement the inline formatting context, between them owning every
+//! `parley`/`fontique` type this crate touches (they appear nowhere in its public API):
+//! `whitespace` (CSS Text 3 §4.1.1 whitespace processing, applied before shaping), `text`'s
+//! own `TextShaper` (shaping, line breaking, `text-align`), and `inline` (flattening a
+//! block's inline-level boxes, and turning the shaper's lines into `Line`/`Text` fragments).
 //!
 //! [`dump::fragment_tree_dump`] renders a [`fragment::FragmentTree`] the same way
 //! [`dump::box_tree_dump`] renders a [`box_tree::BoxTree`].
@@ -49,8 +54,10 @@ pub mod dump;
 pub mod error;
 pub mod fragment;
 pub mod geom;
+mod inline;
 pub mod style_adapt;
 pub mod text;
+mod whitespace;
 
 pub use au::Au;
 pub use block::layout;

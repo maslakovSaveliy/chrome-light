@@ -2,27 +2,18 @@
 //! positioned, sized [`FragmentTree`] (CSS 2.1 §10 — box dimensions — and §8.3.1 — margin
 //! collapsing).
 //!
-//! # Scope: this is M1a's placeholder, not Task 18's inline layout
+//! # Inline content is laid out by `crate::inline`
 //!
-//! **`M1a Task 17 placeholder, replaced in Task 18`.** A block box whose box-tree children
-//! are all inline-level (`Inline`/`InlineText`/`LineBreak` — see [`BoxTree`]'s invariants) is
-//! not really laid out here: `layout_inline_placeholder` flattens that content into *line
-//! groups* — maximal runs of inline-level descendants between `LineBreak` boxes, found by
-//! walking into (but not laying out) any nested `Inline` boxes — and emits one `Line`
-//! fragment per group, `line_height` tall, with one empty `Text { runs: vec![] }` child
-//! fragment per `InlineText` box in that group. A group with zero `InlineText` boxes (an
-//! empty line, e.g. two adjacent `<br>`s, or the sole group of an element with no inline
-//! content at all) is still emitted as a `Line` fragment, but contributes `0`, not
-//! `line_height`, to both its own height and the container's total content height — this is
-//! the exact reading of the controller ruling's parenthetical ("a run with zero `InlineText`
-//! boxes … contributes zero height"). A box with *no children at all* (box-tree `children`
-//! empty — nothing to flatten, not even a trivial empty group) short-circuits to content
-//! height `0` with no `Line`/`Text` fragments whatsoever, per the same ruling's final
-//! sentence — this is `layout_leaf`'s `children.is_empty()` branch. Every `Text` fragment's
-//! three rects are a zero-size rect at its `Line`'s content-box origin: there is no shaping
-//! yet to place glyphs with, so no position is claimed. Task 18 replaces all of this with
-//! real inline layout (line breaking, glyph runs, per-run baselines) and most likely
-//! restructures `Line`'s children to be per-run rather than per-`InlineText`-box.
+//! A block box whose box-tree children are all inline-level (`Inline`/`InlineText`/
+//! `LineBreak` — see [`BoxTree`]'s invariants) has its content whitespace-processed, shaped,
+//! line-broken and aligned by `crate::inline::layout`, which appends the resulting `Line`
+//! fragments (with their `Text` children) and reports the total height they contribute. This
+//! module only decides *where* that content box is and how tall the block ends up; everything
+//! between a text node's characters and a positioned glyph belongs to `crate::inline`,
+//! [`crate::text`] and `crate::whitespace`. A block with no children at all short-circuits
+//! to content height `0` without consulting them (`layout_leaf`'s `children.is_empty()`
+//! branch), and so, in effect, does a block whose content is nothing but collapsible white
+//! space: that processes to an empty string, which generates no line box at all.
 //!
 //! # The walk has no recursion
 //!
@@ -92,37 +83,58 @@ use crate::box_tree::{BoxId, BoxKind, BoxTree, LayoutBox, build};
 use crate::error::LayoutError;
 use crate::fragment::{Fragment, FragmentId, FragmentKind, FragmentTree, StyleId, Viewport};
 use crate::geom::{BoxSizing, LayoutStyle, Length, Point, Position, Rect, Sides, Size};
+use crate::inline::{self, InlineArgs, InlineContext};
+use crate::text::TextShaper;
 
 /// Lays out `doc`'s box tree against `viewport`, producing an absolutely-positioned
 /// [`FragmentTree`].
 ///
-/// `fonts` is threaded through only so Task 18's text-shaping pass can slot in without
-/// changing this function's signature or its callers — M1a's inline placeholder (see the
-/// module docs) never shapes text and does not read it.
+/// `fonts` is the bundled font database every glyph is shaped from ([`crate::text`]): layout
+/// borrows it for the duration of one pass and reads nothing else from the outside world, so
+/// the same `doc` and `viewport` always produce the same tree.
 ///
 /// Total over any [`StyledDocument`]: never panics, however deeply nested, however extreme
 /// the CSS values (`Au`'s saturating arithmetic — see [`crate::au`] — absorbs overflow from a
-/// document adversarially chosen to make it, e.g., a `1e9px` margin ten levels deep).
+/// document adversarially chosen to make it, e.g., a `1e9px` margin ten levels deep) and
+/// however hostile its text (an absurd `font-size`, a multi-megabyte text node and a
+/// zero-width containing block are all clamped or absorbed, never fatal).
 ///
 /// # Errors
-/// Never returns `Err` today — see [`LayoutError`]'s docs for why the type exists anyway.
-#[allow(
-    clippy::unnecessary_wraps,
-    reason = "the task brief's public interface is `Result<FragmentTree, LayoutError>`, and \
-              `LayoutError` is deliberately kept as a real, non_exhaustive, uninhabited type \
-              for forward-compatibility — see its module docs — so a future fallible case can \
-              gain a variant without an API break"
-)]
+/// [`LayoutError::FontNotBundled`] if text was shaped with a face that is not one of the
+/// bundled ones — see that variant's docs for why it is unreachable in practice and why it is
+/// reported rather than swallowed.
 pub fn layout(
     doc: &StyledDocument,
     viewport: Viewport,
-    // Reserved for Task 18's shaping pass — the M1a inline placeholder (this module's docs)
-    // never shapes text and does not read it; kept as a named, typed parameter (rather than
-    // dropped and re-added later) so Task 18 does not need to change every caller's call site.
-    _fonts: &mut FontDb,
+    fonts: &mut FontDb,
 ) -> Result<FragmentTree, LayoutError> {
     let box_tree = build(doc);
-    Ok(run(&box_tree, viewport))
+    let mut shaper = TextShaper::new(fonts);
+    let mut ctx = Ctx {
+        inline: InlineContext {
+            box_tree: &box_tree,
+            document: doc.document(),
+            shaper: &mut shaper,
+        },
+        error: None,
+    };
+    let tree = run(&mut ctx, viewport);
+    match ctx.error {
+        Some(error) => Err(error),
+        None => Ok(tree),
+    }
+}
+
+/// Everything [`run`]'s walk needs besides the fragment arenas: the trees it reads, the
+/// shaper it hands inline content to, and the first error that shaper reported.
+///
+/// The error is collected rather than propagated because the walk is an explicit stack
+/// machine ([`Frame`]) whose every step would otherwise have to be `Result`-returning for a
+/// case that cannot happen (see [`LayoutError::FontNotBundled`]); [`layout`] turns a
+/// collected error into the `Err` its caller sees, and the partially built tree is discarded.
+struct Ctx<'a> {
+    inline: InlineContext<'a>,
+    error: Option<LayoutError>,
 }
 
 /// One box's resolved box model: everything CSS 2.1 §10.3/§10.4/§10.6 can determine from a
@@ -231,7 +243,8 @@ impl MarginMemo {
     }
 }
 
-fn run(box_tree: &BoxTree, viewport: Viewport) -> FragmentTree {
+fn run(ctx: &mut Ctx<'_>, viewport: Viewport) -> FragmentTree {
+    let box_tree = ctx.inline.box_tree;
     let mut fragments: Vec<Fragment> = Vec::new();
     let mut styles: Vec<LayoutStyle> = Vec::new();
     let mut memo = MarginMemo::new(box_tree.len());
@@ -288,7 +301,7 @@ fn run(box_tree: &BoxTree, viewport: Viewport) -> FragmentTree {
             .map(|top| top.next_child < top.block_children.len())
         {
             if has_next {
-                advance_child(box_tree, &mut stack, &mut fragments, &mut styles, &mut memo);
+                advance_child(ctx, &mut stack, &mut fragments, &mut styles, &mut memo);
             } else if let Some(tree) =
                 finalize_top(&mut stack, &mut fragments, &mut styles, viewport)
             {
@@ -310,7 +323,7 @@ fn run(box_tree: &BoxTree, viewport: Viewport) -> FragmentTree {
             cb_width,
             cb_height,
         };
-        let (root, _height) = layout_leaf(box_tree, &leaf, &mut fragments, &mut styles);
+        let (root, _height) = layout_leaf(ctx, &leaf, &mut fragments, &mut styles);
         FragmentTree {
             fragments,
             styles,
@@ -439,12 +452,13 @@ fn place_child(
 /// or resolves it immediately via [`layout_leaf`] (if it is a leaf), updating the top frame's
 /// stacking cursor either way. See the module docs' "The walk has no recursion" section.
 fn advance_child(
-    box_tree: &BoxTree,
+    ctx: &mut Ctx<'_>,
     stack: &mut Vec<Frame>,
     fragments: &mut Vec<Fragment>,
     styles: &mut Vec<LayoutStyle>,
     memo: &mut MarginMemo,
 ) {
+    let box_tree = ctx.inline.box_tree;
     let Some(top) = stack.last_mut() else {
         return;
     };
@@ -469,7 +483,7 @@ fn advance_child(
     if is_block_container(box_tree, child_box_id) {
         push_container_frame(stack, fragments.len(), child, &placement);
     } else {
-        resolve_leaf_child(box_tree, stack, fragments, styles, child, &placement);
+        resolve_leaf_child(ctx, stack, fragments, styles, child, &placement);
     }
 }
 
@@ -517,7 +531,7 @@ fn push_container_frame(
 /// The leaf half of [`advance_child`]: resolves `child` immediately via [`layout_leaf`] (no
 /// stack growth needed) and updates the new top frame's (`child`'s parent's) stacking cursor.
 fn resolve_leaf_child(
-    box_tree: &BoxTree,
+    ctx: &mut Ctx<'_>,
     stack: &mut [Frame],
     fragments: &mut Vec<Fragment>,
     styles: &mut Vec<LayoutStyle>,
@@ -534,7 +548,7 @@ fn resolve_leaf_child(
         cb_width: placement.cb_width,
         cb_height: placement.cb_height,
     };
-    let (frag_id, used_height) = layout_leaf(box_tree, &leaf, fragments, styles);
+    let (frag_id, used_height) = layout_leaf(ctx, &leaf, fragments, styles);
     if let Some(top) = stack.last_mut() {
         let rel_bottom = placement
             .origin
@@ -668,7 +682,7 @@ struct LeafArgs<'a> {
 /// Returns the new fragment's id and its used border-box height (so the caller can update
 /// its own stacking cursor exactly as it would for a popped container [`Frame`]).
 fn layout_leaf(
-    box_tree: &BoxTree,
+    ctx: &mut Ctx<'_>,
     args: &LeafArgs<'_>,
     fragments: &mut Vec<Fragment>,
     styles: &mut Vec<LayoutStyle>,
@@ -679,15 +693,22 @@ fn layout_leaf(
     let (child_frag_ids, content_height_from_inline) = if args.children.is_empty() {
         (Vec::new(), Au::ZERO)
     } else {
-        layout_inline_placeholder(
-            box_tree,
-            args.children,
-            args.style,
+        let inline_args = InlineArgs {
+            children: args.children,
+            container_style: args.style,
             content_origin,
-            args.model.content_width,
-            fragments,
-            styles,
-        )
+            content_width: args.model.content_width,
+        };
+        match inline::layout(&mut ctx.inline, &inline_args, fragments, styles) {
+            Ok(result) => result,
+            Err(error) => {
+                // Collected, not propagated — see `Ctx`'s docs. The block still gets a
+                // fragment (with no inline content) so the walk's invariants hold until
+                // `layout` discards the whole tree.
+                ctx.error.get_or_insert(error);
+                (Vec::new(), Au::ZERO)
+            }
+        }
     };
     let content_height = args.model.known_height.unwrap_or_else(|| {
         clamp_au(
@@ -745,149 +766,6 @@ fn layout_leaf(
     }
 
     (id, border_box_size.h)
-}
-
-/// One token of a leaf's flattened inline content — see [`flatten_inline_children`].
-enum InlineToken {
-    /// One [`crate::box_tree::BoxKind::InlineText`] box.
-    Text(BoxId),
-    /// One [`crate::box_tree::BoxKind::LineBreak`] box: ends the current line group.
-    Break,
-}
-
-/// Flattens `children` (a leaf block's own, inline-level, box-tree children) into a document
-/// order sequence of [`InlineToken`]s, walking into (but not laying out) any nested `Inline`/
-/// `AnonymousInline` box to reach the `InlineText`/`LineBreak` boxes inside it. Uses an
-/// explicit stack, not recursion — see the module docs' "The walk has no recursion" section;
-/// `Inline` boxes can themselves nest arbitrarily (`<span><span>…`), so this is exactly as
-/// attacker-depth-controlled as the rest of the tree.
-fn flatten_inline_children(box_tree: &BoxTree, children: &[BoxId]) -> Vec<InlineToken> {
-    let mut tokens = Vec::new();
-    let mut stack: Vec<BoxId> = children.to_vec();
-    stack.reverse();
-    // Bounded by the box tree's total size, the same hostile-input safeguard
-    // `crate::dump::box_tree_dump`'s walk uses: never actually reached (no box tree has a
-    // cycle), but keeps this total if that invariant is ever wrong.
-    let mut remaining = box_tree.len();
-    while let Some(id) = stack.pop() {
-        if remaining == 0 {
-            break;
-        }
-        remaining -= 1;
-        let Some(b) = box_tree.get(id) else {
-            continue;
-        };
-        match &b.kind {
-            BoxKind::InlineText(_) => tokens.push(InlineToken::Text(id)),
-            BoxKind::LineBreak => tokens.push(InlineToken::Break),
-            BoxKind::Inline | BoxKind::AnonymousInline => {
-                let mut kids = b.children.clone();
-                kids.reverse();
-                stack.extend(kids);
-            }
-            // Never a child of a leaf per the box tree invariant (a leaf's children are
-            // never block-level) — skipped defensively rather than trusted, in case a
-            // hand-assembled `BoxTree` breaks that invariant.
-            BoxKind::Block | BoxKind::AnonymousBlock => {}
-        }
-    }
-    tokens
-}
-
-/// Splits a flattened token sequence into line groups on [`InlineToken::Break`] — see the
-/// module docs' "Scope" section for exactly what a group means. Always yields at least one
-/// group (possibly empty), even for an empty `tokens` slice.
-fn split_into_groups(tokens: Vec<InlineToken>) -> Vec<Vec<BoxId>> {
-    let mut groups = Vec::new();
-    let mut current = Vec::new();
-    for token in tokens {
-        match token {
-            InlineToken::Text(id) => current.push(id),
-            InlineToken::Break => groups.push(std::mem::take(&mut current)),
-        }
-    }
-    groups.push(current);
-    groups
-}
-
-/// Builds the `Line`/`Text` fragments for one leaf block's inline content — the placeholder
-/// described in the module docs' "Scope" section. Returns the `Line` fragment ids (in order)
-/// and the total content height they contribute.
-fn layout_inline_placeholder(
-    box_tree: &BoxTree,
-    children: &[BoxId],
-    container_style: &LayoutStyle,
-    content_origin: Point,
-    content_width: Au,
-    fragments: &mut Vec<Fragment>,
-    styles: &mut Vec<LayoutStyle>,
-) -> (Vec<FragmentId>, Au) {
-    let tokens = flatten_inline_children(box_tree, children);
-    let groups = split_into_groups(tokens);
-
-    let mut line_ids = Vec::with_capacity(groups.len());
-    let mut cursor_y = Au::ZERO;
-    for group in groups {
-        let line_height = if group.is_empty() {
-            Au::ZERO
-        } else {
-            container_style.line_height
-        };
-        let line_rect = Rect {
-            origin: Point {
-                x: content_origin.x,
-                y: content_origin.y.saturating_add(cursor_y),
-            },
-            size: Size {
-                w: content_width,
-                h: line_height,
-            },
-        };
-
-        let mut text_children = Vec::with_capacity(group.len());
-        for text_box_id in group {
-            let (node, text_style) = match box_tree.get(text_box_id) {
-                Some(b) => (b.node, b.style.clone()),
-                None => (None, LayoutStyle::initial()),
-            };
-            let zero_rect = Rect {
-                origin: line_rect.origin,
-                size: Size::default(),
-            };
-            let text_style_id = push_style(styles, text_style);
-            let text_id = push_fragment(
-                fragments,
-                Fragment {
-                    node,
-                    kind: FragmentKind::Text { runs: Vec::new() },
-                    border_box: zero_rect,
-                    padding_box: zero_rect,
-                    content_box: zero_rect,
-                    style: text_style_id,
-                    children: Vec::new(),
-                },
-            );
-            text_children.push(text_id);
-        }
-
-        let line_style_id = push_style(styles, container_style.clone());
-        let line_id = push_fragment(
-            fragments,
-            Fragment {
-                node: None,
-                kind: FragmentKind::Line,
-                border_box: line_rect,
-                padding_box: line_rect,
-                content_box: line_rect,
-                style: line_style_id,
-                children: text_children,
-            },
-        );
-        line_ids.push(line_id);
-        cursor_y = cursor_y.saturating_add(line_height);
-    }
-
-    (line_ids, cursor_y)
 }
 
 /// Resolves one box's margin/padding/border/width/height from its own style and its

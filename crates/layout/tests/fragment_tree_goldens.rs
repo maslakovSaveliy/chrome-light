@@ -22,7 +22,8 @@ use cl_layout::dump::fragment_tree_dump;
 /// returns its fragment tree dump.
 fn dump(html: &str) -> String {
     let (tree, styled) = common::layout_html(html);
-    fragment_tree_dump(&tree, styled.document())
+    let fonts = cl_fonts::FontDb::bundled().expect("bundled font db");
+    fragment_tree_dump(&tree, styled.document(), &fonts)
 }
 
 /// The smallest real document: doctype, `<head>` (`display: none`, so it lays out nothing)
