@@ -4,13 +4,13 @@
 
 ## Состояние на 2026-09-16
 
-**Фаза:** M1a Static Pipeline в работе на ветке `m1a-static-pipeline` (PR #2, draft, https://github.com/maslakovSaveliy/chrome-light/pull/2). CI зелёный на пяти job-ах (`check`, `test` × macos-14/ubuntu-24.04/windows-2022, `fuzz-short`) на `fc4ae0d`. План: `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md` (23 задачи). Журнал исполнения (SDD ledger, только на машине владельца, в `.gitignore`): `.superpowers/sdd/2026-09-07-m1a-static-pipeline/progress.md` — главный источник состояния; если его нет, восстанавливать по `git log main..HEAD` и PR #2.
+**Фаза:** M1a Static Pipeline — **все 23 задачи плана сделаны** на ветке `m1a-static-pipeline` (PR #2, draft, https://github.com/maslakovSaveliy/chrome-light/pull/2). План: `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`. Журнал исполнения (SDD ledger, только на машине владельца, в `.gitignore`): `.superpowers/sdd/2026-09-07-m1a-static-pipeline/progress.md` — главный источник состояния. Следующее действие: **ждёт финального ревью ветки и решения владельца о мерже PR #2 и теге `m1a`** (см. Task 23 report) → план M1b.
 
-**M1a, задачи:** 1–13, 15 — сделаны и отревьюированы; 14 (`css_stylesheet` fuzz, `08e752c`) — сделана, ревью в очереди; 16 (`cl-layout`) — запаркована в `exclude` корневого `Cargo.toml`, не компилируется (`style_adapt.rs`: 12 необъявленных переменных сторон границы + 4 ошибки типов на `clone_border_*`); 17–23 — не начаты. Следующее действие: ревью долгов → Task 16 → 17…23 → финальное ревью ветки → спросить владельца про мерж PR #2 и тег `m1a` → план M1b.
+**M1a, задачи:** 1–23 — все сделаны; 1–15 отревьюированы в предыдущих сессиях; 16 (`cl-layout`, ранее запаркована в `exclude`) доделана и включена обратно в workspace; 17–23 (block/inline layout, fonts-adapter, paint, gfx, testshell, reftests, close-out) исполнены subagent-driven в сессии 2026-09-16, ревью ещё не проводилось — часть финального ревью ветки.
 
-**В workspace:** `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `cl-net`, `cl-dom`, `cl-html`, `cl-style`, `cl-fonts`, `chromelight`. Fuzz-таргеты: `ipc_decode`, `url_parse`, `html_parse`, `css_stylesheet` (`display_list_validate` — Task 20).
+**В workspace:** `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `cl-net`, `cl-dom`, `cl-html`, `cl-style`, `cl-fonts`, `cl-layout`, `cl-paint`, `cl-gfx`, `chromelight`. Fuzz-таргеты (5): `ipc_decode` (M0), `url_parse`, `html_parse`, `css_stylesheet`, `display_list_validate` (M1a).
 
-**Конформанс (гейты — измерения, не цели):** WPT `urltestdata.json` 828/893 (92.7%), гейт 0.92 = потолок crate `url` 2.5.8 (Servo фиксирует те же провалы). html5lib tree-construction 1307/1313 (99.5%), 0 паник, гейт 0.90; 6 провалов — пробелы html5ever 0.39 (см. `docs/SPEC_REGISTRY.md`).
+**Конформанс (гейты — измерения, не цели):** WPT `urltestdata.json` 828/893 (92.7%), гейт 0.92 = потолок crate `url` 2.5.8 (Servo фиксирует те же провалы). html5lib tree-construction 1307/1313 (99.5%), 0 паник, гейт 0.90; 6 провалов — пробелы html5ever 0.39 (см. `docs/SPEC_REGISTRY.md`). Reftests: **20/20 PASS** (`cargo run -p cl-testshell -- reftest`, `crates/testshell/tests/reftests.rs`). Golden dumps — 5 стадий (dom/style/box-tree/fragments/display-list). Смоук: 1 МБ страница 1.51 с (release) / ~4.7 с (debug), peak RSS ~330 МиБ — **над** критерием «< 300 МБ» (`docs/history/perf-m1a-2026-09.md`).
 
 **Продукт:** **ChromeLight** (ADR-0013, риск торговой марки принят владельцем). Лицензия **Apache-2.0 OR MIT** (ADR-0014).
 
@@ -55,14 +55,18 @@
 8. `browser.rs`: `renderer.wait()` после `Shutdown` — unbounded ожидание процесса; M1: `try_wait` poll с дедлайном + kill (тот же класс, что ADR-0005 §4).
 9. CI: fmt/clippy — в 3-OS матрице; `deny`/`doc`/скрипты — только ubuntu (платформонезависимы).
 
-## Долги M1a (открытые на 2026-09-16)
+## Долги M1a (открытые на 2026-09-16, после Task 23)
 
-1. Ревью Task 14 (`08e752c`, css fuzz target) и теста «`StyledDocument` переживает свой `StyleEngine`» (`2d38014`).
-2. Scoped re-review правок `to_file_path` в `cl-net` (`550db26`, `d410182`) — controller внёс их после ревью Task 5 по итогам Windows CI.
-3. Тесты в release-профиле ни разу не прогонялись (пересборка stylo с LTO слишком долгая); всё проверено в debug. `ElementDataWrapper::borrow_mut` в release не проверяет алиасинг — debug-сборка и `cargo careful` несут реальную нагрузку (ADR-0015, дополнение 2026-09-09).
-4. UA-таблица: `<hr>` получает только `display:block`, без границ/высоты (HTML §15.3.11) — решить в Task 23 (расширить `ua.css` или не использовать `<hr>` в reftest-ах).
-5. Task 18: решить, включать ли `parley/complex-scripts` (словарный перенос строк для CJK/Thai).
-6. Минорные находки ревью (deferred) — в SDD ledger, строки `minor (deferred)`; триаж на финальном ревью ветки.
+1. **Квадратичный парсинг/стилизация на глубокой вложенности** — потенциальный DoS-вектор на враждебной странице с искусственно большой глубиной дерева; не пофикшено в M1a, приоритет для M2 перед тем, как открывать произвольный веб.
+2. **Peak RSS ~330 МиБ на 1 МБ smoke-странице** — над критерием плана «< 300 МБ» (`docs/history/perf-m1a-2026-09.md`); оптимизация памяти `cl-style`/`cl-layout` не входила в мандат M1a.
+3. **Тесты в release-профиле ни разу не прогонялись** — пересборка stylo с LTO (`lto = "thin"`, `codegen-units = 1`) слишком долгая на машине владельца; всё проверено в debug. `ElementDataWrapper::borrow_mut` в release не проверяет алиасинг — debug-сборка и `cargo careful` несут реальную нагрузку (ADR-0015, дополнение 2026-09-09).
+4. **Нет синтеза bold/italic** — только реальные начертания шрифта (Noto Regular); `font-weight`/`font-style` на несуществующем начертании не имеют видимого эффекта.
+5. **Фон/рамки инлайновых элементов не рисуются** — `<span style="background/border">` красится только по своему тексту (Task 18 решение), сама рамка/фон — никогда; нужны inline-фрагменты со своей box-моделью (позже M).
+6. **Свой `line-height`/`vertical-align` для вложенных инлайнов не реализован** — высота строки = `line-height` контейнера, а не максимум по вложенным инлайнам.
+7. **`line-height: normal` = 1.2 × font-size** — приближение (`normal_line_height`), не honoring font-specific metrics.
+8. **`FontNotBundled` не протестирован** — путь ошибки в `cl-fonts` для нераспознанного семейства не покрыт тестом.
+9. **Self-collapsing пустые блоки не реализованы** (CSS 2.1 §8.3.1) — обнаружено при написании reftest-пар Task 23; пробельный текстовый узел между двумя block-level соседями создаёт реальный (нулевой высоты) anonymous block, который не участвует в margin-коллапсе как единое целое (см. `crates/layout/src/block.rs` и строку CSS2 block/inline в `docs/SPEC_REGISTRY.md`); reftest-страницы написаны в обход (без такого пробела).
+10. **17+ мелких находок ревью (deferred)** — живут в SDD ledger как строки `minor (deferred)`; триаж — на финальном ревью ветки, не в этом списке поимённо.
 
 ## Открытия M1a, которые не надо переоткрывать
 
@@ -89,6 +93,17 @@
 - Версии crate-ов на 2026-09-07: stylo 0.20, cssparser 0.37, html5ever 0.39, taffy 0.14, parley 0.11, vello 0.10, wgpu 30.0, winit 0.30.13, accesskit 0.25, v8 152.2, hyper 1.11, rustls 0.23.43, quinn 0.11.11, rusqlite 0.40, ipc-channel 0.23, prost 0.14, tokio 1.53.
 
 ## Журнал сессий
+
+### 2026-09-16 — сессия 6: Tasks 16–23 (subagent-driven), M1a закрыт
+- T16 `cl-layout` box tree доделан и возвращён в workspace (был запаркован в `exclude`): anonymous-block wrapping (CSS 2.1 §9.2.1.1), display:none пропуск, `<br>` → line-break, block-in-inline блокификация.
+- T17 `Au` геометрия + `style_adapt.rs` (границы обнуляются для `none`/`hidden` независимо от stylo-ширины — "border-width/border-style trap").
+- T18 inline formatting context (parley): line breaking, `text-align`, `line-height`, whitespace normal/pre; решение — фон/рамки/vertical-align вложенных инлайнов не реализуются в M1a, `<span>` красит только текст.
+- T19 `cl-paint` display list: paint order CSS2 Appendix E, canvas-фон пропагация `<html>`/`<body>` → canvas (§14.2).
+- T20 display-list validator + `arbitrary`-фаззинг (`display_list_validate`).
+- T21 `cl-gfx` CPU raster (tiny-skia + swash), детерминизм (без хинтинга, без системных шрифтов).
+- T22 `cl-testshell` реальный однопроцессный pipeline (render/dump/compare), determinism+smoke тесты; культинг офскрин-айтемов в paint (иначе 1 МБ страница проваливала validate).
+- T23 (эта сессия): reftest-раннер (`crates/testshell/src/reftest.rs`) + 20/20 reftest-пар; `<hr>` получил UA-рамку (HTML §15.3.11, `solid` вместо `inset`); CI: явный `reftest`-шаг в `test`-матрице + upload artifacts on failure; закрыты все Step 2 доки (SPEC_REGISTRY, FEATURE_MATRIX, DEPENDENCIES, PLAN.md чекбокс, `docs/history/perf-m1a-2026-09.md`); найден и задокументирован реальный пробел движка — self-collapsing блоки не реализованы (долг №9 выше), reftest-страницы написаны в обход. Полная верификационная цепочка + fuzz — см. `.superpowers/sdd/2026-09-07-m1a-static-pipeline/task-23-report.md`.
+- Итог: **все 23 задачи M1a сделаны**; ветка ждёт финального ревью и решения владельца о мерже/теге `m1a`.
 
 ### 2026-09-16 — сессия 5: онбординг нового controller-а, MEMORY.md
 - MEMORY.md приведён к состоянию M1a по SDD ledger (был на уровне M0). Очередь: ревью долгов (Task 14, `2d38014`, `cl-net` `550db26`/`d410182`) → Task 16 → 17–23.

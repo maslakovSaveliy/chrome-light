@@ -6,16 +6,17 @@
 
 | Область | Фича | Статус |
 |---|---|---|
-| URL/encoding | WHATWG URL, Encoding (UTF-8, legacy sniffing) | M1 |
-| HTML | tokenizer/tree builder (html5ever), parser-script reentrancy, `document.write` | M1 / M3 |
-| DOM | Node tree, events (capture/bubble), MutationObserver, Range/Selection, Shadow DOM, custom elements | M1 / M3 |
-| CSS | stylo: cascade, layers, custom properties, media/container queries, nesting | M1 |
-| Layout | block, inline, positioned, floats | M1 |
+| URL/encoding | WHATWG URL, Encoding (UTF-8, legacy sniffing) | M1a: done (URL 828/893 WPT = 92.7%, потолок `url`-крейта; encoding — BOM/transport/`<meta>` prescan, дефолт UTF-8) / M1 |
+| HTML | tokenizer/tree builder (html5ever), parser-script reentrancy, `document.write` | M1a: done (tree construction 1307/1313 html5lib-tests = 99.5%) / M3 (reentrancy, `document.write`) |
+| DOM | Node tree, events (capture/bubble), MutationObserver, Range/Selection, Shadow DOM, custom elements | M1a: done (статичное Node tree, без событий) / M1 / M3 |
+| CSS | stylo: cascade, layers, custom properties, media/container queries, nesting | M1a: partial (cascade работает, `cl-layout` читает только M1a-подмножество из 22 longhand-ов) / M1 |
+| Layout | block, inline, positioned, floats | M1a: partial (block + inline + `position:relative` реализованы и покрыты 20/20 reftest-парами; floats, absolute/fixed — нет) / M1 |
 | Layout | flex, grid (taffy math), tables | M3 |
 | Layout | multicol, fragmentation, writing modes vertical | later |
-| Text | shaping, bidi, line breaking, font fallback, variable fonts, emoji | M1 базово / M3 полно |
-| Paint/compositor | display lists, stacking, clips, transforms, opacity, filters; async scroll; transform/opacity animations на compositor | M1 / M4 |
-| GPU | vello+wgpu; CPU fallback | M1 |
+| Text | shaping, bidi, line breaking, font fallback, variable fonts, emoji | M1a: partial (Ahem/Noto Sans через parley/swash, только LTR, без per-inline line-height/vertical-align) / M1 базово / M3 полно |
+| Paint/compositor | display lists, stacking, clips, transforms, opacity, filters; async scroll; transform/opacity animations на compositor | M1a: partial (display list + сплошные рамки + фон + текст + `overflow:hidden` клип, CPU raster) / M1 / M4 |
+| GPU | vello+wgpu; CPU fallback | M1a: done (CPU fallback — tiny-skia + swash, детерминированный) / M1 (vello+wgpu) |
+| Test infra | `cl-testshell`: render/dump/compare/reftest CLI, 20 reftest-пар (`crates/testshell/tests/ref`), golden dumps 5 стадий, 5 fuzz-таргетов | M1a: done |
 | Images | PNG, JPEG, GIF, WebP, AVIF (utility process) | M1 / M3 (AVIF) |
 | SVG | inline SVG рендер (usvg/resvg-подход) | M3 |
 | JS | V8, ES2025, modules, Wasm | M2 |

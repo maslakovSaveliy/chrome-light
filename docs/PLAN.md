@@ -70,7 +70,9 @@ Scope: разбит на пять параллельных sub-plan-ов (M1a–
 | **M1e** | Bench-corpus, Chrome baseline, закрытие exit-гейтов M1. | пишется после M1d |
 
 Exit-критерии M1 (объединение M1a–M1e):
-- [ ] M1a: single-process pipeline; html5lib tree-construction ≥ 90% (0 panics), WPT `urltestdata.json` ≥ 92% (потолок crate `url`, см. SPEC_REGISTRY), 20 reftests, 4 fuzz-targets, golden dumps 4 стадий — детальные критерии в `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
+- [x] M1a: single-process pipeline; html5lib tree-construction 1307/1313 = 99.5% (0 panics, порог был ≥ 90%), WPT `urltestdata.json` 828/893 = 92.7% (порог ≥ 92%, потолок crate `url`, см. SPEC_REGISTRY), 20/20 reftests (`cargo run -p cl-testshell -- reftest`), 5 fuzz-targets (план называл 4 M1a-таргета — `html_parse`, `css_stylesheet`, `url_parse`, `display_list_validate` — плюс `ipc_decode` из M0, ни одного падения за 60с каждый), golden dumps 5 стадий (dom/style/box-tree/fragments/display-list) — детальные критерии в `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
+  - [ ] Не выполнено: peak RSS на 1 МБ smoke-странице ≈ 330 МиБ против критерия «< 300 МБ» (`docs/history/perf-m1a-2026-09.md`) — не тикать, долг в MEMORY.md.
+  - [ ] Не выполнено: тесты в release-профиле (`cargo test --release`) ни разу не запускались локально — stylo LTO-пересборка (`lto = "thin"`, `codegen-units = 1`) слишком медленная на машине владельца — не тикать, долг в MEMORY.md.
 - [ ] M1b: `chromelight file:///page.html` рендерит через renderer + GPU процессы (display list через shm).
 - [ ] M1c: sandbox renderer применяется на macOS и Linux; `--probe` тесты (open /etc/passwd, socket) → EPERM.
 - [ ] M1d: egui shell с одной вкладкой, `file://` и `http://localhost`.
