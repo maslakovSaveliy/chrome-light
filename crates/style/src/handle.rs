@@ -34,12 +34,22 @@
 //! Everything below is still safe Rust; the handles exist precisely so that the
 //! interesting invariants are expressed as lifetimes instead of as `unsafe`.
 //!
+//! The same self-linking carries the element-only tree links `selectors` asks for
+//! ([`ElementHandle::prev_sibling_element`], [`ElementHandle::next_sibling_element`],
+//! [`ElementHandle::first_element_child`]). They are computed once per pass, in
+//! [`NodeArena::link`], rather than walked on demand: `selectors` evaluates `:nth-child`,
+//! `:nth-last-child`, `+` and `~` by stepping through them, a page controls how many
+//! siblings (and how many non-element nodes between them) such a step crosses, and a walk
+//! made every step cost O(skipped nodes) on top of `selectors`' own O(siblings) visits
+//! (debt D2.c). Precomputed, every step is one `Cell` read.
+//!
 //! [`ElementHandle`] and [`DocumentHandle`] are newtypes over `NodeHandle` because stylo
 //! wants three distinct types (`TElement`, `TDocument`, `TNode`) that can be converted
 //! into one another. Neither newtype is a *proof* that the node really is an element or
 //! the document — see [`NodeHandle::as_element`] / [`NodeHandle::as_document`], the only
 //! places they are constructed from a fresh id, and [`ElementHandle::element`], which is
-//! total and never panics.
+//! total and never panics. (The element links above also yield `ElementHandle`s, but only
+//! to slots [`NodeArena::link`] has already checked with [`NodeHandle::is_element`].)
 
 use std::cell::Cell;
 use std::hash::{Hash, Hasher};
@@ -92,6 +102,15 @@ pub(crate) struct NodeSlot<'a> {
     /// between those two moments, which no handle can observe — [`NodeArena::node`] links
     /// before it hands out its first handle.
     siblings: Cell<Option<&'a [NodeSlot<'a>]>>,
+    /// The nearest preceding sibling that is an element, or `None` if there is none (or this
+    /// node has no parent). Set for every node, element or not. Written only by
+    /// [`NodeArena::link`], for the same reason as `siblings`: it points into the array being
+    /// built.
+    prev_element_sibling: Cell<Option<&'a NodeSlot<'a>>>,
+    /// The nearest following sibling that is an element — see `prev_element_sibling`.
+    next_element_sibling: Cell<Option<&'a NodeSlot<'a>>>,
+    /// The first child that is an element — see `prev_element_sibling`.
+    first_element_child: Cell<Option<&'a NodeSlot<'a>>>,
 }
 
 /// Every [`NodeSlot`] of one style pass, indexed by [`NodeId`].
@@ -128,6 +147,9 @@ impl<'a> NodeArena<'a> {
                 store,
                 id: NodeId::from_index(index),
                 siblings: Cell::new(None),
+                prev_element_sibling: Cell::new(None),
+                next_element_sibling: Cell::new(None),
+                first_element_child: Cell::new(None),
             })
             .collect();
         Self {
@@ -136,9 +158,17 @@ impl<'a> NodeArena<'a> {
         }
     }
 
-    /// Points every slot at the whole array, so [`NodeHandle::with`] can navigate.
+    /// Points every slot at the whole array, so [`NodeHandle::with`] can navigate, and links
+    /// every node to its nearest element siblings and its first element child.
     ///
-    /// Idempotent and O(n); runs on the first [`NodeArena::node`] call and never again.
+    /// Idempotent and O(n); runs on the first [`NodeArena::node`] call and never again, so it
+    /// is the only place any of a slot's `Cell`s is written. The element links take one
+    /// forward and one backward pass over every node's child list: a node is the child of at
+    /// most one parent, so the passes visit each node twice in total, however wide or deep
+    /// the tree (each child list is also capped at `Document::len()` entries by
+    /// [`cl_dom::Children`], so even a corrupted arena cannot make it loop). Every node gets
+    /// links, not only elements, so an [`ElementHandle`] that does not name an element answers
+    /// exactly what the sibling walk this replaced did.
     fn link(&'a self) {
         if self.linked.replace(true) {
             return;
@@ -146,6 +176,35 @@ impl<'a> NodeArena<'a> {
         let all: &'a [NodeSlot<'a>] = &self.slots;
         for slot in all {
             slot.siblings.set(Some(all));
+        }
+        // One buffer for every parent's child list, reused, so the pass allocates once
+        // (growing to the widest child list) rather than once per parent.
+        let mut children: Vec<(&'a NodeSlot<'a>, bool)> = Vec::new();
+        for parent in all {
+            children.clear();
+            children.extend(
+                parent
+                    .doc
+                    .children(parent.id)
+                    .filter_map(|id| all.get(id.index()))
+                    .map(|slot| (slot, NodeHandle(slot).is_element())),
+            );
+            let mut previous: Option<&'a NodeSlot<'a>> = None;
+            for &(child, is_element) in &children {
+                child.prev_element_sibling.set(previous);
+                if is_element {
+                    previous = Some(child);
+                }
+            }
+            let mut next: Option<&'a NodeSlot<'a>> = None;
+            for &(child, is_element) in children.iter().rev() {
+                child.next_element_sibling.set(next);
+                if is_element {
+                    next = Some(child);
+                }
+            }
+            // After the backward pass, `next` is the element nearest the front.
+            parent.first_element_child.set(next);
         }
     }
 
@@ -347,33 +406,31 @@ impl<'a> ElementHandle<'a> {
         self.0.doc.attr(self.0.id, local)
     }
 
-    /// The nearest preceding sibling that is an element.
+    /// The nearest preceding sibling that is an element. O(1): precomputed by
+    /// [`NodeArena::link`] (see the module docs for why it is not walked on demand).
     pub(crate) fn prev_sibling_element(self) -> Option<Self> {
-        let mut cursor = self.0.prev_sibling();
-        while let Some(node) = cursor {
-            if let Some(element) = node.as_element() {
-                return Some(element);
-            }
-            cursor = node.prev_sibling();
-        }
-        None
+        self.0
+            .prev_element_sibling
+            .get()
+            .map(|slot| ElementHandle(NodeHandle(slot)))
     }
 
-    /// The nearest following sibling that is an element.
+    /// The nearest following sibling that is an element. O(1), like
+    /// [`ElementHandle::prev_sibling_element`].
     pub(crate) fn next_sibling_element(self) -> Option<Self> {
-        let mut cursor = self.0.next_sibling();
-        while let Some(node) = cursor {
-            if let Some(element) = node.as_element() {
-                return Some(element);
-            }
-            cursor = node.next_sibling();
-        }
-        None
+        self.0
+            .next_element_sibling
+            .get()
+            .map(|slot| ElementHandle(NodeHandle(slot)))
     }
 
-    /// The first child that is an element.
+    /// The first child that is an element. O(1), like
+    /// [`ElementHandle::prev_sibling_element`].
     pub(crate) fn first_element_child(self) -> Option<Self> {
-        self.0.children().find_map(NodeHandle::as_element)
+        self.0
+            .first_element_child
+            .get()
+            .map(|slot| ElementHandle(NodeHandle(slot)))
     }
 }
 
@@ -498,6 +555,94 @@ pub(crate) mod tests {
         let body = element_handle(&arena, f.body);
         assert_eq!(body.first_element_child(), Some(p));
         let _ = f.html;
+    }
+
+    /// The nearest element reached by stepping from `from` with `step` — the on-demand walk
+    /// [`NodeArena::link`]'s precomputed links replaced, kept as the reference they must match.
+    fn walk_to_element<'a>(
+        from: Option<NodeHandle<'a>>,
+        step: impl Fn(NodeHandle<'a>) -> Option<NodeHandle<'a>>,
+    ) -> Option<ElementHandle<'a>> {
+        let mut cursor = from;
+        while let Some(node) = cursor {
+            if let Some(element) = node.as_element() {
+                return Some(element);
+            }
+            cursor = step(node);
+        }
+        None
+    }
+
+    /// The precomputed element links agree with a walk over the real sibling list for every
+    /// node of a document that mixes text, comments and elements, nests, has an element-free
+    /// parent, and has children inserted out of arena order (`insert_before`), so sibling
+    /// order is not creation order.
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn precomputed_element_links_should_match_a_sibling_walk() {
+        let mut doc = Document::new("file:///test.html");
+        let root = doc.root();
+        let html = doc.create(element("html", &[]));
+        let body = doc.create(element("body", &[]));
+        doc.append_child(root, html).expect("append html");
+        doc.append_child(html, body).expect("append body");
+
+        let lead = doc.create(NodeKind::Text(StrTendril::from("\n")));
+        let first = doc.create(element("p", &[]));
+        let remark = doc.create(NodeKind::Comment(StrTendril::from(" note ")));
+        let gap = doc.create(NodeKind::Text(StrTendril::from(" ")));
+        let middle = doc.create(element("div", &[]));
+        let last = doc.create(element("span", &[]));
+        let tail = doc.create(NodeKind::Text(StrTendril::from("\n")));
+        for child in [lead, first, remark, gap, middle, last, tail] {
+            doc.append_child(body, child).expect("append body child");
+        }
+        // Created last, placed between `first` and `remark`: arena order != sibling order.
+        let inserted = doc.create(element("em", &[]));
+        doc.insert_before(remark, inserted).expect("insert em");
+        // An element whose only children are text and a comment.
+        let text_only = doc.create(NodeKind::Text(StrTendril::from("x")));
+        let comment_only = doc.create(NodeKind::Comment(StrTendril::from("y")));
+        doc.append_child(middle, text_only).expect("append text");
+        doc.append_child(middle, comment_only)
+            .expect("append comment");
+        // A nested element child, so first_element_child is exercised below the top level.
+        let nested = doc.create(element("b", &[]));
+        doc.append_child(last, nested).expect("append b");
+
+        let store = store(&doc);
+        let arena = NodeArena::new(&doc, &store);
+        for index in 0..doc.len() {
+            let node = node_handle(&arena, NodeId::from_index(index));
+            let element = ElementHandle(node);
+            assert_eq!(
+                element.prev_sibling_element(),
+                walk_to_element(node.prev_sibling(), NodeHandle::prev_sibling),
+                "prev_sibling_element of {node:?}"
+            );
+            assert_eq!(
+                element.next_sibling_element(),
+                walk_to_element(node.next_sibling(), NodeHandle::next_sibling),
+                "next_sibling_element of {node:?}"
+            );
+            assert_eq!(
+                element.first_element_child(),
+                walk_to_element(node.first_child(), NodeHandle::next_sibling),
+                "first_element_child of {node:?}"
+            );
+        }
+
+        // And the answers themselves, so the reference walk cannot be wrong in the same way.
+        let el = |id| element_handle(&arena, id);
+        assert_eq!(el(first).next_sibling_element(), Some(el(inserted)));
+        assert_eq!(el(inserted).next_sibling_element(), Some(el(middle)));
+        assert_eq!(el(middle).prev_sibling_element(), Some(el(inserted)));
+        assert_eq!(el(first).prev_sibling_element(), None);
+        assert_eq!(el(last).next_sibling_element(), None);
+        assert_eq!(el(body).first_element_child(), Some(el(first)));
+        assert_eq!(el(middle).first_element_child(), None);
+        assert_eq!(el(last).first_element_child(), Some(el(nested)));
+        assert_eq!(el(html).first_element_child(), Some(el(body)));
     }
 
     #[test]
