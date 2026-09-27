@@ -447,3 +447,46 @@ fn hostile_inline_content_should_not_panic() {
         assert!(target.border_box.size.h >= Au::ZERO);
     }
 }
+
+/// Debt D2.b regression: a paragraph's inline item count is document-controlled, and the
+/// shaper looks up the item owning each shaped cluster (`span_item` in `src/text.rs`). A
+/// linear scan there made a `<p>` of N inline items and M characters cost O(N × M) —
+/// 10 000 one-letter `<span>`s is 10⁸ span comparisons on one line.
+///
+/// Bounded like `deep_first_child_chain_should_lay_out_in_linear_time` in `tests/block.rs`:
+/// only `cl_layout::layout` is timed (parse and style are other crates' cost), against
+/// [`common::smoke_time_limit`]. The glyph count pins that the lookup still attributes every
+/// cluster: every `a` must come out as exactly one glyph, none dropped or duplicated.
+#[test]
+fn many_inline_spans_should_lay_out_in_linear_time() {
+    const SPANS: usize = 10_000;
+
+    let mut html = String::from(r#"<body style="margin:0"><p id="t" style="margin:0">"#);
+    for _ in 0..SPANS {
+        html.push_str("<span>a</span>");
+    }
+    html.push_str("</p></body>");
+
+    let styled = common::styled_document(&html);
+    let mut fonts = cl_fonts::FontDb::bundled().expect("bundled font db");
+    let viewport = cl_layout::Viewport::new(common::VIEWPORT.0, common::VIEWPORT.1);
+
+    let start = std::time::Instant::now();
+    let tree = cl_layout::layout(&styled, viewport, &mut fonts).expect("layout");
+    let elapsed = start.elapsed();
+
+    let limit = common::smoke_time_limit();
+    assert!(
+        elapsed < limit,
+        "layout of a <p> with {SPANS} inline <span>s took {elapsed:?}, expected well under \
+         {limit:?} — this smells like the per-cluster span lookup regressed to a linear scan \
+         (O(spans × clusters)). Set CL_SMOKE_SLOW=1 to raise the bound to 15s on a \
+         slow/loaded machine."
+    );
+
+    let glyphs: usize = lines_of(&tree, styled.document(), "t")
+        .into_iter()
+        .map(|line| glyph_count(&tree, line))
+        .sum();
+    assert_eq!(glyphs, SPANS, "one glyph per one-letter <span>, none lost");
+}

@@ -80,3 +80,28 @@ pub fn find_element(doc: &Document, predicate: impl Fn(&Element) -> bool) -> Opt
     doc.descendants(doc.root())
         .find(|id| doc.element(*id).is_some_and(&predicate))
 }
+
+/// The wall-clock budget for this crate's linear-time smoke tests
+/// (`deep_first_child_chain_should_lay_out_in_linear_time` in `tests/block.rs`,
+/// `many_inline_spans_should_lay_out_in_linear_time` in `tests/inline.rs`): 5s normally, 15s
+/// when `CL_SMOKE_SLOW=1` is set — the same escape hatch the plan's other smoke tests
+/// (`docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`) use for a slow or loaded CI
+/// runner.
+#[allow(
+    dead_code,
+    reason = "not every test binary that includes this module calls this"
+)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "`std::env::var` is restricted to `cl-platform` in production code so env access \
+              stays centralized/testable there; this is a test-only smoke-test escape hatch \
+              matching the plan's own documented convention for this exact env var, not \
+              production configuration"
+)]
+pub fn smoke_time_limit() -> std::time::Duration {
+    if std::env::var("CL_SMOKE_SLOW").as_deref() == Ok("1") {
+        std::time::Duration::from_secs(15)
+    } else {
+        std::time::Duration::from_secs(5)
+    }
+}

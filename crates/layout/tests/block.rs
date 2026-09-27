@@ -59,25 +59,6 @@ fn rect(x: f32, y: f32, w: f32, h: f32) -> Rect {
     }
 }
 
-/// The wall-clock budget for [`deep_first_child_chain_should_lay_out_in_linear_time`]: 5s
-/// normally, 15s when `CL_SMOKE_SLOW=1` is set — the same escape hatch the plan's other smoke
-/// tests (`docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`) use for a slow or loaded
-/// CI runner.
-#[allow(
-    clippy::disallowed_methods,
-    reason = "`std::env::var` is restricted to `cl-platform` in production code so env access \
-              stays centralized/testable there; this is a test-only smoke-test escape hatch \
-              matching the plan's own documented convention for this exact env var, not \
-              production configuration"
-)]
-fn smoke_time_limit() -> std::time::Duration {
-    if std::env::var("CL_SMOKE_SLOW").as_deref() == Ok("1") {
-        std::time::Duration::from_secs(15)
-    } else {
-        std::time::Duration::from_secs(5)
-    }
-}
-
 /// `width: auto` on a child of an 800px-wide containing block fills it exactly (CSS 2.1
 /// §10.3.3): a 10px-tall, no-margin `<div>` becomes an 800×10 border box at the origin.
 #[test]
@@ -809,7 +790,7 @@ fn deep_first_child_chain_should_lay_out_in_linear_time() {
     let tree = cl_layout::layout(&styled, viewport, &mut fonts).expect("layout");
     let elapsed = start.elapsed();
 
-    let limit = smoke_time_limit();
+    let limit = common::smoke_time_limit();
     assert!(
         elapsed < limit,
         "layout of a {DEPTH}-deep first-child chain took {elapsed:?}, expected well under \

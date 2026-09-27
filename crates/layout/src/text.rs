@@ -491,12 +491,24 @@ fn concatenate(items: &[InlineItem<'_>]) -> (String, Vec<Span>) {
 
 /// The index into `items` of the [`InlineItem::Text`] covering byte `offset`, if any.
 ///
-/// Linear rather than binary: a block's item count is its inline element count, and every
-/// caller walks the clusters of one line, so the scan is over a handful of entries.
+/// A binary search, O(log spans) per call. [`concatenate`] pushes spans in increasing byte
+/// order, each non-empty and starting where the previous one (or a `<br>`'s `\n`) ended, so
+/// `end <= offset` holds for exactly a prefix of `spans` and [`slice::partition_point`] finds
+/// the only span that can contain `offset`: the first one ending past it.
+///
+/// Not a linear scan: this runs once per shaped cluster ([`TextShaper::line_clusters`]) and
+/// again per trailing-space probe ([`is_collapsible_space`]), and a block's span count is
+/// document-controlled — a scan made a `<p>` of 10 000 one-letter `<span>`s cost ~5·10⁷
+/// comparisons, O(clusters × spans) (debt D2.b). Not a monotone cursor either, although
+/// clusters mostly arrive in text order: `visual_clusters` runs *backwards* through a
+/// right-to-left run `parley`'s bidi reordering produced, and [`trim_trailing_spaces`] probes
+/// a line from its end, so a cursor would need a fallback for both — and a linear fallback
+/// would bring the quadratic back for hostile RTL content.
 fn span_item(spans: &[Span], offset: usize) -> Option<usize> {
+    let candidate = spans.partition_point(|s| s.end <= offset);
     spans
-        .iter()
-        .find(|s| offset >= s.start && offset < s.end)
+        .get(candidate)
+        .filter(|s| s.start <= offset)
         .map(|s| s.item)
 }
 
@@ -675,5 +687,61 @@ fn alignment(align: TextAlign) -> Alignment {
         TextAlign::Left => Alignment::Left,
         TextAlign::Right => Alignment::Right,
         TextAlign::Center => Alignment::Center,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Span, span_item};
+
+    /// The linear scan [`span_item`] replaced — kept as the reference it must agree with.
+    fn span_item_by_scan(spans: &[Span], offset: usize) -> Option<usize> {
+        spans
+            .iter()
+            .find(|s| offset >= s.start && offset < s.end)
+            .map(|s| s.item)
+    }
+
+    /// Every offset of a shaping string with the shapes [`super::concatenate`] produces —
+    /// adjacent spans, a one-byte `<br>` gap, a multi-byte span, empty items skipped (so item
+    /// indices jump) and a trailing break — maps to the same item under the binary search as
+    /// under the old scan, including the offsets no span covers.
+    #[test]
+    fn span_item_should_agree_with_a_linear_scan() {
+        // "ab" + "c" + "\n" + "déf" + "\n": items 0, 1, (2 = <br>), (3 = empty text), 4.
+        let spans = [
+            Span {
+                start: 0,
+                end: 2,
+                item: 0,
+            },
+            Span {
+                start: 2,
+                end: 3,
+                item: 1,
+            },
+            Span {
+                start: 4,
+                end: 8,
+                item: 4,
+            },
+        ];
+        for offset in 0..12 {
+            assert_eq!(
+                span_item(&spans, offset),
+                span_item_by_scan(&spans, offset),
+                "offset {offset}"
+            );
+        }
+        assert_eq!(span_item(&spans, 1), Some(0));
+        assert_eq!(span_item(&spans, 2), Some(1));
+        assert_eq!(
+            span_item(&spans, 3),
+            None,
+            "the <br>'s newline belongs to no span"
+        );
+        assert_eq!(span_item(&spans, 7), Some(4));
+        assert_eq!(span_item(&spans, 8), None, "past the last span");
+        assert_eq!(span_item(&[], 0), None);
     }
 }
