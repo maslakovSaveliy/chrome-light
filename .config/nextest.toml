@@ -1,0 +1,31 @@
+# cargo-nextest configuration (https://nexte.st/docs/configuration/).
+#
+# The local commit gate (CLAUDE.md §5) and CI (`.github/workflows/ci.yml`) both run the suite
+# through `cargo nextest run`. A plain `cargo test` does NOT read this file.
+
+# Wall-clock-bounded tests run alone.
+#
+# Each test below asserts that a pathological input (a deep or wide tree, many inline items,
+# a 1 MB page) finishes under a fixed time budget: 5 s locally, 15 s under `CL_SMOKE_SLOW=1`
+# as CI sets it (`crates/dom/src/document.rs` uses 2 s / 6 s). That checks the algorithm's
+# complexity class, but it is only meaningful if the test has the CPU to itself. Under
+# nextest's default one-test-per-core scheduling, two of these running together, or one
+# running next to the other CPU-heavy tests, measured 8.2–8.5 s against a 5 s bound for a test
+# that takes 2.5–2.9 s alone. `threads-required = "num-cpus"` makes nextest wait until
+# nothing else is running before it starts each of these, and start nothing else until it
+# ends. The bounds themselves stay as they are.
+#
+# A NEW TIMING TEST MUST BE ADDED TO THIS LIST. That means any test that reads
+# `std::time::Instant` and asserts on the elapsed time, including every user of a
+# `smoke_time_limit()`/`budget()` helper or of `CL_SMOKE_SLOW`. Names are matched exactly
+# (`test(=…)`), so a renamed test silently drops out: `cargo nextest list --workspace
+# --filterset '<the filter below>'` must list exactly the tests named here.
+[[profile.default.overrides]]
+filter = '''
+    test(=document::tests::deep_append_chain_should_be_linear)
+    | test(=deep_first_child_chain_should_lay_out_in_linear_time)
+    | test(=many_inline_spans_should_lay_out_in_linear_time)
+    | test(=nth_child_over_twenty_thousand_siblings_should_resolve_under_the_time_bound)
+    | test(=render_should_finish_a_1mb_document_within_the_time_budget)
+'''
+threads-required = "num-cpus"

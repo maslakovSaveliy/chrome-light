@@ -38,10 +38,12 @@ fn temp_html_path(tag: &str) -> PathBuf {
 }
 
 /// `< 5s` normally; `< 15s` under `CL_SMOKE_SLOW=1` for a slower/shared CI runner (the task
-/// brief's own escape hatch, matching `crates/layout/tests/block.rs`'s identical convention
-/// for its own deep-chain smoke test). `.github/workflows/ci.yml`'s test-matrix job sets
-/// `CL_SMOKE_SLOW=1` on its `cargo nextest run --workspace --locked` step; a plain local
-/// `cargo test` still gets the tighter 5s bound.
+/// brief's own escape hatch, matching the identical convention of `cl-layout`'s shared
+/// `smoke_time_limit` in `crates/layout/tests/common/mod.rs`). `.github/workflows/ci.yml`'s
+/// test-matrix job sets `CL_SMOKE_SLOW=1` on its `cargo nextest run --workspace --locked`
+/// step; a plain local `cargo test` still gets the tighter 5s bound. Like every
+/// wall-clock-bounded test, this one is listed in `.config/nextest.toml` so nextest runs it
+/// with the CPU to itself (`cargo test` ignores that file).
 #[allow(
     clippy::disallowed_methods,
     reason = "`std::env::var` is restricted to `cl-platform` in production code so env access \
