@@ -1,3 +1,3 @@
-# История
+# History
 
-Сюда переезжают: журнал сессий из MEMORY.md старше ~месяца (`sessions-YYYY-MM.md`), ежемесячные бенчмарки против Chrome (`bench-YYYY-MM.md`), ретроспективы milestone-ов.
+What moves here: the MEMORY.md session log older than ~a month (`sessions-YYYY-MM.md`), monthly benchmarks against Chrome (`bench-YYYY-MM.md`), milestone retrospectives.
