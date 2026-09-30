@@ -61,6 +61,12 @@ Deferred to M1+; do not block the public beta:
 
 ## Session log
 
+### 2026-09-30 — session 4: README status and quick start refreshed
+- README "Status" now reflects M0 complete (crates, handshake, CI, no engine/UI yet, sandbox not implemented → debug `--no-sandbox` only). Quick start fixed: `-p chromelight -- --no-sandbox` (was `-p chrome-light`), plus `cl-testshell render/compare`; documents the exit-78 + 15 s bootstrap-timeout refusal path without the flag.
+- Verified on Linux host: `cargo build --workspace`; `chromelight --no-sandbox` → `handshake ok`, exit 0; without the flag → renderer exit 78, browser exit 1 after 15 s; `cl-testshell render` → 800×600 PNG; `compare` same file → 0 diff.
+- Noticed, not changed: CLAUDE.md §5 lists `cl-testshell -- --headless <url|file> --png out.png`, but the M0 CLI is `render <input> --png <out>` / `compare <a> <b>`.
+- Not run: `cargo test`, clippy, 3-OS CI (docs-only change).
+
 ### 2026-09-30 — session 3: docs translated to English
 - Owner decision: all docs are English. CLAUDE.md §3.4 language rule updated (AGENTS.md synced); chat with the owner stays Russian.
 - Translated (pure language, no content changes, line-aligned diffs): README, MEMORY, docs/*.md, docs/adr/*, docs/history/*, Russian lines in the M0 plan. Repo-wide Cyrillic grep is empty.

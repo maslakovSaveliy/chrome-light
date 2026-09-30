@@ -6,7 +6,7 @@ An independent web browser and browser engine in Rust for macOS, Windows and Lin
 
 ## Status
 
-**Pre-alpha, design stage.** No engine code yet. Rules, architecture, threat model, ADRs, test plan and milestone plan (`docs/PLAN.md`) are in place. Execution starts with M0 (`docs/superpowers/plans/2026-09-07-m0-foundation.md`).
+**Pre-alpha. M0 Foundation is complete** (tag `m0`): Cargo workspace with `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell` and the `chromelight` binary; the browser process spawns a renderer and completes a typed, validated IPC handshake; CI is green on macOS, Windows and Linux. There is no rendering engine or UI yet: the renderer does not parse HTML, and `cl-testshell render` produces a blank canvas. Sandbox policies are not implemented yet, so a renderer runs only in debug builds with `--no-sandbox`; release builds refuse to start one. Next: M1 — static pages (`docs/PLAN.md`). Current state, known debts and open questions — `MEMORY.md`.
 
 Honest estimate of scale (from `docs/RESEARCH-2026-09.md`): an independent engine covering a useful share of the open Web is a multi-year program. The project is run by one developer with AI agents, so scope at each milestone is strictly limited, and compatibility is measured, not promised.
 
@@ -47,13 +47,19 @@ What we are **not** doing: Google Chrome Sync (API closed by Google since 2021),
 | [docs/RESEARCH-2026-09.md](docs/RESEARCH-2026-09.md) | Market/technology research snapshot as of 2026-09-07, with sources. |
 | [docs/GLOSSARY.md](docs/GLOSSARY.md) | Terms. |
 
-## Quick start (once code exists)
+## Quick start
 
 ```bash
 cargo build --workspace
 cargo test --workspace
-cargo run -p chrome-light
+# Browser ↔ renderer handshake; debug builds only until the renderer sandbox lands (macOS/Linux M1, Windows M2)
+cargo run -p chromelight -- --no-sandbox
+# Headless render to PNG (M0: blank 800×600 canvas) and PNG diff (exit 1 on mismatch)
+cargo run -p cl-testshell -- render page.html --png out.png
+cargo run -p cl-testshell -- compare out.png expected.png
 ```
+
+Without `--no-sandbox` the renderer exits with code 78 (sandbox unavailable) and the browser fails after the 15 s bootstrap timeout. This is intended: no renderer runs unsandboxed unless explicitly opted out in a debug build.
 
 Requirements and toolchain installation — `docs/DEVELOPMENT.md`.
 
