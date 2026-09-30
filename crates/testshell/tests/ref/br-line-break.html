@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- expects: a solid 20x40 black rectangle at (0,0) - two contiguous 20x20 line bars.
+     "a<br>b" forces a line break at the <br> even though both letters would easily fit on
+     one line; each of "a" and "b" is a single Ahem glyph on its own 20px-tall line, stacked
+     with no gap. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  p { font-family: Ahem; font-size: 20px; line-height: 20px; margin: 0; }
+</style>
+</head>
+<body>
+<p>a<br>b</p>
+</body>
+</html>

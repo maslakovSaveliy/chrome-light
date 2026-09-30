@@ -6,7 +6,7 @@
 |---|---|---|
 | Rust | по `rust-toolchain.toml` (stable 1.95) | **через rustup**, не Homebrew: нужны cross-target и `rustfmt`/`clippy` компоненты одной версии |
 | cmake, ninja | любые свежие | сборка `v8` crate (prebuilt binaries скачиваются по умолчанию; из исходников — часы), `mozjs` не используем |
-| Python 3 | ≥3.11 | WPT runner, Test262 harness, codegen-скрипты |
+| Python 3 | ≥3.10 | **обязателен для сборки** (stylo codegen), WPT/Test262 tooling |
 | macOS | Xcode 26 + CLT | seatbelt profiles, code signing |
 | Windows | VS 2026 Build Tools (MSVC), Windows 11 SDK | `x86_64-pc-windows-msvc` |
 | Linux | clang, pkg-config, libxkbcommon, wayland/x11 dev, libssl не нужен (rustls) | Ubuntu 24.04 как CI baseline |

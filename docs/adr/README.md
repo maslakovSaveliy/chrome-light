@@ -18,3 +18,4 @@
 | [0012](0012-memory-budget.md) | Память как требование первого класса | Accepted |
 | [0013](0013-naming-and-trademark.md) | Имя ChromeLight и торговая марка (риск принят) | Accepted |
 | [0014](0014-licensing.md) | Лицензия Apache-2.0 OR MIT | Accepted |
+| [0015](0015-stylo-integration.md) | Интеграция stylo: unsafe в cl-style, Python 3, pinned версия, fallback Option B | Accepted |

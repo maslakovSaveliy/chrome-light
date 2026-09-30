@@ -1,0 +1,19 @@
+<!doctype html>
+<!-- Reference for margin-collapse-parent-child.html: the black bar at its position, and the
+     red bar placed directly at the already-collapsed offset via a plain margin-top (20px,
+     which collapses with #before's own zero margin-bottom to land the red bar's top at
+     10 (#before's height) + 20 = 30px) - no parent/child nesting needed to reproduce the
+     final pixels. -->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  #before { height: 10px; background: #000; }
+  #parent { width: 100px; height: 10px; margin-top: 20px; background: #f00; }
+</style>
+</head>
+<body>
+<div id="before"></div>
+<div id="parent"></div>
+</body>
+</html>

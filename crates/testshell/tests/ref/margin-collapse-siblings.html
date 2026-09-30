@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- expects: two 800x10 black bars, at (0,0) and (0,30). Sibling vertical margins collapse
+     to the greater of the two (CSS 2.1 SS8.3.1), not their sum: 20px margin-bottom meeting
+     10px margin-top collapses to 20px, so the second bar starts at 10 (first bar height) +
+     20 (collapsed margin) = 30. The two <div>s are adjacent in the source with no whitespace
+     between them; the same markup *with* whitespace between them is the separate pair
+     margin-collapse-siblings-whitespace, which covers CSS 2.1 SS9.2.2.1 (a run of
+     collapsible white space generates no box at all). -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { font-family: Ahem; font-size: 20px; line-height: 20px; height: 10px; background: #000; }
+  #first { margin-bottom: 20px; }
+  #second { margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="first"></div><div id="second"></div>
+</body>
+</html>

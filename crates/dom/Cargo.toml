@@ -1,0 +1,20 @@
+[package]
+name = "cl-dom"
+description = "ChromeLight DOM: arena-backed Document (NodeId indices, no Rc/RefCell)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_dom"
+
+[dependencies]
+markup5ever.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

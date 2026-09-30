@@ -1,0 +1,8 @@
+---
+source: crates/paint/tests/display_list_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/nested-divs.html\"))"
+---
+DisplayList bounds=(0.00, 0.00, 800.00, 600.00) items=3
+Border (18.00, 20.00, 414.00, 146.00) widths=(2.00, 2.00, 2.00, 2.00) colors=(#000000ff, #000000ff, #000000ff, #000000ff)
+Text font=FontKey(1) size=16.00 origin=(28.00, 60.10) glyphs=1 #000000ff
+Text font=FontKey(1) size=16.00 origin=(28.00, 126.10) glyphs=1 #000000ff

@@ -76,7 +76,9 @@ FetchHandle bytes ──► encoding sniff ──► cl-html (html5ever tokenize
                                                     ▼
    ─────────────── gpu process ───────────────
    cl-compositor: property trees (transform/clip/effect/scroll), layerization, tiles, damage, async scroll/animation
-   cl-gfx: vello scene → wgpu; CPU fallback (vello_cpu/tiny-skia) для headless/reftests/без GPU
+   cl-gfx: vello scene → wgpu; CPU backend (tiny-skia + swash glyph masks) для headless/reftests/без GPU
+           M1a: реализован только CPU backend — `cl_gfx::cpu::rasterize(&DisplayList, w, h, &FontDb) -> Pixmap`
+           (валидирует список через `cl_paint::validate` до аллокации, clip-стек из rect'ов, glyph-кэш, AA выключен)
                                                     │
                                                     ▼
    present → окно (winit surface) / PNG (testshell)

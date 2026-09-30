@@ -1,0 +1,7 @@
+---
+source: crates/paint/tests/display_list_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/pre.html\"))"
+---
+DisplayList bounds=(0.00, 0.00, 800.00, 600.00) items=2
+Text font=FontKey(1) size=16.00 origin=(16.00, 41.10) glyphs=12 #000000ff
+Text font=FontKey(1) size=16.00 origin=(16.00, 60.30) glyphs=13 #000000ff

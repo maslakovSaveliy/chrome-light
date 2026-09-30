@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  The M1a static pipeline's first reftest pair (Task 22; Task 23 adds the harness that
+  compares every such pair). This page draws one Ahem glyph; text-basic-ref.html draws the
+  same picture with a plain black box. Ahem's glyph-to-em-square mapping (crates/fonts) is
+  only pixel-exact at font sizes that are multiples of 5px (its 0.8/0.2 em ascent/descent
+  split needs `size * 0.8` and `size * 0.2` to land on whole device pixels) — hence 20px, not
+  the more obvious 16px.
+-->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { margin: 0; font-family: Ahem; font-size: 20px; line-height: 20px; }
+</style>
+</head>
+<body>
+<div>x</div>
+</body>
+</html>

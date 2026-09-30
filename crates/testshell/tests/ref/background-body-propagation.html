@@ -1,0 +1,14 @@
+<!doctype html>
+<!-- expects: the whole 800x600 canvas painted #0a5 - <body>'s background-color propagates to
+     the canvas (CSS 2.1 SS14.2, css-backgrounds-3 SS2.11.2), and <body>'s own border box does
+     not repaint it a second time (crates/paint/src/build.rs "Canvas background propagation"). -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; font-family: Ahem; font-size: 20px; line-height: 20px; background: #0a5; }
+</style>
+</head>
+<body>
+</body>
+</html>

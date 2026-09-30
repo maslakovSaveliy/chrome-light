@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- expects: a 300x100 box at (0,0): 5px black border ring all round, blue fill in the
+     290x90 interior. box-sizing:border-box makes the specified 300x100 the *border* box:
+     content = 300 - 2*10(padding) - 2*5(border) = 270 wide, 100 - 20 - 10 = 70 tall. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div {
+    font-family: Ahem; font-size: 20px; line-height: 20px;
+    box-sizing: border-box;
+    width: 300px; height: 100px; padding: 10px; border: 5px solid #000; background: #00f;
+  }
+</style>
+</head>
+<body>
+<div></div>
+</body>
+</html>

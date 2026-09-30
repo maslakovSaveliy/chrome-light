@@ -32,7 +32,7 @@
 |---|---|---|
 | renderer → browser | browser не доверяет ничему | `cl-ipc::validate` на каждом сообщении; origin/site из `SiteInstance`, не из payload |
 | renderer → network | network доверяет только `FetchHandle` от browser | handle несёт site, credentials mode, CSP-снимок |
-| renderer → gpu | gpu валидирует display list (bounds, resource ids, размеры) | лимиты размеров, ids из таблицы выделенных |
+| renderer → gpu | gpu валидирует display list (bounds, resource ids, размеры) | лимиты размеров, ids из таблицы выделенных; в `cl-paint` это `cl_paint::validate` (item/glyph/clip-depth лимиты, bounds ± 4096px) с fuzz-таргетом `display_list_validate` (Task 20) |
 | browser → ОС | browser привилегирован | минимизировать код: нет парсеров, нет JS в browser process (до ADR-0008 revisit) |
 | расширение → browser | по manifest permissions | `chrome.*` host в browser process, каждый вызов проверяет grant |
 | sync client → server | сервер не читает данные | E2E: passphrase-derived key; сервер хранит blob-ы |

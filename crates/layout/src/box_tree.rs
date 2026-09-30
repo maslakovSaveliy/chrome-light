@@ -1,0 +1,605 @@
+//! The box tree: one [`LayoutBox`] per generated CSS box, built from a
+//! [`cl_style::StyledDocument`] by [`build`].
+//!
+//! Box generation here follows CSS 2.1 §9.2 at the level M1a's scope needs: an element with
+//! `display: none` (and its whole subtree) generates no box at all; every other element
+//! generates a `Block` or `Inline` box per its (already-folded, see
+//! [`crate::style_adapt::adapt`]) computed `display`; a text node generates an `InlineText`
+//! box; `<br>` generates a `LineBreak` box; and a block container whose children mix
+//! block-level and inline-level boxes gets each maximal run of inline-level children wrapped
+//! in a single anonymous block box (CSS 2.1 §9.2.1.1), so the container ends up with only
+//! block-level children.
+//!
+//! # Invariant: no block-level box is ever a child of an `Inline` box
+//!
+//! After [`build`] returns, every `Block`'s children are either all block-level (`Block`/
+//! `AnonymousBlock`) or all inline-level (`Inline`/`InlineText`/`LineBreak`) — never mixed,
+//! thanks to the anonymous-block wrapping above — and every `Inline`'s children are *always*
+//! inline-level. There is no box kind whose children can be a mix of the two, and no `Inline`
+//! ever has a block-level child.
+//!
+//! CSS 2.1 §9.2.1.1 would instead *split* an inline box around a block-level child
+//! (`<span>a<div>b</div>c</span>` becomes two anonymous inline boxes either side of the
+//! block, each wrapped in their own anonymous block, as if the markup had been three sibling
+//! elements). M1a does not implement that split — it has no representation for "one source element,
+//! several sibling boxes" and Task 17's inline layout has no fixup pass for it. Instead, an
+//! inline-level element whose own children include any block-level box is **blockified**: it
+//! is generated as a `Block` box, not `Inline` (`<span>x<div>b</div>y</span>` becomes a
+//! `Block` box for the `<span>`, whose anonymous-block wrapping then applies exactly as it
+//! would for a `<div>` in the same position). This is a deliberate M1a deviation from CSS 2.1
+//! §9.2.1.1, tracked in `docs/SPEC_REGISTRY.md`'s `css-display-3, CSS2 §9–10` row; see
+//! `box_tree_should_blockify_inline_with_block_child` in `tests/box_tree.rs` for the exact
+//! shape this produces. The decision can only be made once a frame's children are known, so
+//! it happens where every other part of a box's `kind`/children is finalized: when [`build`]
+//! pops a `Frame` off its stack, not when the frame is pushed.
+//!
+//! # Invariant: `style.display` always agrees with `kind`
+//!
+//! For every element box (everything but `AnonymousBlock`/`AnonymousInline`, which have no
+//! `display` of their own — see [`LayoutStyle::anonymous_block`]), `kind` and
+//! `LayoutBox::style`'s `display` field always name the same thing: `BoxKind::Block` ↔
+//! [`Display::Block`], `BoxKind::Inline` ↔ [`Display::Inline`]. This matters specifically for
+//! a blockified box (see above): `style_adapt::adapt` computed `Display::Inline` for it (it
+//! *is* an inline element by its own CSS), so blockification forces `style.display` to
+//! [`Display::Block`] too, not just `kind` — a caller that branches on `style.display`
+//! instead of `kind` must reach the same, corrected answer either way. `finalize_kind` is
+//! where both are set together.
+//!
+//! [`build`] walks the DOM with an explicit stack rather than recursion, for the same reason
+//! every traversal elsewhere in `ChromeLight` does: a document's nesting depth is
+//! attacker-controlled, and a recursive walk would let a hostile document overflow the call
+//! stack.
+//!
+//! # Invariant: collapsible whitespace between block siblings generates no box
+//!
+//! CSS 2.1 §9.2.2.1: "White space content that would subsequently be collapsed away according
+//! to the 'white-space' property does not generate any anonymous inline boxes." Ordinary
+//! markup indentation — `<div>\n  <p>a</p>\n  <p>b</p>\n</div>` — puts a text node between
+//! `<p>a</p>` and `<p>b</p>` that is nothing but a newline and spaces; under `white-space:
+//! normal` (the default) that text collapses to nothing, so it must not become a box at all —
+//! not even the anonymous block the mixed-content rule above would otherwise wrap it in. This
+//! matters beyond box-tree shape: before this rule was enforced, such a text node produced a
+//! real, zero-height `AnonymousBlock` sitting between the two `<p>`s, and that anonymous box's
+//! own (zero) margins took part in [`crate::block`]'s sibling margin-collapsing chain as two
+//! separate pairwise collapses instead of one — turning `max(margin_a, margin_b)` into
+//! `margin_a + margin_b` whenever both were nonzero (CSS 2.1 §8.3.1 requires the max; found
+//! while writing `crates/testshell/tests/ref/margin-collapse-siblings.html`, Task 23). Only a
+//! run that is *entirely* whitespace-only `InlineText` under `white-space: normal` is dropped
+//! this way ([`wrap_inline_runs`]'s `push_or_drop_run`): a run containing any non-whitespace
+//! text, any `Inline` element box (even an empty `<span></span>`), or a `LineBreak` is kept
+//! and wrapped as before, and `white-space: pre` text is never dropped (nothing is collapsible
+//! there).
+
+use cl_dom::{Document, NodeId, NodeKind, local_name};
+use cl_style::StyledDocument;
+
+use crate::geom::{Display, LayoutStyle, WhiteSpace};
+use crate::style_adapt::adapt;
+use crate::whitespace::is_collapsible;
+
+/// The id of one [`LayoutBox`] in a [`BoxTree`].
+///
+/// Mirrors `cl_dom::NodeId`: an index into [`BoxTree`]'s internal arena, meaningful only
+/// relative to the tree that produced it, saturating rather than panicking if somehow more
+/// than `u32::MAX` boxes were ever built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BoxId(u32);
+
+impl BoxId {
+    /// Builds a `BoxId` from a raw arena index, saturating to `u32::MAX` (never assigned to a
+    /// real box by [`BoxTree`]'s builder) rather than panicking if `index` does not fit in a
+    /// `u32`.
+    #[must_use]
+    fn from_index(index: usize) -> Self {
+        Self(u32::try_from(index).unwrap_or(u32::MAX))
+    }
+
+    /// Returns the raw arena index this id names.
+    #[must_use]
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// What kind of CSS box a [`LayoutBox`] is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BoxKind {
+    /// A block-level box generated by an element (`display: block`, after
+    /// [`crate::style_adapt::adapt`]'s fold — or an inline-level element **blockified**
+    /// because it directly contains a block-level child; see the module docs' "Invariant"
+    /// section).
+    Block,
+    /// An inline-level box generated by an element (`display: inline`). Per the module docs'
+    /// invariant, an `Inline` box's children are always inline-level too — never `Block`/
+    /// `AnonymousBlock` — because an inline element that would contain one is blockified into
+    /// [`BoxKind::Block`] instead.
+    Inline,
+    /// The box generated by a text node: `LayoutBox::node` names the same
+    /// [`cl_dom::NodeId`] redundantly, so a caller that only has a `BoxKind::InlineText`
+    /// pattern match (not the enclosing `LayoutBox`) still has the node id in hand.
+    ///
+    /// Its [`LayoutBox::style`] is **not** a copy of its container's whole style: only the
+    /// CSS-inherited properties (`color`, the font fields, `line-height`, `text-align`,
+    /// `white-space`) come from the container: see [`crate::geom::LayoutStyle::inherited_text_style`].
+    /// Every non-inherited field (`margin`, `padding`, `border-*`, `width`/`height`,
+    /// `position`, `background`, …) is that property's initial value, not the container's —
+    /// reading them off an `InlineText` box as if they described its own box model is a bug.
+    InlineText(cl_dom::NodeId),
+    /// An anonymous block box [`build`] synthesizes to wrap a run of inline-level children
+    /// when a block container's children are a mix of block-level and inline-level boxes
+    /// (CSS 2.1 §9.2.1.1). Has no [`cl_dom::NodeId`] of its own — `LayoutBox::node` is
+    /// `None`.
+    ///
+    /// Never generated for a run that is entirely collapsible whitespace under `white-space:
+    /// normal` — CSS 2.1 §9.2.2.1, see the module docs' "Invariant: collapsible whitespace
+    /// between block siblings generates no box".
+    AnonymousBlock,
+    /// An anonymous inline box. Not generated by [`build`] in M1a (there is no construction
+    /// rule in this task's scope that needs one); kept in the enum so a later task can
+    /// introduce one without an API break.
+    AnonymousInline,
+    /// The box generated by a `<br>` element: forces a line break wherever it falls in
+    /// inline content, and lays out no content of its own.
+    LineBreak,
+}
+
+/// One generated CSS box.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayoutBox {
+    /// The DOM node this box was generated for, or `None` for a box [`build`] synthesized
+    /// (an anonymous block, or the empty fallback root for a document with no root element).
+    pub node: Option<cl_dom::NodeId>,
+    /// What kind of box this is.
+    pub kind: BoxKind,
+    /// This box's layout-relevant computed style.
+    ///
+    /// For every kind except [`BoxKind::InlineText`] this is the box's own adapted
+    /// `ComputedValues` (or, for an `AnonymousBlock`, [`LayoutStyle::anonymous_block`]'s
+    /// inherited-only style). An `InlineText` box is different: see
+    /// [`BoxKind::InlineText`]'s docs — its `style` carries only the inherited properties
+    /// from its container, with everything else at its initial value.
+    ///
+    /// For an element box, `style.display` always agrees with [`LayoutBox::kind`] — see the
+    /// module docs' "Invariant: `style.display` always agrees with `kind`" section — so a
+    /// blockified box's `style.display` reads [`Display::Block`], never the `Display::Inline`
+    /// its source element's own CSS computed.
+    pub style: LayoutStyle,
+    /// This box's children, in box (≈ document) order.
+    pub children: Vec<BoxId>,
+}
+
+/// The tree of generated CSS boxes for one document.
+#[derive(Debug, Clone)]
+pub struct BoxTree {
+    boxes: Vec<LayoutBox>,
+    /// The id of the tree's root box (the box generated for the document's root element, or
+    /// a synthetic empty box for a document with none).
+    pub root: BoxId,
+}
+
+impl BoxTree {
+    /// Looks up a box by id. `None` if `id` is out of range (it cannot be "from another
+    /// tree" the way `cl_dom::NodeId` can be from another document — `BoxId` is not `Copy`
+    /// across trees in any API this crate exposes today, but the check costs nothing and
+    /// keeps this total the same way `Document::get` is).
+    #[must_use]
+    pub fn get(&self, id: BoxId) -> Option<&LayoutBox> {
+        self.boxes.get(id.index())
+    }
+
+    /// The number of boxes in the tree.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.boxes.len()
+    }
+
+    /// Whether the tree has no boxes at all. [`build`] always produces at least the root
+    /// box, so this is always `false` in practice; provided for API symmetry with
+    /// [`BoxTree::len`] (clippy's `len_without_is_empty`).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.boxes.is_empty()
+    }
+}
+
+/// Builds the box tree for `doc`.
+///
+/// Total over any [`StyledDocument`]: a document with no root element produces a `BoxTree`
+/// whose root is a single, childless, styleless (`LayoutStyle::initial()`) anonymous block —
+/// there is no element to generate a real box from, but [`BoxTree::root`] must still name a
+/// valid box. See the module docs for the box-generation rules, and
+/// [`crate::style_adapt::adapt`] for how a `ComputedValues` becomes a [`LayoutStyle`].
+#[must_use]
+pub fn build(doc: &StyledDocument) -> BoxTree {
+    let document = doc.document();
+    let mut boxes: Vec<LayoutBox> = Vec::new();
+
+    let Some(root_node) = root_element(document) else {
+        let root = push_box(
+            &mut boxes,
+            None,
+            BoxKind::AnonymousBlock,
+            LayoutStyle::initial(),
+            Vec::new(),
+        );
+        return BoxTree { boxes, root };
+    };
+
+    let root_style = doc
+        .computed(root_node)
+        .map_or_else(LayoutStyle::initial, adapt);
+    if root_style.display == Display::None {
+        // The document element itself is `display: none` (unusual, but not impossible —
+        // e.g. an author stylesheet with `html { display: none }`): the whole document
+        // generates no box, exactly as `classify_child` would treat any other `display:
+        // none` element. Same synthetic-empty-tree fallback as "no root element at all".
+        let root = push_box(
+            &mut boxes,
+            None,
+            BoxKind::AnonymousBlock,
+            LayoutStyle::initial(),
+            Vec::new(),
+        );
+        return BoxTree { boxes, root };
+    }
+    let root_kind = container_kind(&root_style);
+
+    let mut stack: Vec<Frame> = vec![Frame {
+        node: root_node,
+        style: root_style,
+        kind: root_kind,
+        children: document.children(root_node).collect(),
+        next_child: 0,
+        built: Vec::new(),
+    }];
+
+    while let Some(top) = stack.last_mut() {
+        let next_child = top.children.get(top.next_child).copied();
+        top.next_child += 1;
+
+        let Some(child_id) = next_child else {
+            // This frame's children are exhausted: finalize its box and hand it to the
+            // parent frame (or, if this was the root frame, return it as the tree's root).
+            let mut frame = stack.pop().unwrap_or_else(|| {
+                // Unreachable in practice — the `while let` guard above just proved `stack`
+                // non-empty — but written without `expect`/`unwrap` panicking on a real
+                // failure: falls back to an empty frame rather than aborting.
+                Frame {
+                    node: root_node,
+                    style: LayoutStyle::initial(),
+                    kind: ContainerKind::Block,
+                    children: Vec::new(),
+                    next_child: 0,
+                    built: Vec::new(),
+                }
+            });
+            let kind = finalize_kind(frame.kind, &mut frame.style, &boxes, &frame.built);
+            let children = wrap_inline_runs(&mut boxes, document, frame.built, &frame.style);
+            let box_id = push_box(&mut boxes, Some(frame.node), kind, frame.style, children);
+            match stack.last_mut() {
+                Some(parent) => parent.built.push(box_id),
+                None => {
+                    return BoxTree {
+                        boxes,
+                        root: box_id,
+                    };
+                }
+            }
+            continue;
+        };
+
+        // `top`'s mutable borrow of `stack` ends here (its last use was incrementing
+        // `next_child` above), so `stack.last()`/`stack.push()` below are free to borrow
+        // `stack` again.
+        let child_box = match stack.last() {
+            Some(frame) => classify_child(doc, child_id, &frame.style),
+            // Unreachable — same invariant as the `unwrap_or_else` above.
+            None => ChildBox::Skip,
+        };
+        match child_box {
+            ChildBox::Skip => {}
+            ChildBox::Leaf(kind, style) => {
+                let box_id = push_box(&mut boxes, Some(child_id), kind, style, Vec::new());
+                if let Some(top) = stack.last_mut() {
+                    top.built.push(box_id);
+                }
+            }
+            ChildBox::Container(kind, style) => {
+                stack.push(Frame {
+                    node: child_id,
+                    style,
+                    kind,
+                    children: document.children(child_id).collect(),
+                    next_child: 0,
+                    built: Vec::new(),
+                });
+            }
+        }
+    }
+
+    // Unreachable in practice: the `while let` loop above only ends when `stack` is empty,
+    // and every `pop` that empties `stack` is immediately followed by a `return` (see the
+    // `match stack.last_mut()` inside the loop) rather than falling through to another
+    // iteration. Kept panic-free anyway: hand back an empty tree rather than diverging if
+    // that invariant is ever wrong.
+    let root = push_box(
+        &mut boxes,
+        None,
+        BoxKind::AnonymousBlock,
+        LayoutStyle::initial(),
+        Vec::new(),
+    );
+    BoxTree { boxes, root }
+}
+
+/// Whether a container element's own box is block- or inline-level, per its (already-folded)
+/// computed `display`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContainerKind {
+    Block,
+    Inline,
+}
+
+/// One frame of the explicit stack [`build`] walks with instead of recursion: an
+/// element whose box is not yet finalized because its children are still being visited.
+struct Frame {
+    node: NodeId,
+    style: LayoutStyle,
+    kind: ContainerKind,
+    /// This frame's DOM children, snapshotted up front so the walk does not need to hold a
+    /// live `Children` iterator (borrowed from `document`) across pushing further frames.
+    children: Vec<NodeId>,
+    /// Index into `children` of the next child to classify.
+    next_child: usize,
+    /// Finished child `BoxId`s, in order, before the mixed-inline-run wrap pass.
+    built: Vec<BoxId>,
+}
+
+/// What one DOM child becomes in the box tree, decided without yet building anything for it.
+enum ChildBox {
+    /// `display: none`, or a node kind that never generates a box (comment, doctype,
+    /// processing instruction, nested document/fragment node, or an element with no computed
+    /// style — see [`classify_child`]'s docs for when that last case arises).
+    Skip,
+    /// A box with no children of its own to visit: `InlineText` or `LineBreak`.
+    Leaf(BoxKind, LayoutStyle),
+    /// A box whose children must be visited before it can be finalized: `Block` or `Inline`.
+    Container(ContainerKind, LayoutStyle),
+}
+
+/// Classifies one DOM node as a box-tree child, given `parent_style` — the style of the
+/// container it would be a child of. A text box takes only the *inherited* half of
+/// `parent_style` (via [`crate::geom::LayoutStyle::inherited_text_style`]), since a text node
+/// has no computed values of its own in stylo; see [`cl_style::StyledDocument::computed`]'s
+/// docs.
+///
+/// An element with no computed style ([`cl_style::StyledDocument::computed`] returning `None`)
+/// is skipped defensively rather than guessed at: in practice this cannot happen for a child
+/// [`build`] actually visits (a `display: none` ancestor is skipped before its children are
+/// ever classified, and every other reached element is styled), but a hand-assembled
+/// [`StyledDocument`] is not required to uphold that, and there is no sound default `display`
+/// to fall back to.
+fn classify_child(doc: &StyledDocument, node: NodeId, parent_style: &LayoutStyle) -> ChildBox {
+    let document = doc.document();
+    let Some(dom_node) = document.get(node) else {
+        return ChildBox::Skip;
+    };
+
+    match &dom_node.kind {
+        NodeKind::Text(_) => ChildBox::Leaf(
+            BoxKind::InlineText(node),
+            parent_style.inherited_text_style(),
+        ),
+        NodeKind::Element(element) => {
+            let Some(cv) = doc.computed(node) else {
+                return ChildBox::Skip;
+            };
+            let style = adapt(cv);
+            if style.display == Display::None {
+                return ChildBox::Skip;
+            }
+            if element.name.local == local_name!("br") {
+                return ChildBox::Leaf(BoxKind::LineBreak, style);
+            }
+            match style.display {
+                Display::Block => ChildBox::Container(ContainerKind::Block, style),
+                // `Display::None` was already handled above.
+                Display::Inline | Display::None => {
+                    ChildBox::Container(ContainerKind::Inline, style)
+                }
+            }
+        }
+        NodeKind::Document
+        | NodeKind::Doctype(_)
+        | NodeKind::Comment(_)
+        | NodeKind::ProcessingInstruction { .. }
+        | NodeKind::DocumentFragment => ChildBox::Skip,
+    }
+}
+
+/// A container element's own display → [`ContainerKind`] (already folded onto block/inline
+/// by [`crate::style_adapt::adapt`]; `Display::None` never reaches this — the root box is
+/// only built after confirming the root element itself is not `display: none`... actually it
+/// is not filtered — see [`build`]).
+fn container_kind(style: &LayoutStyle) -> ContainerKind {
+    match style.display {
+        Display::Inline => ContainerKind::Inline,
+        Display::Block | Display::None => ContainerKind::Block,
+    }
+}
+
+/// The document element: the first element child of the document node. `None` for a document
+/// with no element at all.
+fn root_element(document: &Document) -> Option<NodeId> {
+    document
+        .children(document.root())
+        .find(|id| document.element(*id).is_some())
+}
+
+/// Appends a new box to `boxes` and returns its id.
+fn push_box(
+    boxes: &mut Vec<LayoutBox>,
+    node: Option<NodeId>,
+    kind: BoxKind,
+    style: LayoutStyle,
+    children: Vec<BoxId>,
+) -> BoxId {
+    let id = BoxId::from_index(boxes.len());
+    boxes.push(LayoutBox {
+        node,
+        kind,
+        style,
+        children,
+    });
+    id
+}
+
+/// Whether a box is block-level for the purposes of the mixed-children wrap rule.
+fn is_block_level(kind: &BoxKind) -> bool {
+    matches!(kind, BoxKind::Block | BoxKind::AnonymousBlock)
+}
+
+/// The finalized [`BoxKind`] for one container frame, once its children are known:
+/// `Block`/`Inline` per `kind`, **blockified** to `Block` when `kind` is
+/// [`ContainerKind::Inline`] but `built` (the frame's own children, before anonymous-block
+/// wrapping) includes any block-level box — see the module docs' "Invariant" section for why
+/// M1a blockifies instead of splitting the inline box per CSS 2.1 §9.2.1.1. This can only be
+/// decided once `built` is known, i.e. when [`build`] finalizes the frame, never at the point
+/// the frame was pushed.
+///
+/// When blockification happens, `style.display` is forced to [`Display::Block`] too, so the
+/// returned `BoxKind` and `style.display` never disagree — see the module docs' "Invariant"
+/// section and [`LayoutBox::style`]'s docs: `style.display` was still `Display::Inline` here
+/// (whatever `style_adapt::adapt` computed for the source element), and a caller matching on
+/// `style.display` instead of `kind` must see the same, corrected answer either way.
+fn finalize_kind(
+    kind: ContainerKind,
+    style: &mut LayoutStyle,
+    boxes: &[LayoutBox],
+    built: &[BoxId],
+) -> BoxKind {
+    let has_block_child = built
+        .iter()
+        .filter_map(|&id| boxes.get(id.index()))
+        .any(|b| is_block_level(&b.kind));
+    if kind == ContainerKind::Inline && has_block_child {
+        style.display = Display::Block;
+        return BoxKind::Block;
+    }
+    match kind {
+        ContainerKind::Block => BoxKind::Block,
+        ContainerKind::Inline => BoxKind::Inline,
+    }
+}
+
+/// Applies CSS 2.1 §9.2.1.1's anonymous-block-wrapping rule to one container's already-built
+/// children: if `built` mixes block-level and inline-level boxes, each maximal run of
+/// inline-level boxes is replaced by a single new `AnonymousBlock` box wrapping that run
+/// (styled per [`LayoutStyle::anonymous_block`], inheriting from `container_style`) — unless
+/// the run is entirely collapsible whitespace under `white-space: normal`, in which case CSS
+/// 2.1 §9.2.2.1 says it generates no box at all (see the module docs' "Invariant: collapsible
+/// whitespace between block siblings generates no box", and [`push_or_drop_run`]). If `built`
+/// is homogeneous (all block-level, or all inline-level, including the empty case), it is
+/// returned unchanged — an inline formatting context needs no anonymous wrapper (and the
+/// whitespace-drop rule above only ever applies to a run that *would* be wrapped in one).
+fn wrap_inline_runs(
+    boxes: &mut Vec<LayoutBox>,
+    document: &Document,
+    built: Vec<BoxId>,
+    container_style: &LayoutStyle,
+) -> Vec<BoxId> {
+    let has_block = built
+        .iter()
+        .filter_map(|&id| boxes.get(id.index()))
+        .any(|b| is_block_level(&b.kind));
+    let has_inline = built
+        .iter()
+        .filter_map(|&id| boxes.get(id.index()))
+        .any(|b| !is_block_level(&b.kind));
+    if !(has_block && has_inline) {
+        return built;
+    }
+
+    let mut result = Vec::with_capacity(built.len());
+    let mut run: Vec<BoxId> = Vec::new();
+    for id in built {
+        let block_level = boxes
+            .get(id.index())
+            .is_some_and(|b| is_block_level(&b.kind));
+        if block_level {
+            if !run.is_empty() {
+                push_or_drop_run(
+                    boxes,
+                    document,
+                    std::mem::take(&mut run),
+                    container_style,
+                    &mut result,
+                );
+            }
+            result.push(id);
+        } else {
+            run.push(id);
+        }
+    }
+    if !run.is_empty() {
+        push_or_drop_run(boxes, document, run, container_style, &mut result);
+    }
+    result
+}
+
+/// Flushes one maximal inline-level run into `result`: dropped entirely (CSS 2.1 §9.2.2.1) if
+/// [`run_is_collapsible_whitespace`] says the whole run is nothing but collapsible whitespace
+/// text, otherwise wrapped in a fresh `AnonymousBlock` via [`flush_run`] as before.
+fn push_or_drop_run(
+    boxes: &mut Vec<LayoutBox>,
+    document: &Document,
+    run: Vec<BoxId>,
+    container_style: &LayoutStyle,
+    result: &mut Vec<BoxId>,
+) {
+    if run_is_collapsible_whitespace(boxes, document, &run) {
+        return;
+    }
+    result.push(flush_run(boxes, run, container_style));
+}
+
+/// Whether every box in `run` is an `InlineText` box whose entire text collapses to nothing
+/// under its own `white-space` (checked per-box rather than assumed shared, even though every
+/// box reaching here is a *direct* text child of the same container and so always has that
+/// container's own inherited `white-space` — [`classify_child`] gives a text child exactly
+/// `parent_style.inherited_text_style()`). `false` for an empty `run` (never actually called
+/// with one — both call sites only reach here after `!run.is_empty()`), for any `Inline`
+/// element box (even an empty one — the rule only ever drops *text*, per CSS 2.1 §9.2.2.1's
+/// own wording), for any `LineBreak`, and for `white-space: pre` text (nothing collapses
+/// there — [`crate::whitespace`]'s module docs).
+fn run_is_collapsible_whitespace(boxes: &[LayoutBox], document: &Document, run: &[BoxId]) -> bool {
+    !run.is_empty()
+        && run.iter().all(|&id| {
+            boxes.get(id.index()).is_some_and(|b| match &b.kind {
+                BoxKind::InlineText(node) => {
+                    b.style.white_space == WhiteSpace::Normal
+                        && text_of(document, *node).chars().all(is_collapsible)
+                }
+                BoxKind::Block
+                | BoxKind::Inline
+                | BoxKind::AnonymousBlock
+                | BoxKind::AnonymousInline
+                | BoxKind::LineBreak => false,
+            })
+        })
+}
+
+/// One text node's characters, or `""` if `node` is not a text node of `document` (which
+/// [`build`] never produces an `InlineText` for otherwise, but a hand-assembled tree could).
+fn text_of(document: &Document, node: NodeId) -> &str {
+    match document.get(node).map(|n| &n.kind) {
+        Some(NodeKind::Text(text)) => text,
+        _ => "",
+    }
+}
+
+/// Wraps one maximal run of inline-level children in a fresh `AnonymousBlock` box.
+fn flush_run(boxes: &mut Vec<LayoutBox>, run: Vec<BoxId>, container_style: &LayoutStyle) -> BoxId {
+    let style = LayoutStyle::anonymous_block(container_style);
+    push_box(boxes, None, BoxKind::AnonymousBlock, style, run)
+}

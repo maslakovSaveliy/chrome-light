@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- expects: a 110x70 box at (0,0): top strip (0,0)-(110,5) red, bottom strip (0,65)-(110,70)
+     green, left strip (0,5)-(5,65) orange, right strip (105,5)-(110,65) blue - the M1a border
+     painter draws four axis-aligned strips, no mitred corners
+     (crates/gfx/src/cpu/mod.rs). Content (5,5)-(105,65) stays canvas white (no background). -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div {
+    font-family: Ahem; font-size: 20px; line-height: 20px;
+    width: 100px; height: 60px;
+    border-top: 5px solid #f00;
+    border-right: 5px solid #00f;
+    border-bottom: 5px solid #0f0;
+    border-left: 5px solid #fa0;
+  }
+</style>
+</head>
+<body>
+<div></div>
+</body>
+</html>

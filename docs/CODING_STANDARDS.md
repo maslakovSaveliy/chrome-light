@@ -54,7 +54,7 @@ must_use_candidate = "allow"
 
 ## 4. `unsafe`
 
-Разрешён **только** в: `cl-platform`, `cl-process`, `cl-gfx` (backend модули), `cl-js` (V8 FFI), `cl-bindings/runtime`. Там: `#![deny(unsafe_code)]` на уровне crate + `#[allow(unsafe_code)]` на конкретном модуле; `#![deny(unsafe_op_in_unsafe_fn)]`; `#![deny(clippy::undocumented_unsafe_blocks)]`.
+Разрешён **только** в: `cl-platform`, `cl-process`, `cl-gfx` (backend модули), `cl-js` (V8 FFI), `cl-bindings/runtime`, `cl-style` (модули `store.rs`, `handle.rs`, `stylo_dom.rs`). Там: `#![deny(unsafe_code)]` на уровне crate + `#[allow(unsafe_code)]` на конкретном модуле; `#![deny(unsafe_op_in_unsafe_fn)]`; `#![deny(clippy::undocumented_unsafe_blocks)]`.
 
 Каждый блок:
 

@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- Reference for position-relative-offset.html: #c at its own static position (as if #b had
+     never been offset), and an invisible spacer reserving #b's flow slot so #c lands in the
+     right place; #b's visible box is placed last, at its final on-screen position, via plain
+     margins (no position:relative used here) - its x-range (50..80) never overlaps #c's
+     (0..30), so paint order between them does not matter. -->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  div { width: 30px; height: 30px; }
+  #spacer { background: transparent; }
+  #c { background: #0f0; }
+  #b { background: #00f; margin-left: 50px; margin-top: -50px; }
+</style>
+</head>
+<body>
+<div id="spacer"></div>
+<div id="c"></div>
+<div id="b"></div>
+</body>
+</html>

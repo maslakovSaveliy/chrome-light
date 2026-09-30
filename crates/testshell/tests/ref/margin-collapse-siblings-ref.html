@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Reference for margin-collapse-siblings.html: two bars placed directly at the collapsed
+     positions - the second box's own margin-top is the already-collapsed 30px (10 + the
+     20px collapsed gap), no second margin involved. -->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  div { height: 10px; background: #000; }
+  #second { margin-top: 20px; }
+</style>
+</head>
+<body>
+<div id="first"></div>
+<div id="second"></div>
+</body>
+</html>

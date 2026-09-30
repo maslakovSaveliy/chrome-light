@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- expects: black bar at (0,0) 200x50 (#outer is 400px wide; #inner's width:50% resolves
+     against #outer's content box, 200px, CSS 2.1 SS10.3.3 - not the 800px viewport) -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { font-family: Ahem; font-size: 20px; line-height: 20px; }
+  #outer { width: 400px; }
+  #inner { width: 50%; height: 50px; background: #000; }
+</style>
+</head>
+<body>
+<div id="outer"><div id="inner"></div></div>
+</body>
+</html>
