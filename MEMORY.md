@@ -61,6 +61,13 @@ Deferred to M1+; do not block the public beta:
 
 ## Session log
 
+### 2026-09-30 — session 3: docs translated to English
+- Owner decision: all docs are English. CLAUDE.md §3.4 language rule updated (AGENTS.md synced); chat with the owner stays Russian.
+- Translated (pure language, no content changes, line-aligned diffs): README, MEMORY, docs/*.md, docs/adr/*, docs/history/*, Russian lines in the M0 plan. Repo-wide Cyrillic grep is empty.
+- Source inconsistencies noticed and left as is (not translation issues): README "Status" still says pre-M0 and Quick start uses `-p chrome-light` (package is `chromelight`); frozen background tab budget ≤ 15 MB in ARCHITECTURE §9 vs ≤ 25 MB in ADR-0012 / PLAN M4.
+- Not run: cargo build/test/clippy (docs-only change).
+- Next action: M1 plan (`docs/superpowers/plans/<date>-m1-static-pages.md`).
+
 ### 2026-09-07 — session 2: M0 execution (subagent-driven)
 - Executed Tasks 1–11 from `docs/superpowers/plans/2026-09-07-m0-foundation.md`: T1 workspace/lints/deny (1 fix), T2 cl-platform (no fixes), T3–T5 cl-ipc codec/validate/bootstrap/handshake (no fixes), T6–T7 cl-process sandbox/spawn (no fixes), T8 browser/child ping-pong + tracing (1 fix: `--browser-fail-after-handshake`), T9 testshell PNG (no fixes), T10 bench script (no fixes; Chrome baseline pending owner action), T11 CI check-agents + Gates (3 fixes: rustfmt nightly options noted, cargo-fuzz flags fixed, Exit codes verified).
 - CI result: check ✅, test (macOS-14/windows-2022/ubuntu-24.04) ✅, fuzz-short ✅ on all three OSes.
