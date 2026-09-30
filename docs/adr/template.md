@@ -1,17 +1,17 @@
-# ADR-NNNN: Заголовок
+# ADR-NNNN: Title
 
 **Status:** Proposed | Accepted | Deprecated | Superseded by ADR-XXXX
 **Date:** YYYY-MM-DD
-**Deciders:** владелец проекта
+**Deciders:** project owner
 **Supersedes:** —
 
 ## Context
 
-Ситуация, силы, ограничения. Ссылки на исследование.
+Situation, forces, constraints. Links to research.
 
 ## Decision
 
-Что решаем. Одним абзацем.
+What we decide. In one paragraph.
 
 ## Options Considered
 
@@ -32,9 +32,9 @@
 
 ## Consequences
 
-- Легче:
-- Труднее:
-- Пересмотреть когда:
+- Easier:
+- Harder:
+- Revisit when:
 
 ## Action Items
 

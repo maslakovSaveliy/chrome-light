@@ -1,32 +1,32 @@
-# ADR-0008: Shell UI — egui сейчас, privileged web UI на своём движке позже
+# ADR-0008: Shell UI — egui now, privileged web UI on our own engine later
 
 **Status:** Accepted (revisit at M5)
 **Date:** 2026-09-07
-**Deciders:** владелец проекта
+**Deciders:** project owner
 
 ## Context
 
-Browser chrome (tab strip, omnibox, диалоги, settings) нужен рано для dogfooding, но движок в M1–M3 не готов рендерить свой UI. Firefox рендерит UI своим движком (privileged documents); Chrome — Views (C++). Rust GUI 2026: egui (immediate, wgpu, быстро), iced, Slint (DSL, коммерческая), Xilem (не production).
+Browser chrome (tab strip, omnibox, dialogs, settings) is needed early for dogfooding, but in M1–M3 the engine is not ready to render its own UI. Firefox renders its UI with its own engine (privileged documents); Chrome — Views (C++). Rust GUI in 2026: egui (immediate, wgpu, fast), iced, Slint (DSL, commercial), Xilem (not production).
 
 ## Decision
 
-- **M1–M4:** `cl-shell-ui` на **egui** (`egui-wgpu`, `egui-winit`), тот же wgpu-device, что compositor; UI в browser process. Минимум: tab strip, omnibox с честным origin/security state, диалоги permissions/cert, settings, downloads.
-- **M5+:** миграция на **privileged web UI**: HTML/CSS/JS страницы `chrome-light://` в отдельном privileged renderer (не sandbox-escape: отдельный процесс с capability на UI-API, строго изолированный от web-контента; никогда не в browser process). Dogfooding движка + l10n/a11y бесплатно из веб-платформы.
-- Omnibox security UI — всегда в browser process, даже после миграции (защита от spoofing).
+- **M1–M4:** `cl-shell-ui` on **egui** (`egui-wgpu`, `egui-winit`), the same wgpu device as the compositor; UI in the browser process. Minimum: tab strip, omnibox with honest origin/security state, permissions/cert dialogs, settings, downloads.
+- **M5+:** migration to a **privileged web UI**: HTML/CSS/JS pages at `chrome-light://` in a separate privileged renderer (not a sandbox escape: a separate process with a capability for the UI API, strictly isolated from web content; never in the browser process). Engine dogfooding + l10n/a11y for free from the web platform.
+- Omnibox security UI — always in the browser process, even after the migration (spoofing protection).
 
 ## Options Considered
 
-- **Сразу privileged web UI** — блокирует shell до M4+.
-- **Native toolkit per OS (AppKit/WinUI/GTK)** — тройная работа, противоречит соло.
-- **iced/Slint** — сопоставимы; egui выбран за скорость итерации и wgpu-интеграцию; лицензия Slint — минус.
+- **Privileged web UI right away** — blocks the shell until M4+.
+- **Native toolkit per OS (AppKit/WinUI/GTK)** — triple the work, at odds with a solo project.
+- **iced/Slint** — comparable; egui chosen for iteration speed and wgpu integration; Slint's license is a minus.
 
 ## Consequences
 
-- Легче: рабочий браузер для dogfooding в M1.
-- Труднее: две реализации UI за жизнь проекта; egui выглядит «не нативно» — приемлемо для альфы.
-- Пересмотреть на M5 по готовности движка (forms, focus, a11y) — решение о миграции.
+- Easier: a working browser for dogfooding in M1.
+- Harder: two UI implementations over the project's lifetime; egui looks "non-native" — acceptable for an alpha.
+- Revisit at M5 based on engine readiness (forms, focus, a11y) — decision on the migration.
 
 ## Action Items
 
-1. [ ] `cl-shell-ui` skeleton на egui (M1).
-2. [ ] Omnibox origin display по спецификации URL display guidelines (M2).
+1. [ ] `cl-shell-ui` skeleton on egui (M1).
+2. [ ] Omnibox origin display per the URL display guidelines spec (M2).
