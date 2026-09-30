@@ -13,7 +13,7 @@ use std::path::Path;
 use tiny_skia::Pixmap;
 
 pub use dump::{Stage, select};
-pub use pipeline::{RenderOptions, RenderOutput, Stages, render_bytes, render_file};
+pub use pipeline::{RenderOptions, RenderOutput, StageDumps, Stages, render_bytes, render_file};
 
 /// Testshell failure.
 #[derive(Debug, thiserror::Error)]
@@ -158,6 +158,7 @@ mod tests {
     fn write_png(width: u32, height: u32, path: &Path) {
         let opts = RenderOptions {
             viewport: (width, height),
+            ..RenderOptions::default()
         };
         let base = cl_net::Url::parse("file:///lib-test/x.html").expect("base url");
         render_bytes(b"<!doctype html>", &base, &opts)

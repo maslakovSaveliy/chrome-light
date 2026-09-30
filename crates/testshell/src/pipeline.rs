@@ -31,33 +31,53 @@ use crate::ShellError;
 
 /// Render inputs that are not part of the document itself.
 ///
-/// The viewport is the only thing a caller can vary: device pixel ratio, hinting and the
-/// font set are all fixed (see the module docs) so a render is reproducible from nothing
-/// more than the document bytes, the base URL, and this struct.
+/// What a caller can vary is the viewport and whether the intermediate stage dumps are
+/// built. Device pixel ratio, hinting and the font set are all fixed (see the module docs),
+/// so the pixels are reproducible from nothing more than the document bytes, the base URL
+/// and [`RenderOptions::viewport`]; [`RenderOptions::stage_dumps`] never changes them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RenderOptions {
     /// Viewport size in CSS pixels, `(width, height)`.
     pub viewport: (u32, u32),
+    /// Whether to build [`RenderOutput::stages`]. See [`StageDumps`].
+    pub stage_dumps: StageDumps,
 }
 
 impl Default for RenderOptions {
-    /// `800×600`, the same default the CLI's `--viewport` flag has always used.
+    /// `800×600` (the same default the CLI's `--viewport` flag has always used), no stage
+    /// dumps.
     fn default() -> Self {
         RenderOptions {
             viewport: (800, 600),
+            stage_dumps: StageDumps::None,
         }
     }
+}
+
+/// Whether [`render_bytes`] builds the textual stage dumps ([`Stages`]) next to the pixels.
+///
+/// Opt-in because the dumps are not cheap on a large document. On the 1 MB smoke page
+/// (`tests/smoke.rs`, ~55 000 DOM nodes) they measured (dhat, debt D1, 2026-09-28) about
+/// 113 MB of strings kept until the render returns, and the box-tree dump alone briefly
+/// holds ~150 MB while it assembles its lines; with the dumps the heap peak was 220 MB,
+/// without them 67 MB. Only `dump --stage` and tests that inspect a stage ask for them;
+/// `render`, the reftest harness and the smoke tests do not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StageDumps {
+    /// Build none: [`RenderOutput::stages`] is `None`. The default.
+    #[default]
+    None,
+    /// Build all five: [`RenderOutput::stages`] is `Some`.
+    All,
 }
 
 /// One textual dump per pipeline stage, in pipeline order — exactly what `dump --stage`
 /// prints (see [`crate::dump::Stage`]).
 ///
-/// Computed eagerly by [`render_bytes`] alongside the pixels: producing all five dumps is
-/// cheap relative to rasterising a page (they are string renderings of trees the pipeline
-/// builds regardless), so keeping [`RenderOutput`] a plain, fully-populated struct is
-/// simpler than making each field lazy. Revisit if a benchmark ever shows this dominating
-/// render time on a large document.
-#[derive(Debug, Clone)]
+/// Built by [`render_bytes`] only when [`RenderOptions::stage_dumps`] is
+/// [`StageDumps::All`] — see [`StageDumps`] for why that is opt-in. [`Default`] is five
+/// empty strings, the state [`render_bytes`] fills in stage by stage.
+#[derive(Debug, Clone, Default)]
 pub struct Stages {
     /// [`cl_dom::serialize::dom_dump`] of the parsed document, before styling.
     pub dom: String,
@@ -71,14 +91,16 @@ pub struct Stages {
     pub display_list: String,
 }
 
-/// The result of rendering one document: the rasterised pixels, every intermediate stage's
-/// dump, and any non-fatal stylesheet warnings collected along the way.
+/// The result of rendering one document: the rasterised pixels, the intermediate stages'
+/// dumps if they were asked for, and any non-fatal stylesheet warnings collected along the
+/// way.
 #[derive(Debug, Clone)]
 pub struct RenderOutput {
     /// The rasterised canvas: `opts.viewport` pixels, DPR 1.
     pub pixmap: Pixmap,
-    /// Every intermediate stage's textual dump (see [`Stages`]).
-    pub stages: Stages,
+    /// Every intermediate stage's textual dump (see [`Stages`]): `Some` exactly when
+    /// [`RenderOptions::stage_dumps`] was [`StageDumps::All`].
+    pub stages: Option<Stages>,
     /// One formatted line per [`cl_style::SheetWarning`] collected while loading
     /// `<link rel=stylesheet>` sheets referenced by the document.
     ///
@@ -107,7 +129,7 @@ pub struct RenderOutput {
 #[allow(
     clippy::trivially_copy_pass_by_ref,
     reason = "Task 22's brief fixes this exact signature (`opts: &RenderOptions`) verbatim; \
-              `RenderOptions` happening to be two `u32`s today does not change the public API"
+              `RenderOptions` happening to be small and `Copy` today does not change the public API"
 )]
 pub fn render_file(path: &Path, opts: &RenderOptions) -> Result<RenderOutput, ShellError> {
     let canonical = path.canonicalize()?;
@@ -136,7 +158,10 @@ pub fn render_file(path: &Path, opts: &RenderOptions) -> Result<RenderOutput, Sh
 /// 4. [`cl_paint::build()`] into a [`cl_paint::DisplayList`].
 /// 5. [`cl_gfx::cpu::rasterize`] into [`RenderOutput::pixmap`].
 ///
-/// [`RenderOutput::stages`] captures a dump of the tree at each step (see [`Stages`]).
+/// With [`StageDumps::All`], [`RenderOutput::stages`] captures a dump of the tree at each
+/// step (see [`Stages`]); with the default [`StageDumps::None`] no dump is built, and neither
+/// is the extra box tree that only the box-tree dump needs ([`cl_layout::layout`] builds and
+/// drops its own).
 ///
 /// # Errors
 /// [`ShellError::Html`] if parsing fails (see [`cl_html::HtmlError`] — uninhabited today).
@@ -151,7 +176,7 @@ pub fn render_file(path: &Path, opts: &RenderOptions) -> Result<RenderOutput, Sh
 #[allow(
     clippy::trivially_copy_pass_by_ref,
     reason = "Task 22's brief fixes this exact signature (`opts: &RenderOptions`) verbatim; \
-              `RenderOptions` happening to be two `u32`s today does not change the public API"
+              `RenderOptions` happening to be small and `Copy` today does not change the public API"
 )]
 pub fn render_bytes(
     bytes: &[u8],
@@ -165,8 +190,12 @@ pub fn render_bytes(
     )]
     let (width_px, height_px) = (width as f32, height as f32);
 
+    let mut stages = (opts.stage_dumps == StageDumps::All).then(Stages::default);
+
     let parsed = cl_html::parse_document(bytes, base, None)?;
-    let dom = dom_dump(&parsed.document);
+    if let Some(stages) = stages.as_mut() {
+        stages.dom = dom_dump(&parsed.document);
+    }
 
     let mut engine = StyleEngine::new((width_px, height_px), 1.0)?;
     engine.add_ua_sheet()?;
@@ -174,30 +203,30 @@ pub fn render_bytes(
     let warnings = sheet_warnings.iter().map(format_warning).collect();
 
     let styled = engine.resolve(parsed.document)?;
-    let style = computed_style_dump(&styled);
-
-    let tree = box_tree::build(&styled);
-    let box_tree_text = box_tree_dump(&tree);
+    if let Some(stages) = stages.as_mut() {
+        stages.style = computed_style_dump(&styled);
+        // Built only for its dump and dropped right after it: `cl_layout::layout` below
+        // builds (and drops) its own.
+        stages.box_tree = box_tree_dump(&box_tree::build(&styled));
+    }
 
     let mut fonts = FontDb::bundled()?;
     let viewport = Viewport::new(width_px, height_px);
     let fragment_tree = cl_layout::layout(&styled, viewport, &mut fonts)?;
-    let fragments = fragment_tree_dump(&fragment_tree, styled.document(), &fonts);
+    if let Some(stages) = stages.as_mut() {
+        stages.fragments = fragment_tree_dump(&fragment_tree, styled.document(), &fonts);
+    }
 
     let display_list = cl_paint::build(&fragment_tree, styled.document());
-    let display_list_text = display_list_dump(&display_list);
+    if let Some(stages) = stages.as_mut() {
+        stages.display_list = display_list_dump(&display_list);
+    }
 
     let pixmap = cl_gfx::cpu::rasterize(&display_list, width, height, &fonts)?;
 
     Ok(RenderOutput {
         pixmap,
-        stages: Stages {
-            dom,
-            style,
-            box_tree: box_tree_text,
-            fragments,
-            display_list: display_list_text,
-        },
+        stages,
         warnings,
     })
 }
@@ -224,7 +253,10 @@ mod tests {
     #[test]
     fn render_bytes_should_produce_a_pixmap_of_the_requested_viewport() {
         let base = Url::parse("file:///pipeline/test.html").expect("base url");
-        let opts = RenderOptions { viewport: (16, 8) };
+        let opts = RenderOptions {
+            viewport: (16, 8),
+            ..RenderOptions::default()
+        };
         let output = render_bytes(b"<!doctype html><p>hi</p>", &base, &opts).expect("render");
         assert_eq!(output.pixmap.width(), 16);
         assert_eq!(output.pixmap.height(), 8);
@@ -232,19 +264,50 @@ mod tests {
     }
 
     #[test]
-    fn render_bytes_should_populate_every_stage_dump() {
+    fn render_bytes_should_populate_every_stage_dump_when_asked() {
         let base = Url::parse("file:///pipeline/test.html").expect("base url");
-        let output = render_bytes(
-            b"<!doctype html><p>hi</p>",
+        let opts = RenderOptions {
+            stage_dumps: StageDumps::All,
+            ..RenderOptions::default()
+        };
+        let output = render_bytes(b"<!doctype html><p>hi</p>", &base, &opts).expect("render");
+        let stages = output
+            .stages
+            .expect("StageDumps::All must populate RenderOutput::stages");
+        assert!(stages.dom.contains("#document"));
+        assert!(stages.style.contains("display"));
+        assert!(!stages.box_tree.is_empty());
+        assert!(stages.fragments.contains("Block"));
+        assert!(!stages.display_list.is_empty());
+    }
+
+    #[test]
+    fn render_bytes_should_skip_stage_dumps_by_default() {
+        let base = Url::parse("file:///pipeline/test.html").expect("base url");
+        let opts = RenderOptions::default();
+        assert_eq!(opts.stage_dumps, StageDumps::None);
+        let output = render_bytes(b"<!doctype html><p>hi</p>", &base, &opts).expect("render");
+        assert!(
+            output.stages.is_none(),
+            "a render that did not ask for stage dumps must not build them"
+        );
+    }
+
+    #[test]
+    fn stage_dumps_should_not_change_the_pixels() {
+        let base = Url::parse("file:///pipeline/test.html").expect("base url");
+        let html = b"<!doctype html><p style=\"color:#c00\">hi <b>there</b></p>";
+        let plain = render_bytes(html, &base, &RenderOptions::default()).expect("render");
+        let dumped = render_bytes(
+            html,
             &base,
-            &RenderOptions::default(),
+            &RenderOptions {
+                stage_dumps: StageDumps::All,
+                ..RenderOptions::default()
+            },
         )
         .expect("render");
-        assert!(output.stages.dom.contains("#document"));
-        assert!(output.stages.style.contains("display"));
-        assert!(!output.stages.box_tree.is_empty());
-        assert!(output.stages.fragments.contains("Block"));
-        assert!(!output.stages.display_list.is_empty());
+        assert_eq!(plain.pixmap.data(), dumped.pixmap.data());
     }
 
     #[test]

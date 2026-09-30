@@ -167,7 +167,10 @@ pub fn run_pair(dir: &Path, name: &str, failures_dir: &Path) -> PairResult {
         );
     }
 
-    let opts = RenderOptions { viewport: VIEWPORT };
+    let opts = RenderOptions {
+        viewport: VIEWPORT,
+        ..RenderOptions::default()
+    };
     let test_pixmap = match render_file(&page, &opts) {
         Ok(output) => output.pixmap,
         Err(e) => return finish(name, known_fail, format!("render {name}.html: {e}")),

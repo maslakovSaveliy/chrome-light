@@ -5,7 +5,9 @@
 use std::path::PathBuf;
 
 use cl_testshell::reftest;
-use cl_testshell::{RenderOptions, RenderOutput, Stage, compare_png, parse_viewport, select};
+use cl_testshell::{
+    RenderOptions, RenderOutput, Stage, StageDumps, compare_png, parse_viewport, select,
+};
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -55,14 +57,20 @@ enum Cmd {
     },
 }
 
-/// Renders `input` against `viewport`.
+/// Renders `input` against `viewport`, building the stage dumps only if `stage_dumps` asks
+/// for them (`dump` does, `render` does not — see [`StageDumps`]).
 ///
 /// `input` is a `file:` URL if it starts with `file:` (loaded through [`cl_net::load_file`]
 /// and handed to [`cl_testshell::render_bytes`]), otherwise a filesystem path (handed to
 /// [`cl_testshell::render_file`], which resolves it relative to the current directory).
-fn render_input(input: &str, viewport: &str) -> anyhow::Result<RenderOutput> {
+fn render_input(
+    input: &str,
+    viewport: &str,
+    stage_dumps: StageDumps,
+) -> anyhow::Result<RenderOutput> {
     let opts = RenderOptions {
         viewport: parse_viewport(viewport)?,
+        stage_dumps,
     };
     if input.starts_with("file:") {
         let url = cl_net::Url::parse(input)?;
@@ -90,7 +98,7 @@ fn main() -> anyhow::Result<()> {
             png,
             viewport,
         } => {
-            let output = render_input(&input, &viewport)?;
+            let output = render_input(&input, &viewport, StageDumps::None)?;
             report_warnings(&output);
             output.pixmap.save_png(&png)?;
             println!("rendered {input} -> {}", png.display());
@@ -101,10 +109,13 @@ fn main() -> anyhow::Result<()> {
             stage,
             viewport,
         } => {
-            let output = render_input(&input, &viewport)?;
+            let output = render_input(&input, &viewport, StageDumps::All)?;
             report_warnings(&output);
             let stage = Stage::parse(&stage)?;
-            println!("{}", select(&output.stages, stage));
+            let stages = output
+                .stages
+                .ok_or_else(|| anyhow::anyhow!("render returned no stage dumps"))?;
+            println!("{}", select(&stages, stage));
             Ok(())
         }
         Cmd::Compare {
