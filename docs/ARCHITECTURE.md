@@ -1,17 +1,17 @@
-# Архитектура chrome-light
+# chrome-light architecture
 
-Версия документа: 2026-09-07. Источник решений — `docs/adr/`. Здесь — связная картина.
+Document version: 2026-09-07. Source of decisions — `docs/adr/`. This is the coherent picture.
 
-## 1. Границы и терминология
+## 1. Boundaries and terminology
 
-- **Продукт (browser)** — окна, вкладки, omnibox, профили, история/закладки/пароли, загрузки, разрешения, sync, импорт из Chrome, расширения, DevTools, обновления.
-- **Движок (engine)** — всё от URL до пикселей: сеть, HTML/DOM, CSS/style, layout, paint, compositor, GPU, Web IDL bindings, Web API.
-- **JS/Wasm VM** — V8 (crate `v8`), обёрнут `cl-js`. DOM не часть VM: bindings принадлежат движку.
-- **Платформенные сервисы** — ОС-абстракция, процессы, sandbox, IPC, хранилище, accessibility.
+- **Product (browser)** — windows, tabs, omnibox, profiles, history/bookmarks/passwords, downloads, permissions, sync, import from Chrome, extensions, DevTools, updates.
+- **Engine** — everything from URL to pixels: network, HTML/DOM, CSS/style, layout, paint, compositor, GPU, Web IDL bindings, Web API.
+- **JS/Wasm VM** — V8 (crate `v8`), wrapped by `cl-js`. DOM is not part of the VM: bindings belong to the engine.
+- **Platform services** — OS abstraction, processes, sandbox, IPC, storage, accessibility.
 
-Правило: Chromium ≠ Blink ≠ V8. У нас: chrome-light ≠ cl-engine ≠ V8.
+Rule: Chromium ≠ Blink ≠ V8. For us: chrome-light ≠ cl-engine ≠ V8.
 
-## 2. Процессная модель (ADR-0005)
+## 2. Process model (ADR-0005)
 
 ```
 ┌──────────────────────────────── browser process (privileged) ────────────────────────────────┐
@@ -28,32 +28,32 @@
         utility processes: image decode, font parse, media demux/decode  └─────────────┘
 ```
 
-**Принципы:**
+**Principles:**
 
-1. Browser process не парсит недоверенные байты. Никогда. Даже favicon декодируется в utility process.
-2. Renderer — один на **site** (scheme + eTLD+1) в рамках профиля; cross-site iframe — out-of-process (OOPIF) начиная с M4. До M4 cross-site iframe рендерится в том же процессе, но это документированное ограничение и блокер публичной беты.
-3. Renderer не имеет: сокетов, файлов, keychain, clipboard-write без user gesture, доступа к другим renderer-ам. Всё через capability handles от broker-а.
-4. Network process держит TLS-ключи сессий, cookies, кэш. Renderer получает только `FetchHandle` на конкретный запрос с уже применёнными CORS/CSP/cookie-политиками, проверенными в browser process.
-5. GPU process получает display lists / command buffers через shared memory; валидирует всё; падение GPU process → перезапуск без потери вкладок.
-6. Любой child может упасть: browser process показывает «страница упала», перезапускает. Crash dump без чувствительных данных (ADR-0005 §crash).
+1. The browser process does not parse untrusted bytes. Ever. Even a favicon is decoded in a utility process.
+2. Renderer — one per **site** (scheme + eTLD+1) within a profile; cross-site iframe — out-of-process (OOPIF) starting with M4. Before M4 a cross-site iframe renders in the same process, but this is a documented limitation and a blocker for the public beta.
+3. The renderer has no: sockets, files, keychain, clipboard-write without user gesture, access to other renderers. Everything goes through capability handles from the broker.
+4. The network process holds session TLS keys, cookies, cache. The renderer gets only a `FetchHandle` for a specific request, with CORS/CSP/cookie policies already applied and checked in the browser process.
+5. The GPU process receives display lists / command buffers via shared memory; validates everything; GPU process crash → restart without losing tabs.
+6. Any child may crash: the browser process shows "page crashed" and restarts it. Crash dump without sensitive data (ADR-0005 §crash).
 
-**Sandbox по платформам** (cl-process):
+**Sandbox per platform** (cl-process):
 
-| ОС | Механизм | Заметки |
+| OS | Mechanism | Notes |
 |---|---|---|
-| macOS | `sandbox_init` (seatbelt profiles, SBPL) + отдельный user-less процесс, entitlements | профили per process type в `cl-process/sandbox/macos/*.sb` |
-| Linux | user+pid+net namespaces, seccomp-bpf allowlist, `no_new_privs`, chroot-в-пустоту | fallback без user-ns → отказ загружать untrusted content, не «тихий» режим |
-| Windows | restricted token + job object + AppContainer + Win32k lockdown (`ProcessSystemCallDisablePolicy`) | самая сложная; отдельный owner-milestone |
+| macOS | `sandbox_init` (seatbelt profiles, SBPL) + separate user-less process, entitlements | profiles per process type in `cl-process/sandbox/macos/*.sb` |
+| Linux | user+pid+net namespaces, seccomp-bpf allowlist, `no_new_privs`, chroot-into-empty-dir | fallback without user-ns → refuse to load untrusted content, not a "silent" mode |
+| Windows | restricted token + job object + AppContainer + Win32k lockdown (`ProcessSystemCallDisablePolicy`) | the hardest one; a separate owner-milestone |
 
 ## 3. IPC (cl-ipc)
 
-- Транспорт: `ipc-channel` (unix domain sockets / named pipes) для сообщений; shared memory (`cl-platform::shm`) для frames, display lists, больших ресурсов.
-- Схема: сообщения — Rust enum-ы с `serde` + `postcard`; **каждый** тип имеет `validate(&self, ctx: &ReceiverCtx) -> Result<(), IpcViolation>`; версия протокола в handshake.
-- Capabilities: непередаваемые `Handle<T>` выдаются broker-ом; renderer не может «сконструировать» handle. Handle содержит origin/site и срок жизни.
-- Только async. Единственный допустимый sync-канал — renderer→browser для `window.alert`-класса модальных операций, и тот с таймаутом.
-- IPC decoders — fuzz-target с первого дня (`fuzz/ipc_*`).
+- Transport: `ipc-channel` (unix domain sockets / named pipes) for messages; shared memory (`cl-platform::shm`) for frames, display lists, large resources.
+- Schema: messages — Rust enums with `serde` + `postcard`; **every** type has `validate(&self, ctx: &ReceiverCtx) -> Result<(), IpcViolation>`; protocol version in the handshake.
+- Capabilities: non-transferable `Handle<T>` are issued by the broker; the renderer cannot "construct" a handle. A handle carries origin/site and a lifetime.
+- Async only. The only permitted sync channel — renderer→browser for `window.alert`-class modal operations, and even that one has a timeout.
+- IPC decoders — fuzz-target from day one (`fuzz/ipc_*`).
 
-## 4. Pipeline документа (renderer process)
+## 4. Document pipeline (renderer process)
 
 ```
 FetchHandle bytes ──► encoding sniff ──► cl-html (html5ever tokenizer/tree builder)
@@ -76,51 +76,51 @@ FetchHandle bytes ──► encoding sniff ──► cl-html (html5ever tokenize
                                                     ▼
    ─────────────── gpu process ───────────────
    cl-compositor: property trees (transform/clip/effect/scroll), layerization, tiles, damage, async scroll/animation
-   cl-gfx: vello scene → wgpu; CPU fallback (vello_cpu/tiny-skia) для headless/reftests/без GPU
+   cl-gfx: vello scene → wgpu; CPU fallback (vello_cpu/tiny-skia) for headless/reftests/no GPU
                                                     │
                                                     ▼
-   present → окно (winit surface) / PNG (testshell)
+   present → window (winit surface) / PNG (testshell)
 ```
 
-**Инвалидация:** style → layout → paint → raster помечают только затронутые поддеревья. Полная перерисовка допустима только в M1 и помечена `// M1-ONLY: full relayout`.
+**Invalidation:** style → layout → paint → raster mark only the affected subtrees. A full redraw is allowed only in M1 and is marked `// M1-ONLY: full relayout`.
 
-**Event loop (cl-js + cl-dom):** реализация HTML §event loop: task sources, microtask checkpoint, rendering opportunity, `requestAnimationFrame`, timers с throttling для background-вкладок. Workers — отдельные threads с собственными isolate-ами внутри того же renderer.
+**Event loop (cl-js + cl-dom):** implementation of HTML §event loop: task sources, microtask checkpoint, rendering opportunity, `requestAnimationFrame`, timers with throttling for background tabs. Workers — separate threads with their own isolates inside the same renderer.
 
-## 5. Сеть (network process, cl-net)
+## 5. Network (network process, cl-net)
 
-- URL: crate `url` (WHATWG). DNS: свой async resolver поверх `hickory-resolver` (см. DEPENDENCIES). TLS: `rustls` + `rustls-platform-verifier` (системные root stores). HTTP/1.1, HTTP/2: `hyper`. HTTP/3: `quinn` + `h3`.
-- Fetch (WHATWG): реализуется **в network process** как state machine: redirects, CORS (включая preflight), credentials mode, referrer policy, CSP `connect-src`, mixed content, service worker (позже), ORB-подобная фильтрация тел для `no-cors`.
-- HTTP cache: RFC 9111, диск (`cl-storage` cache backend) + память; ключ включает top-level site (partitioning).
-- Cookies: RFC 6265bis: `Secure`, `HttpOnly`, `SameSite`, `__Host-`/`__Secure-` префиксы, CHIPS `Partitioned`. Хранилище — SQLite в profile dir, зашифрованное платформенным ключом.
-- Downloads: в browser process (политика, UI), байты — через network process в файл с quarantine attribute (macOS `com.apple.quarantine`, Windows MOTW).
+- URL: crate `url` (WHATWG). DNS: our own async resolver on top of `hickory-resolver` (see DEPENDENCIES). TLS: `rustls` + `rustls-platform-verifier` (system root stores). HTTP/1.1, HTTP/2: `hyper`. HTTP/3: `quinn` + `h3`.
+- Fetch (WHATWG): implemented **in the network process** as a state machine: redirects, CORS (including preflight), credentials mode, referrer policy, CSP `connect-src`, mixed content, service worker (later), ORB-like body filtering for `no-cors`.
+- HTTP cache: RFC 9111, disk (`cl-storage` cache backend) + memory; the key includes the top-level site (partitioning).
+- Cookies: RFC 6265bis: `Secure`, `HttpOnly`, `SameSite`, `__Host-`/`__Secure-` prefixes, CHIPS `Partitioned`. Storage — SQLite in the profile dir, encrypted with a platform key.
+- Downloads: in the browser process (policy, UI); bytes — via the network process into a file with a quarantine attribute (macOS `com.apple.quarantine`, Windows MOTW).
 
-## 6. Хранилище (cl-storage)
+## 6. Storage (cl-storage)
 
-Единый `StorageKey = (origin, top-level site, ancestor-bit)` как в WHATWG Storage. Backends:
+A single `StorageKey = (origin, top-level site, ancestor-bit)` as in WHATWG Storage. Backends:
 
-| Данные | Backend | Процесс |
+| Data | Backend | Process |
 |---|---|---|
 | history, bookmarks, prefs, permissions, site data index | SQLite | browser |
 | cookies, HTTP cache index | SQLite | network |
-| localStorage | SQLite (per StorageKey, async commit; sync API в renderer через локальный кэш + IPC) | browser (storage service) |
-| sessionStorage | память browser process, namespace per tab | browser |
-| IndexedDB | SQLite (одна БД на StorageKey), транзакции — RFC-style журнал | browser (storage service) |
-| Cache Storage | файлы + SQLite index | browser |
-| OPFS | директории в profile dir с квотой | browser |
+| localStorage | SQLite (per StorageKey, async commit; sync API in the renderer via a local cache + IPC) | browser (storage service) |
+| sessionStorage | browser process memory, namespace per tab | browser |
+| IndexedDB | SQLite (one DB per StorageKey), transactions — RFC-style journal | browser (storage service) |
+| Cache Storage | files + SQLite index | browser |
+| OPFS | directories in the profile dir with a quota | browser |
 
-Квоты и eviction — по WHATWG Storage. Private mode — memory-only backends того же интерфейса.
+Quotas and eviction — per WHATWG Storage. Private mode — memory-only backends with the same interface.
 
-## 7. Продукт (browser process)
+## 7. Product (browser process)
 
-- **cl-browser:** `Tab`, `NavigationController` (history entries, back/forward, bfcache — позже), `SiteInstance` assignment, permissions (`Permission` state machine + UI prompts), downloads, session restore, crash recovery, memory pressure policy (freeze → discard → hibernate-to-disk, ADR-0012).
-- **cl-shell-ui:** egui на wgpu: tab strip, omnibox (с точным отображением origin, security state), диалоги, settings. Позже — privileged web UI на своём движке (ADR-0008).
-- **cl-chrome-import (ADR-0007):** читает профиль Chrome на устройстве (read-only): `Bookmarks` (JSON), `History` (SQLite, копия под lock), `Login Data` (SQLite + расшифровка: macOS Keychain «Chrome Safe Storage», Linux libsecret/kwallet/basic, Windows DPAPI для legacy `v10`, а `v20` App-Bound — только через пользовательский экспорт CSV), `Preferences`, `Extensions/` (манифесты + CRX id → переустановка из Web Store), `Web Data` (autofill). Режим «зеркало»: file watcher + периодический diff, только Chrome → нам.
-- **cl-sync (ADR-0007):** клиент протокола Chromium sync (`components/sync/protocol/*.proto` → `prost`), типы: bookmarks, history, passwords, preferences, tabs, extensions. Сервер `cl-sync-server` (axum + SQLite/Postgres), self-hosted; шифрование — passphrase-derived key на клиенте (как Brave/custom passphrase в Chrome).
-- **cl-extensions (ADR-0011):** MV3: manifest parse, permissions model, service worker background, content scripts в isolated world (отдельный V8 context в renderer), `chrome.*` API host-side в browser process с валидацией; declarativeNetRequest в network process; CRX3 verify + установка из Chrome Web Store update URL.
-- **cl-devtools:** CDP-совместимый сервер (домены Runtime, Debugger через V8 Inspector, DOM, CSS, Network, Page, Log, Target). Frontend — Chrome DevTools frontend (BSD) как отдельная загрузка либо собственный минимальный.
-- **updater:** подписанные пакеты (ed25519 + code signing ОС), staged rollout, rollback. Без него — нет публичной беты.
+- **cl-browser:** `Tab`, `NavigationController` (history entries, back/forward, bfcache — later), `SiteInstance` assignment, permissions (`Permission` state machine + UI prompts), downloads, session restore, crash recovery, memory pressure policy (freeze → discard → hibernate-to-disk, ADR-0012).
+- **cl-shell-ui:** egui on wgpu: tab strip, omnibox (with exact origin display, security state), dialogs, settings. Later — privileged web UI on our own engine (ADR-0008).
+- **cl-chrome-import (ADR-0007):** reads the on-device Chrome profile (read-only): `Bookmarks` (JSON), `History` (SQLite, copy under lock), `Login Data` (SQLite + decryption: macOS Keychain "Chrome Safe Storage", Linux libsecret/kwallet/basic, Windows DPAPI for legacy `v10`, while `v20` App-Bound — only via a user CSV export), `Preferences`, `Extensions/` (manifests + CRX id → reinstall from the Web Store), `Web Data` (autofill). "Mirror" mode: file watcher + periodic diff, Chrome → us only.
+- **cl-sync (ADR-0007):** Chromium sync protocol client (`components/sync/protocol/*.proto` → `prost`), types: bookmarks, history, passwords, preferences, tabs, extensions. Server `cl-sync-server` (axum + SQLite/Postgres), self-hosted; encryption — passphrase-derived key on the client (like Brave/custom passphrase in Chrome).
+- **cl-extensions (ADR-0011):** MV3: manifest parse, permissions model, service worker background, content scripts in an isolated world (separate V8 context in the renderer), `chrome.*` API host-side in the browser process with validation; declarativeNetRequest in the network process; CRX3 verify + install from the Chrome Web Store update URL.
+- **cl-devtools:** CDP-compatible server (domains Runtime, Debugger via V8 Inspector, DOM, CSS, Network, Page, Log, Target). Frontend — Chrome DevTools frontend (BSD) as a separate download, or our own minimal one.
+- **updater:** signed packages (ed25519 + OS code signing), staged rollout, rollback. Without it — no public beta.
 
-## 8. Карта crate-ов
+## 8. Crate map
 
 ```
 Cargo.toml (workspace, [workspace.lints], [workspace.dependencies])
@@ -151,7 +151,7 @@ crates/
   devtools/      cl-devtools     CDP server
   testshell/     cl-testshell    headless deterministic shell (WPT product, reftests, PNG)
 apps/
-  chromelight/                   main binary (browser process entry; child processes — тот же бинарник с `--type=`)
+  chromelight/                   main binary (browser process entry; child processes — same binary with `--type=`)
 tools/
   wpt/           wptrunner product adapter, expectations metadata
   test262/       harness
@@ -161,31 +161,31 @@ tools/
 docs/
 ```
 
-**Статус на 2026-09-07 (M0):** существуют `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `apps/chromelight` binary, `tools/fuzz`, `tools/bench`; остальные crate-ы — по плану M1+.
+**Status as of 2026-09-07 (M0):** existing: `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `apps/chromelight` binary, `tools/fuzz`, `tools/bench`; the remaining crates — per plan, M1+.
 
-Правило зависимостей между crate-ами (проверяется `cargo deny` bans + `tools/check-deps.sh`): `cl-dom` не зависит от `cl-layout`; `cl-layout` не зависит от `cl-js`; ничего в renderer не зависит от `cl-browser`; `cl-platform` — лист.
+Inter-crate dependency rule (checked by `cargo deny` bans + `tools/check-deps.sh`): `cl-dom` does not depend on `cl-layout`; `cl-layout` does not depend on `cl-js`; nothing in the renderer depends on `cl-browser`; `cl-platform` — a leaf.
 
-## 9. Бюджеты памяти (ADR-0012, гипотезы до измерений)
+## 9. Memory budgets (ADR-0012, hypotheses pending measurement)
 
-| Метрика | Цель v1 | Ориентир Chrome 140+ (из открытых источников, 2026) |
+| Metric | v1 target | Chrome 140+ reference (from public sources, 2026) |
 |---|---|---|
-| Пустой браузер, 1 пустая вкладка | ≤ 120 МБ RSS суммарно по процессам | ~300–400 МБ |
-| Типичная новостная страница, активная | ≤ 70 МБ на renderer | 150–300 МБ |
-| 10 активных вкладок | ≤ 600 МБ суммарно | ~1.4 ГБ |
-| Фоновая вкладка после freeze | ≤ 15 МБ (heap snapshot на диск, V8 isolate disposed) | «до 80% меньше» после discard |
-| Время до первого кадра (cold start) | ≤ 400 мс на M1 | — |
+| Empty browser, 1 empty tab | ≤ 120 MB RSS total across processes | ~300–400 MB |
+| Typical news page, active | ≤ 70 MB per renderer | 150–300 MB |
+| 10 active tabs | ≤ 600 MB total | ~1.4 GB |
+| Background tab after freeze | ≤ 15 MB (heap snapshot to disk, V8 isolate disposed) | "up to 80% less" after discard |
+| Time to first frame (cold start) | ≤ 400 ms on M1 | — |
 
-Тактики: один isolate на renderer с lazy context; V8 flags для фона (`--lazy`, `--optimize-for-size`, no sparkplug/turbofan во фоне); shared glyph/image caches в GPU process; hibernate вкладки на диск (сериализация DOM+state); отсутствие лишних сервисных процессов (network in-process **запрещено** — но GPU и network — по одному на профиль, не на окно).
+Tactics: one isolate per renderer with lazy context; V8 flags for background (`--lazy`, `--optimize-for-size`, no sparkplug/turbofan in background); shared glyph/image caches in the GPU process; hibernate tabs to disk (DOM+state serialization); no redundant service processes (network in-process is **forbidden** — but GPU and network — one each per profile, not per window).
 
-Измерение: `tools/bench` — фиксированный corpus, RSS/PSS по процессам, `cargo bench` + CI-гейт на регрессию >5%.
+Measurement: `tools/bench` — fixed corpus, RSS/PSS per process, `cargo bench` + CI gate on regression >5%.
 
 ## 10. Observability
 
-`tracing` во всех crate-ах; структурированные события; `tracing-chrome` экспорт для Perfetto UI; crash handling — minidump через `minidumper`/`crash-handler` (Rust), без содержимого страниц; feature flags через `cl-browser::flags` (compile-time + runtime toggles).
+`tracing` in all crates; structured events; `tracing-chrome` export for Perfetto UI; crash handling — minidump via `minidumper`/`crash-handler` (Rust), without page contents; feature flags via `cl-browser::flags` (compile-time + runtime toggles).
 
-## 11. Что пересматриваем при росте
+## 11. What we revisit as we grow
 
-- OOPIF и Site Isolation granularity (origin vs site) — M4.
-- Собственный JS VM — не раньше v2, только если V8 ограничивает бюджет памяти или sandbox.
-- Privileged web UI вместо egui — M5.
-- Service workers, bfcache, WebGPU, WebRTC — по feature matrix.
+- OOPIF and Site Isolation granularity (origin vs site) — M4.
+- Own JS VM — not before v2, and only if V8 constrains the memory budget or the sandbox.
+- Privileged web UI instead of egui — M5.
+- Service workers, bfcache, WebGPU, WebRTC — per feature matrix.

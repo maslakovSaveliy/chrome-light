@@ -79,7 +79,7 @@ Explicit non-goals: Google Chrome Sync, MV2 extensions, mobile platforms (v1), D
 - CI matrix is macOS-arm64, Windows-x64, Linux-x64 from day one (ADR-0009). Code that only builds on the host is not done.
 - Memory/perf-sensitive changes include numbers from `tools/bench` (before/after) in the commit message.
 - Commit messages: English, imperative, scoped: `layout: implement inline-block baseline alignment (css-inline-3 §…)`.
-- Language: code, comments, commit messages, ADR titles — English. User-facing docs (`README.md`, `docs/*.md`, `MEMORY.md`) — Russian with English technical terms. Chat with the owner — Russian, caveman-terse unless asked otherwise.
+- Language: code, comments, commit messages, ADRs, and all docs (`README.md`, `docs/**/*.md`, `MEMORY.md`, `tools/**/README.md`) — English. Chat with the owner — Russian, caveman-terse unless asked otherwise.
 
 ## 4. Architecture in one screen
 

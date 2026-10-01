@@ -2460,22 +2460,22 @@ Results land in `tools/bench/results/` (gitignored). Monthly comparison against 
 ```markdown
 # Bench 2026-09 — baseline
 
-Машина: MacBook (Apple Silicon, 16 ГБ), macOS 26.5.2.
+Machine: MacBook (Apple Silicon, 16 GB), macOS 26.5.2.
 
 ## ChromeLight M0 (idle, browser + 1 renderer, no engine yet)
 
-| Метрика | Значение |
+| Metric | Value |
 |---|---|
-| total_rss_kb (`tools/bench/mem.sh`) | заполнить после Task 10 Step 4 |
+| total_rss_kb (`tools/bench/mem.sh`) | fill in after Task 10 Step 4 |
 
-## Chrome 153 (ручное измерение владельца, Activity Monitor → Memory, сумма процессов Chrome)
+## Chrome 153 (manual measurement by the owner, Activity Monitor → Memory, sum of Chrome processes)
 
-| Сценарий | RSS суммарно |
+| Scenario | Total RSS |
 |---|---|
-| Пустой Chrome, 1 пустая вкладка (`chrome://blank`), без расширений | заполнить |
-| 10 вкладок corpus v0 (example.com, wikipedia статья, HN, MDN страница, GitHub README ×2 повтора) | заполнить |
+| Empty Chrome, 1 blank tab (`chrome://blank`), no extensions | fill in |
+| 10 tabs of corpus v0 (example.com, a Wikipedia article, HN, an MDN page, GitHub README ×2 repeats) | fill in |
 
-Метод: свежий профиль (`--user-data-dir=/tmp/chrome-bench`), 60 с ожидания, сумма RSS всех процессов `Google Chrome*`.
+Method: fresh profile (`--user-data-dir=/tmp/chrome-bench`), 60 s wait, sum of RSS across all `Google Chrome*` processes.
 ```
 
 - [ ] **Step 4: Run it**
@@ -2630,7 +2630,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Tick M0 exit criteria in `docs/PLAN.md`** that CI proved; leave unticked anything not green on all three OSes and write why in MEMORY.md.
 
-- [ ] **Step 2: Update `MEMORY.md`** — "Состояние" → M0 done/partial; session log entry with commit hashes; open questions; next: `docs/superpowers/plans/<date>-m1-static-pages.md`.
+- [ ] **Step 2: Update `MEMORY.md`** — "State" → M0 done/partial; session log entry with commit hashes; open questions; next: `docs/superpowers/plans/<date>-m1-static-pages.md`.
 
 - [ ] **Step 3: Full verification**
 

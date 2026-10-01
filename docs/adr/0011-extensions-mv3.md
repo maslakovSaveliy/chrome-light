@@ -1,32 +1,32 @@
-# ADR-0011: Расширения — только MV3, свой runtime `chrome.*`, установка из Chrome Web Store
+# ADR-0011: Extensions — MV3 only, own `chrome.*` runtime, installation from the Chrome Web Store
 
 **Status:** Accepted
 **Date:** 2026-09-07
-**Deciders:** владелец проекта
+**Deciders:** project owner
 
 ## Context
 
-MV2 отключён в Chrome 138 (июль 2025), Web Store очищен 2026-08-31. MV3: declarative permissions, background service worker, content scripts в isolated world, `declarativeNetRequest`, запрет remote code. CRX3 и Web Store update URL публичны — Chromium-форки устанавливают оттуда.
+MV2 was disabled in Chrome 138 (Jul 2025); the Web Store was purged on 2026-08-31. MV3: declarative permissions, background service worker, content scripts in an isolated world, `declarativeNetRequest`, no remote code. CRX3 and the Web Store update URL are public — Chromium forks install from there.
 
 ## Decision
 
-- Поддерживаем **только MV3**. MV2 — non-goal.
-- `cl-extensions`: manifest parser + permission model, CRX3 verify (RSA/ECDSA подпись + id = SHA-256 публичного ключа), установка по Web Store update URL, background service worker (наш SW runtime, M5+), content scripts в isolated world (отдельный V8 context в renderer сайта, capability только на DOM), `chrome.*` API host-side в browser process с валидацией каждого вызова против grant, `declarativeNetRequest` в network process, extension pages в отдельном extension renderer.
-- Порядок API: `runtime`, `storage`, `tabs`, `scripting`, `declarativeNetRequest`, `action`, `contextMenus`, `webNavigation`, `cookies` (с permission), `alarms`, `notifications`. Остальное — по реестру; неподдерживаемые API возвращают `undefined` + warning в консоль расширения (как Firefox для Chrome-only API).
-- Тест-корпус: uBlock Origin Lite, Bitwarden, Dark Reader, Vimium, React DevTools — приёмка M6.
+- We support **MV3 only**. MV2 — non-goal.
+- `cl-extensions`: manifest parser + permission model, CRX3 verify (RSA/ECDSA signature + id = SHA-256 of the public key), installation via the Web Store update URL, background service worker (our SW runtime, M5+), content scripts in an isolated world (a separate V8 context in the site's renderer, capability on the DOM only), `chrome.*` API host-side in the browser process with every call validated against the grant, `declarativeNetRequest` in the network process, extension pages in a separate extension renderer.
+- API order: `runtime`, `storage`, `tabs`, `scripting`, `declarativeNetRequest`, `action`, `contextMenus`, `webNavigation`, `cookies` (with permission), `alarms`, `notifications`. The rest — per the registry; unsupported APIs return `undefined` + a warning in the extension's console (as Firefox does for Chrome-only APIs).
+- Test corpus: uBlock Origin Lite, Bitwarden, Dark Reader, Vimium, React DevTools — M6 acceptance.
 
 ## Options Considered
 
-- **WebExtensions cross-vendor подмножество** — MV3 Chrome — де-факто стандарт; делаем Chrome-семантику.
-- **Свой формат расширений** — ноль экосистемы.
+- **WebExtensions cross-vendor subset** — Chrome MV3 is the de facto standard; we implement Chrome semantics.
+- **Our own extension format** — zero ecosystem.
 
 ## Consequences
 
-- Легче: пользователь ставит свои расширения; список из Chrome-профиля переустанавливается автоматически (ADR-0007).
-- Труднее: `chrome.*` API огромен; каждая API — граница безопасности.
-- Пересмотреть когда: Google изменит формат/подпись CRX или закроет update URL для сторонних → альтернатива: sideload + подпись.
+- Easier: users install their own extensions; the list from the Chrome profile is reinstalled automatically (ADR-0007).
+- Harder: the `chrome.*` API is huge; every API is a security boundary.
+- Revisit when: Google changes the CRX format/signature or closes the update URL to third parties → alternative: sideload + signing.
 
 ## Action Items
 
-1. [ ] Реестр `chrome.*` API со статусом в SPEC_REGISTRY (M6).
-2. [ ] CRX3 парсер + fuzz (M6).
+1. [ ] Registry of `chrome.*` APIs with status in SPEC_REGISTRY (M6).
+2. [ ] CRX3 parser + fuzz (M6).

@@ -1,16 +1,16 @@
-# Реестр спецификаций
+# Spec Registry
 
-Одна строка на реализованную/планируемую фичу. Acceptance criteria — нормативный текст + тесты. MDN — пояснение, не источник истины. Статусы: `todo`, `wip`, `done`, `partial`, `deviation`.
+One row per implemented/planned feature. Acceptance criteria — normative text + tests. MDN — explanation, not the source of truth. Statuses: `todo`, `wip`, `done`, `partial`, `deviation`.
 
-Формат: `spec §anchor | feature | crate::module | tests (WPT path / unit) | status | deviations / notes`.
+Format: `spec §anchor | feature | crate::module | tests (WPT path / unit) | status | deviations / notes`.
 
-## Нормативные источники
+## Normative sources
 
-| Орган | Спецификации | URL |
+| Body | Specifications | URL |
 |---|---|---|
 | WHATWG | HTML, DOM, Fetch, URL, Encoding, Streams, Storage, Infra, MIME Sniffing, Web IDL, Console, Notifications, XHR, Compat | https://spec.whatwg.org |
 | W3C CSSWG | CSS Snapshot 2025 + module drafts | https://www.w3.org/TR/css-2025 ; https://drafts.csswg.org |
-| W3C WebAppSec | CSP L3, Mixed Content, Secure Contexts, Referrer Policy, Permissions Policy, Trusted Types, Fetch Metadata, COOP/COEP (в HTML) | https://w3c.github.io/webappsec/ |
+| W3C WebAppSec | CSP L3, Mixed Content, Secure Contexts, Referrer Policy, Permissions Policy, Trusted Types, Fetch Metadata, COOP/COEP (in HTML) | https://w3c.github.io/webappsec/ |
 | W3C | Permissions, Pointer Events 3, UI Events, Service Workers, IndexedDB 3, Web App Manifest, WebDriver 2, WebDriver BiDi, WAI-ARIA 1.2, HTML-AAM, AccName 1.2 | https://www.w3.org/TR/ |
 | TC39 | ECMA-262, ECMA-402, Test262 | https://tc39.es |
 | WebAssembly | Core, JS API, Web API | https://webassembly.github.io/spec/ |
@@ -20,7 +20,7 @@
 | Privacy CG | Storage Partitioning, Storage Access, CHIPS, GPC | https://privacycg.github.io |
 | Chromium (compat) | CDP, CRX3, sync.proto, MV3 API surface | https://chromedevtools.github.io/devtools-protocol/ ; https://developer.chrome.com/docs/extensions |
 
-## Реестр
+## Registry
 
 | Spec §anchor | Feature | Crate::module | Tests | Status | Deviations / notes |
 |---|---|---|---|---|---|
@@ -56,4 +56,4 @@
 | MV3 (Chromium) | extensions runtime | `cl-extensions` | integration + curated extension corpus | todo | Chrome-specific; document unsupported APIs |
 | CRX3 (Chromium) | extension package verification | `cl-extensions::crx` | unit + fuzz | todo | |
 
-Добавляй строки в PR вместе с фичей. Строки с `deviation` обязаны иметь ссылку на WPT-тест, который мы намеренно fail-им, и bug ID.
+Add rows in the PR together with the feature. Rows with `deviation` must have a link to the WPT test we intentionally fail, and a bug ID.
