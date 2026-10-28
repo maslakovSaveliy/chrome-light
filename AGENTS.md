@@ -79,7 +79,29 @@ Explicit non-goals: Google Chrome Sync, MV2 extensions, mobile platforms (v1), D
 - CI matrix is macOS-arm64, Windows-x64, Linux-x64 from day one (ADR-0009). Code that only builds on the host is not done.
 - Memory/perf-sensitive changes include numbers from `tools/bench` (before/after) in the commit message.
 - Commit messages: English, imperative, scoped: `layout: implement inline-block baseline alignment (css-inline-3 §…)`.
-- Language: code, comments, commit messages, ADR titles — English. User-facing docs (`README.md`, `docs/*.md`, `MEMORY.md`) — Russian with English technical terms. Chat with the owner — Russian, caveman-terse unless asked otherwise.
+- Commit only on a fully green gate (§5, chained with `&&`). A red gate is reported with its output, never committed around — not even under machine load or a nudge to "finish". Stage explicit paths (`git add <paths>`), never `git add -A`.
+- Tests come from the contract, not from the implementation: a new test must fail on the old behaviour (show the RED run), expected values come from the spec or the task's acceptance cases, and the integration under test is never mocked. Changing an assertion, a skip, an expectations file or a time/size bound needs a written reason in the task log.
+- Any test that asserts on wall-clock time is listed by exact name in `.config/nextest.toml` (`threads-required = "num-cpus"`). The owner's Mac often runs other heavy workloads: report `uptime` load next to every timing, and never conclude from one loaded run.
+- Language: code, comments, commit messages, ADRs, and all docs (`README.md`, `docs/**/*.md`, `MEMORY.md`, `tools/**/README.md`) — English. Chat with the owner — Russian, caveman-terse unless asked otherwise.
+
+### 3.5 Working with agents
+
+Distilled from the owner's research note "Как организовать разработку с AI-агентами" (2026-10-26) and from what went wrong in M1a. Aim: a verifiable engineering loop, not a virtual company of agents.
+
+- **One owner per change.** One main agent owns a coherent task end to end (explore → short plan → implement → checks). Subagents only where there is a real boundary: independent research, a read-only review or audit, a component with an agreed interface. No mandatory planner → coder → tester chain for every edit.
+- **Pick the mode before starting:**
+  - *fast* — docs, typos, local change with no contract change: change + targeted check; no subagent review.
+  - *normal* — feature or bugfix: explore → short plan → one coherent slice → tests → one fresh reviewer.
+  - *risky* — IPC/sandbox/process lifecycle, parsers of untrusted input, `unsafe`, CI/release, new dependencies, anything security- or data-relevant: state the threat and the rollback first, add negative/hostile tests, independent review, the owner accepts the risk.
+- **Every non-fast task starts from a brief:** goal; current behaviour; expected behaviour; non-goals; invariants and risks; acceptance cases (main path, boundary/negative, what must not break); what is allowed vs what needs the owner (dependencies, pushes, merges, network, deletions).
+- **Review** runs in a fresh context, read-only, from the brief plus the diff (not from the author's summary alone). Each finding: severity, file:line, failure scenario, evidence, what was and was not checked. Zero findings is a valid answer; style and speculative refactors do not block. At most 5 fix rounds per task, then the controller adjudicates and records a `Ruling:`.
+- **One writer per checkout.** Two agents building or testing in the same checkout fight over the cargo lock and break each other's gates. Parallel writers only in separate worktrees on disjoint areas with one integrator. A worktree is not a sandbox.
+- **Rules that matter are enforced by checks.** `tools/check-*.sh`, `cargo deny`, clippy lints, CI and `.config/nextest.toml` are the real rules; prose here is advisory. If agents keep breaking a prose rule, turn it into a check.
+- **Context and handoff.** One chat per coherent task. A handoff carries: goal and acceptance; decisions and why; branch, commit, dirty files; what is done and what is not; checks actually run with results; known failures; the next concrete step. Do not reset a working context on a schedule; after repeated failed attempts, write the facts down and start clean.
+- **Stalled agents.** An agent that "waits on background work" with no cargo/test process alive has lost its notification: check `ps`, then resume it with an explicit instruction.
+- **Evidence over reports.** Judge work by commands run and their output, not by a confident summary, a benchmark score or a commit count.
+- **The owner decides:** what to build and what not to; risky architecture; merges to `main`, tags, releases, pushes to shared branches; new dependencies. An agent's approval never replaces the owner's on security, data or release.
+- **Do not:** write giant prompts, run autonomous loops without a budget and a stop condition, or build our own agent harness instead of the product.
 
 ## 4. Architecture in one screen
 
@@ -103,20 +125,23 @@ Details, budgets and rationale: `docs/ARCHITECTURE.md`. Own-vs-reused component 
 
 ## 5. Commands
 
+Verified against the repository on 2026-10-28. Non-interactive shells: `export PATH="$HOME/.cargo/bin:$PATH"` first.
+
 ```bash
-cargo build --workspace                      # host build
-cargo test --workspace                       # unit + integration
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo fmt --all -- --check
-cargo deny check                             # licenses/advisories/bans
-cargo run -p chromelight                     # launch browser shell
-cargo run -p cl-testshell -- --headless <url|file> --png out.png   # deterministic render
-./tools/wpt/run.sh <dir>                     # WPT subset via wptrunner product adapter
-./tools/test262/run.sh                       # Test262 qualification set
-cargo fuzz run <target>                      # needs cargo-fuzz (nightly toolchain only for fuzzing)
+# The gate — run before every commit, exactly as chained:
+cargo fmt --all -- --check && cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && cargo nextest run --workspace --locked && cargo deny check && bash tools/check-unsafe-scope.sh && bash tools/check-stylo-scope.sh && bash tools/check-platform-cfg.sh && bash scripts/check-agents-md.sh && cargo run -p cl-testshell -- reftest
+
+cargo nextest run -p <crate> --locked                               # focused tests while iterating
+cargo run -p cl-testshell -- render <file|file-url> --png out.png   # deterministic single-process render
+cargo run -p cl-testshell -- dump <file> --stage dom|style|box-tree|fragments|display-list
+cargo run -p cl-testshell -- reftest [--filter <name>]              # 22 pairs in crates/testshell/tests/ref/
+cargo run -p chromelight -- --no-sandbox --exit-after-handshake      # debug only: browser + renderer handshake
+cargo +nightly fuzz run --fuzz-dir tools/fuzz --target aarch64-apple-darwin <target> -- -max_total_time=60
+bash tools/bench/mem.sh                                             # per-process RSS (macOS/Linux)
+bash scripts/sync-agents-md.sh                                      # after editing CLAUDE.md
 ```
 
-Setup, cross-compilation, toolchain gotchas: `docs/DEVELOPMENT.md`.
+Not yet built: the WPT runner and the Test262 runner (M2). Setup, toolchain gotchas: `docs/DEVELOPMENT.md`.
 
 ## 6. Memory protocol for agents
 
