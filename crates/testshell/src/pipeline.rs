@@ -10,7 +10,8 @@
 //!
 //! Deterministic by construction, matching every other guarantee `docs/TESTING.md` §2 lists
 //! for this shell: device pixel ratio is always `1.0` (not configurable — [`RenderOptions`]
-//! only exposes the viewport size), no font hinting (`cl-layout`'s shaper and `cl-gfx`'s
+//! only exposes the viewport size and the stage-dump switch, which never affects pixels), no
+//! font hinting (`cl-layout`'s shaper and `cl-gfx`'s
 //! rasteriser never enable it), and the only two fonts that can ever be selected are the
 //! bundled ones from [`cl_fonts::FontDb::bundled`] — no host system font is ever read, so the
 //! same document renders identically on every machine this crate builds on.
@@ -56,12 +57,11 @@ impl Default for RenderOptions {
 
 /// Whether [`render_bytes`] builds the textual stage dumps ([`Stages`]) next to the pixels.
 ///
-/// Opt-in because the dumps are not cheap on a large document. On the 1 MB smoke page
-/// (`tests/smoke.rs`, ~55 000 DOM nodes) they measured (dhat, debt D1, 2026-09-28) about
-/// 113 MB of strings kept until the render returns, and the box-tree dump alone briefly
-/// holds ~150 MB while it assembles its lines; with the dumps the heap peak was 220 MB,
-/// without them 67 MB. Only `dump --stage` and tests that inspect a stage ask for them;
-/// `render`, the reftest harness and the smoke tests do not.
+/// Opt-in because the dumps are large on a large document: on the 1 MB smoke page
+/// (`tests/smoke.rs`, ~55 000 DOM nodes) building them roughly triples the render's peak
+/// memory (measurements: `docs/history/perf-m1a-2026-09.md`, debt D1). Only `dump --stage`
+/// and tests that inspect a stage ask for them; `render`, the reftest harness and the smoke
+/// tests do not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StageDumps {
     /// Build none: [`RenderOutput::stages`] is `None`. The default.
@@ -126,11 +126,6 @@ pub struct RenderOutput {
 /// [`ShellError::Io`] if `path` does not exist or cannot be canonicalised. [`ShellError::Net`]
 /// if the canonical path cannot be expressed as a `file:` URL, or [`cl_net::load_file`] fails
 /// (oversized file, I/O error). Otherwise see [`render_bytes`].
-#[allow(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "Task 22's brief fixes this exact signature (`opts: &RenderOptions`) verbatim; \
-              `RenderOptions` happening to be small and `Copy` today does not change the public API"
-)]
 pub fn render_file(path: &Path, opts: &RenderOptions) -> Result<RenderOutput, ShellError> {
     let canonical = path.canonicalize()?;
     let base = Url::from_file_path(&canonical)?;
@@ -173,11 +168,6 @@ pub fn render_file(path: &Path, opts: &RenderOptions) -> Result<RenderOutput, Sh
 /// or a font key the bundled database does not recognise). Never panics on malformed `bytes`:
 /// every stage through `cl-layout`/`cl-paint` is documented total over its input, and
 /// `cl-gfx` reports invalid geometry as `Err` rather than indexing out of bounds.
-#[allow(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "Task 22's brief fixes this exact signature (`opts: &RenderOptions`) verbatim; \
-              `RenderOptions` happening to be small and `Copy` today does not change the public API"
-)]
 pub fn render_bytes(
     bytes: &[u8],
     base: &Url,
