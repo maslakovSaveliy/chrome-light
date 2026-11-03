@@ -61,9 +61,16 @@ pub enum FromGpu {
 
 impl Validate for FromGpu {
     fn validate(&self, _ctx: &ReceiverCtx) -> Result<(), IpcViolation> {
-        // Every field is fixed-size and every value is meaningful; the browser checks `seq`
-        // against its own state.
-        Ok(())
+        match self {
+            // The browser checks `seq` against its own state.
+            Self::Pong(_) | Self::Stale { .. } => Ok(()),
+            // The gpu may only report display-list reasons; anything else would make the browser
+            // kill the renderer for a reason the renderer never caused — a bad gpu message.
+            Self::BadDisplayList { reason, .. } if reason.is_display_list() => Ok(()),
+            Self::BadDisplayList { .. } => {
+                Err(IpcViolation::Bad(BadMessageReason::GpuUnexpectedMessage))
+            }
+        }
     }
 }
 
@@ -107,6 +114,45 @@ mod tests {
                 reason: BadMessageReason::DisplayListInvalid,
             }),
         ]
+    }
+
+    fn ctx() -> ReceiverCtx {
+        ReceiverCtx {
+            expected_process_type: ProcessType::Gpu,
+            expected_pid: None,
+        }
+    }
+
+    #[test]
+    fn bad_display_list_should_accept_only_display_list_reasons() {
+        let with = |reason| FromGpu::BadDisplayList { seq: 1, reason };
+        assert_eq!(
+            with(BadMessageReason::DisplayListInvalid).validate(&ctx()),
+            Ok(())
+        );
+        assert_eq!(
+            with(BadMessageReason::RendererUndecodable).validate(&ctx()),
+            Err(IpcViolation::Bad(BadMessageReason::GpuUnexpectedMessage))
+        );
+        assert_eq!(
+            with(BadMessageReason::FrameWrongSize).validate(&ctx()),
+            Err(IpcViolation::Bad(BadMessageReason::GpuUnexpectedMessage))
+        );
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn a_reason_should_travel_as_its_code() {
+        let msg = FromGpu::BadDisplayList {
+            seq: 1,
+            reason: BadMessageReason::DisplayListInvalid,
+        };
+        // Variant index 2, seq 1, then the code 22 — not serde's variant index of the reason.
+        assert_eq!(codec::encode(&msg).expect("encode"), [2, 1, 22]);
+        assert!(
+            codec::decode::<FromGpu>(&[2, 1, 5]).is_err(),
+            "unknown code 5 must not decode"
+        );
     }
 
     proptest! {

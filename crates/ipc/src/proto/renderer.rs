@@ -171,9 +171,11 @@ pub struct RendererProtocol;
 
 impl ChildProtocol for RendererProtocol {
     const ROLE: ProcessType = ProcessType::Renderer;
-    /// The largest valid `FromRenderer`: 64 URLs of 8 KiB or 64 warnings of 1 KiB, plus framing
-    /// — well under 1 MiB.
-    const MAX_UP_BYTES: usize = 1024 * 1024;
+    /// The largest valid `FromRenderer` is `NeedSubresources` with 64 URLs of 8 KiB: each string
+    /// costs its bytes plus a 2-byte length varint, plus a few bytes of framing. Anything longer
+    /// is refused before decoding, which also bounds the transient memory a hostile message can
+    /// make the browser allocate before `validate` runs.
+    const MAX_UP_BYTES: usize = MAX_SUBRESOURCES_PER_DOCUMENT * (MAX_URL_BYTES + 2) + 64;
     const UNDECODABLE: BadMessageReason = BadMessageReason::RendererUndecodable;
     type Down = ToRenderer;
     type Up = FromRenderer;

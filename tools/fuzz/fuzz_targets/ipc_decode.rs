@@ -3,7 +3,7 @@
 use cl_ipc::{
     ChildProtocol, ReceiverCtx, Validate,
     codec::decode_bounded,
-    message::Hello,
+    message::{HELLO_MAX_BYTES, Hello},
     proto::{
         gpu::{FromGpu, GpuProtocol},
         renderer::{FromRenderer, RendererProtocol},
@@ -19,7 +19,7 @@ fuzz_target!(|data: &[u8]| {
         expected_process_type: role,
         expected_pid: None,
     };
-    if let Ok(hello) = decode_bounded::<Hello>(data, 64) {
+    if let Ok(hello) = decode_bounded::<Hello>(data, HELLO_MAX_BYTES) {
         let _ = hello.validate(&ctx(RendererProtocol::ROLE));
     }
     if let Ok(msg) = decode_bounded::<FromRenderer>(data, RendererProtocol::MAX_UP_BYTES) {

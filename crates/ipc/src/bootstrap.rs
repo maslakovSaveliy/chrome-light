@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     codec,
     error::IpcError,
-    message::Hello,
+    message::{HELLO_MAX_BYTES, Hello},
     protocol::ChildProtocol,
     transfer::DisplayListMsg,
     validate::{ReceiverCtx, Validate},
@@ -224,6 +224,13 @@ impl<P: ChildProtocol> ChildSender<P> {
         self.tx.send(&bytes)?;
         Ok(())
     }
+
+    /// Sends raw bytes upward (tests of hostile input).
+    #[cfg(test)]
+    pub(crate) fn send_raw(&self, bytes: &[u8]) -> Result<(), IpcError> {
+        self.tx.send(bytes)?;
+        Ok(())
+    }
 }
 
 impl<P: ChildProtocol> ChildEndpoint<P> {
@@ -247,9 +254,6 @@ impl<P: ChildProtocol> ChildEndpoint<P> {
         (self.tx, self.rx)
     }
 }
-
-/// Upper bound for the encoded [`Hello`] (three small integers).
-const HELLO_MAX_BYTES: usize = 64;
 
 /// One-shot named server created by the browser before spawning a child.
 pub struct BootstrapServer<P: ChildProtocol> {

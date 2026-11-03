@@ -9,6 +9,10 @@ use serde::{Deserialize, Serialize};
 /// (renderer, gpu); `Hello` travels bare as the first upward message.
 pub const PROTOCOL_VERSION: u32 = 2;
 
+/// Upper bound for an encoded [`Hello`] (three small integers): the browser refuses a longer
+/// first message unread.
+pub const HELLO_MAX_BYTES: usize = 64;
+
 /// First message from a child after bootstrap, on its upward byte channel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {

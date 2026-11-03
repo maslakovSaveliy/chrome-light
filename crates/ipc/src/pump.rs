@@ -162,9 +162,11 @@ mod tests {
         })
         .expect("reader");
 
-        // Undecodable, then decodable but over a limit, then valid.
+        // Undecodable, then longer than MAX_UP_BYTES, then decodable but over a limit, then valid.
         tx.send(&[0xff, 0xff, 0xff, 0xff, 0xff])
             .expect("send garbage");
+        tx.send(&vec![0; RendererProtocol::MAX_UP_BYTES + 1])
+            .expect("send oversize");
         let too_many = FromRenderer::NeedSubresources {
             doc_id: 1,
             urls: vec!["u".to_owned(); MAX_SUBRESOURCES_PER_DOCUMENT + 1],
@@ -180,6 +182,7 @@ mod tests {
         assert_eq!(
             events,
             [
+                "error Some(RendererUndecodable)",
                 "error Some(RendererUndecodable)",
                 "error Some(RendererTooManySubresources)",
                 "pong 5",

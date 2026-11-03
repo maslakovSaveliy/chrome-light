@@ -4,8 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{bad_message::BadMessageReason, validate::IpcViolation};
-
 pub mod gpu;
 pub mod renderer;
 
@@ -29,14 +27,26 @@ pub struct Viewport {
     height: u32,
 }
 
+/// A surface size outside `1..=MAX_SURFACE_DIMENSION` per edge. The browser builds viewports from
+/// window sizes (a minimised window can report 0 × 0), so this is its own error, not a
+/// bad-message violation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("viewport {width}x{height} outside 1..={MAX_SURFACE_DIMENSION} per edge")]
+pub struct InvalidViewport {
+    /// The refused width.
+    pub width: u32,
+    /// The refused height.
+    pub height: u32,
+}
+
 impl Viewport {
     /// A viewport of `width × height`; zero or larger than [`MAX_SURFACE_DIMENSION`] is refused.
-    pub fn new(width: u32, height: u32) -> Result<Self, IpcViolation> {
+    pub fn new(width: u32, height: u32) -> Result<Self, InvalidViewport> {
         let edge = 1..=MAX_SURFACE_DIMENSION;
         if edge.contains(&width) && edge.contains(&height) {
             Ok(Self { width, height })
         } else {
-            Err(IpcViolation::Bad(BadMessageReason::RendererInvalidField))
+            Err(InvalidViewport { width, height })
         }
     }
 
@@ -54,8 +64,8 @@ impl Viewport {
 }
 
 impl TryFrom<(u32, u32)> for Viewport {
-    type Error = IpcViolation;
-    fn try_from((width, height): (u32, u32)) -> Result<Self, IpcViolation> {
+    type Error = InvalidViewport;
+    fn try_from((width, height): (u32, u32)) -> Result<Self, InvalidViewport> {
         Self::new(width, height)
     }
 }

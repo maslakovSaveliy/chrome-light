@@ -1,9 +1,12 @@
 //! Why the browser killed a child (or a gpu restarted), as a stable number — modelled on Chromium
 //! `content/browser/bad_message.h` (ADR-0016 §9). Codes are logged and asserted on by tests;
-//! a code is never renumbered or reused, a retired reason keeps its number.
+//! a code is never renumbered or reused, a retired reason keeps its number. On the wire
+//! (`FromGpu::BadDisplayList`) a reason travels as its code, not as serde's variant index, so
+//! adding a variant anywhere in the list never shifts the encoding; an unknown code is refused.
 
 /// The reason a message from a less trusted process was rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(into = "u16", try_from = "u16")]
 #[repr(u16)]
 pub enum BadMessageReason {
     /// A renderer message to the browser did not decode.
@@ -36,11 +39,62 @@ pub enum BadMessageReason {
     GpuUnexpectedMessage = 44,
 }
 
+/// Every reason, for decoding a code back.
+const ALL: [BadMessageReason; 14] = [
+    BadMessageReason::RendererUndecodable,
+    BadMessageReason::RendererInvalidField,
+    BadMessageReason::RendererUnexpectedMessage,
+    BadMessageReason::RendererTooManySubresources,
+    BadMessageReason::DisplayListTooLarge,
+    BadMessageReason::DisplayListUndecodable,
+    BadMessageReason::DisplayListInvalid,
+    BadMessageReason::DisplayListUnknownFont,
+    BadMessageReason::DisplayListLimitsExceeded,
+    BadMessageReason::FrameWrongSize,
+    BadMessageReason::FrameShortPixels,
+    BadMessageReason::FrameUnexpectedSeq,
+    BadMessageReason::GpuUndecodable,
+    BadMessageReason::GpuUnexpectedMessage,
+];
+
 impl BadMessageReason {
     /// The stable numeric code.
     #[must_use]
     pub fn code(self) -> u16 {
         self as u16
+    }
+
+    /// `true` for the reasons a gpu may report about a renderer's display list (codes 20–24).
+    #[must_use]
+    pub fn is_display_list(self) -> bool {
+        matches!(
+            self,
+            Self::DisplayListTooLarge
+                | Self::DisplayListUndecodable
+                | Self::DisplayListInvalid
+                | Self::DisplayListUnknownFont
+                | Self::DisplayListLimitsExceeded
+        )
+    }
+}
+
+/// A number that is not a [`BadMessageReason`] code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("unknown bad-message reason code {0}")]
+pub struct UnknownReasonCode(pub u16);
+
+impl TryFrom<u16> for BadMessageReason {
+    type Error = UnknownReasonCode;
+    fn try_from(code: u16) -> Result<Self, UnknownReasonCode> {
+        ALL.into_iter()
+            .find(|r| r.code() == code)
+            .ok_or(UnknownReasonCode(code))
+    }
+}
+
+impl From<BadMessageReason> for u16 {
+    fn from(reason: BadMessageReason) -> u16 {
+        reason.code()
     }
 }
 
@@ -75,6 +129,15 @@ mod tests {
         for (reason, code) in expected {
             assert_eq!(reason.code(), code, "{reason:?} was renumbered");
         }
+    }
+
+    #[test]
+    fn every_code_should_decode_back_and_unknown_codes_should_not() {
+        for reason in super::ALL {
+            assert_eq!(R::try_from(reason.code()), Ok(reason));
+        }
+        assert!(R::try_from(5).is_err());
+        assert!(R::try_from(0).is_err());
     }
 
     #[test]

@@ -56,3 +56,39 @@ pub fn child_side<P: ChildProtocol>(
         None => Err(IpcError::UnexpectedMessage("expected HelloAck")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::thread;
+
+    use super::*;
+    use crate::{
+        bootstrap::{BootstrapServer, connect_child},
+        proto::renderer::RendererProtocol,
+    };
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn a_garbage_first_message_should_be_refused_with_a_codec_error() {
+        let server = BootstrapServer::<RendererProtocol>::new().expect("server");
+        let name = server.name().to_owned();
+        let child = thread::spawn(move || {
+            let ep = connect_child::<RendererProtocol>(&name, None).expect("connect");
+            let (up, down) = ep.split();
+            // Longer than any Hello: refused unread.
+            up.send_raw(&[0xff; 200]).expect("send garbage");
+            down.recv().expect("an answer")
+        });
+        let ep = server
+            .accept_with_timeout(Duration::from_secs(10))
+            .expect("accept");
+        let ctx = ReceiverCtx {
+            expected_process_type: ProcessType::Renderer,
+            expected_pid: None,
+        };
+        let err = browser_side(&ep, &ctx, Duration::from_secs(10)).expect_err("refused");
+        assert!(matches!(err, IpcError::Codec(_)), "got {err:?}");
+        let answer = child.join().expect("child thread");
+        assert_eq!(RendererProtocol::as_hello_ack(&answer), Some(false));
+    }
+}
