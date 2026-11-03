@@ -1,5 +1,5 @@
 //! Hello / `HelloAck` exchange. The browser validates the child's claims against what it spawned.
-//! The first upward message is always the M0 `ToBrowser::Hello`, whatever the protocol.
+//! The first upward message is always a bare [`Hello`], whatever the protocol.
 
 use std::time::Duration;
 
@@ -9,7 +9,7 @@ use tracing::warn;
 use crate::{
     bootstrap::{BrowserEndpoint, ChildEndpoint},
     error::IpcError,
-    message::{Hello, PROTOCOL_VERSION, ToBrowser},
+    message::{Hello, PROTOCOL_VERSION},
     protocol::ChildProtocol,
     validate::{ReceiverCtx, Validate},
 };
@@ -22,10 +22,13 @@ pub fn browser_side<P: ChildProtocol>(
     ctx: &ReceiverCtx,
     timeout: Duration,
 ) -> Result<Hello, IpcError> {
-    let msg = ep.recv_hello_timeout(timeout)?;
-    let ToBrowser::Hello(hello) = msg else {
-        ep.send(P::hello_ack(false))?;
-        return Err(IpcError::UnexpectedMessage("expected Hello"));
+    let hello = match ep.recv_hello_timeout(timeout) {
+        Ok(hello) => hello,
+        Err(e @ IpcError::Codec(_)) => {
+            ep.send(P::hello_ack(false))?;
+            return Err(e);
+        }
+        Err(e) => return Err(e),
     };
     if let Err(violation) = hello.validate(ctx) {
         warn!(%violation, "rejecting child during handshake");
@@ -42,11 +45,11 @@ pub fn child_side<P: ChildProtocol>(
     process_type: ProcessType,
     pid: u32,
 ) -> Result<(), IpcError> {
-    ep.send_hello(&ToBrowser::Hello(Hello {
+    ep.send_hello(&Hello {
         protocol_version: PROTOCOL_VERSION,
         process_type,
         pid,
-    }))?;
+    })?;
     match P::as_hello_ack(&ep.recv()?) {
         Some(true) => Ok(()),
         Some(false) => Err(IpcError::Rejected),

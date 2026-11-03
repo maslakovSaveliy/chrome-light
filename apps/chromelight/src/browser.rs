@@ -2,10 +2,7 @@
 
 use std::time::Duration;
 
-use cl_ipc::{
-    M0Protocol,
-    message::{ToBrowser, ToChild},
-};
+use cl_ipc::proto::renderer::{FromRenderer, RendererProtocol, ToRenderer};
 use cl_process::{ProcessError, SpawnOptions, spawn};
 use tracing::{error, info, warn};
 
@@ -28,7 +25,7 @@ pub fn run(args: &Args) -> anyhow::Result<i32> {
         trace_path: args.trace_out.clone(),
     };
 
-    let mut renderer = match spawn::<M0Protocol>(&exe, &opts) {
+    let mut renderer = match spawn::<RendererProtocol>(&exe, &opts) {
         Ok(renderer) => renderer,
         Err(ProcessError::ExitedDuringBootstrap {
             code: Some(EXIT_SANDBOX_UNAVAILABLE),
@@ -43,9 +40,10 @@ pub fn run(args: &Args) -> anyhow::Result<i32> {
     };
     info!(pid = renderer.pid(), "renderer handshake complete");
 
-    renderer.endpoint.send(ToChild::Ping(1))?;
-    match renderer.endpoint.recv_timeout(PING_TIMEOUT)? {
-        ToBrowser::Pong(1) => {}
+    let ctx = renderer.receiver_ctx();
+    renderer.endpoint.send(ToRenderer::Ping(1))?;
+    match renderer.endpoint.recv_timeout(PING_TIMEOUT, &ctx)? {
+        FromRenderer::Pong(1) => {}
         other => anyhow::bail!("expected Pong(1), got {other:?}"),
     }
     println!("handshake ok renderer pid={}", renderer.pid());
@@ -60,7 +58,7 @@ pub fn run(args: &Args) -> anyhow::Result<i32> {
         idle(Duration::from_secs(secs));
     }
 
-    renderer.endpoint.send(ToChild::Shutdown)?;
+    renderer.endpoint.send(ToRenderer::Shutdown)?;
     let outcome = renderer.wait_timeout(SHUTDOWN_TIMEOUT)?;
     // A child that exited cleanly in the race between the last poll and the kill is not an error.
     if outcome.killed && !outcome.status.success() {

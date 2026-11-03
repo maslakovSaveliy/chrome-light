@@ -237,6 +237,16 @@ impl<P: ChildProtocol> ChildProcess<P> {
         self.child.id()
     }
 
+    /// What the browser knows about this child independently of its messages: the role it was
+    /// spawned as and its pid. Validate every upward message against it.
+    #[must_use]
+    pub fn receiver_ctx(&self) -> ReceiverCtx {
+        ReceiverCtx {
+            expected_process_type: self.process_type,
+            expected_pid: Some(self.child.id()),
+        }
+    }
+
     /// The child's exit status if it has exited, without blocking.
     pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, ProcessError> {
         self.child.try_wait().map_err(ProcessError::Child)

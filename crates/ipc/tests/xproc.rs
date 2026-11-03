@@ -17,7 +17,7 @@ use std::{
 };
 
 use cl_ipc::{
-    ChildProtocol, ReceiverCtx, Validate,
+    BadMessageReason, ChildProtocol, ReceiverCtx, Validate,
     bootstrap::{BootstrapServer, BrowserEndpoint, connect_child},
     handshake,
     pump::{PumpEvent, spawn_reader},
@@ -84,6 +84,8 @@ impl Validate for RendererUp {
 
 impl ChildProtocol for GpuP {
     const ROLE: ProcessType = ProcessType::Gpu;
+    const MAX_UP_BYTES: usize = 1024;
+    const UNDECODABLE: BadMessageReason = BadMessageReason::GpuUndecodable;
     type Down = GpuDown;
     type Up = GpuUp;
     fn hello_ack(accepted: bool) -> GpuDown {
@@ -99,6 +101,8 @@ impl ChildProtocol for GpuP {
 
 impl ChildProtocol for RendererP {
     const ROLE: ProcessType = ProcessType::Renderer;
+    const MAX_UP_BYTES: usize = 1024;
+    const UNDECODABLE: BadMessageReason = BadMessageReason::RendererUndecodable;
     type Down = RendererDown;
     type Up = RendererUp;
     fn hello_ack(accepted: bool) -> RendererDown {
@@ -145,7 +149,8 @@ fn checksum(bytes: &[u8]) -> u64 {
 }
 
 /// Spawns this test binary as `helper` and completes the bootstrap + handshake as the browser.
-fn spawn_child<P: ChildProtocol>(helper: &str) -> (KillOnDrop, BrowserEndpoint<P>) {
+/// Returns the context the browser validates the child's messages against.
+fn spawn_child<P: ChildProtocol>(helper: &str) -> (KillOnDrop, BrowserEndpoint<P>, ReceiverCtx) {
     let server = BootstrapServer::<P>::new().expect("bootstrap server");
     let name = server.name().to_owned();
     let exe = std::env::current_exe().expect("current exe");
@@ -162,7 +167,7 @@ fn spawn_child<P: ChildProtocol>(helper: &str) -> (KillOnDrop, BrowserEndpoint<P
         expected_pid: Some(pid),
     };
     handshake::browser_side(&ep, &ctx, TIMEOUT).expect("handshake");
-    (guard, ep)
+    (guard, ep, ctx)
 }
 
 /// Resident set size of `pid` in KiB, from `ps` (macOS/Linux) or `tasklist` (Windows).
@@ -315,11 +320,11 @@ fn renderer_helper() {
 
 #[test]
 fn dl_shm_should_cross_brokered_channel_3proc() {
-    let (_gpu_guard, mut gpu) = spawn_child::<GpuP>("gpu_helper");
+    let (_gpu_guard, mut gpu, gpu_ctx) = spawn_child::<GpuP>("gpu_helper");
     let dl_sender = gpu
         .take_display_lists()
         .expect("the gpu sends its display-list sender in the bootstrap");
-    let (_renderer_guard, renderer) = spawn_child::<RendererP>("renderer_helper");
+    let (_renderer_guard, renderer, renderer_ctx) = spawn_child::<RendererP>("renderer_helper");
 
     // The browser relays the gpu's sender DOWN to the renderer.
     renderer
@@ -330,12 +335,14 @@ fn dl_shm_should_cross_brokered_channel_3proc() {
         .send(RendererDown::SendDisplayList { seq: 7, len })
         .expect("ask for a display list");
     assert!(matches!(
-        renderer.recv_timeout(TIMEOUT).expect("renderer reply"),
+        renderer
+            .recv_timeout(TIMEOUT, &renderer_ctx)
+            .expect("renderer reply"),
         RendererUp::Sent { seq: 7 }
     ));
 
     let expected = pattern(usize::try_from(len).expect("fits"));
-    match gpu.recv_timeout(TIMEOUT).expect("gpu reply") {
+    match gpu.recv_timeout(TIMEOUT, &gpu_ctx).expect("gpu reply") {
         GpuUp::Checksum {
             seq,
             len: got_len,
@@ -353,7 +360,7 @@ fn dl_shm_should_cross_brokered_channel_3proc() {
 
 #[test]
 fn frame_shm_should_reach_browser() {
-    let (_guard, gpu) = spawn_child::<GpuP>("gpu_helper");
+    let (_guard, gpu, _ctx) = spawn_child::<GpuP>("gpu_helper");
     // The browser creates the frame channel (it receives the shm) and sends the sender down.
     let (frame_tx, frame_rx) = channel::<FrameMsg>().expect("frame channel");
     gpu.send(GpuDown::FrameSender(frame_tx))
@@ -374,7 +381,7 @@ fn frame_shm_should_reach_browser() {
 
 #[test]
 fn empty_shm_should_roundtrip() {
-    let (_guard, gpu) = spawn_child::<GpuP>("gpu_helper");
+    let (_guard, gpu, _ctx) = spawn_child::<GpuP>("gpu_helper");
     let (frame_tx, frame_rx) = channel::<FrameMsg>().expect("frame channel");
     gpu.send(GpuDown::FrameSender(frame_tx))
         .expect("send frame sender");
@@ -396,8 +403,8 @@ fn empty_shm_should_roundtrip() {
 
 #[test]
 fn peer_exit_should_surface_closed() {
-    let (_guard, gpu) = spawn_child::<GpuP>("gpu_helper");
-    let (down, up) = gpu.split();
+    let (_guard, gpu, ctx) = spawn_child::<GpuP>("gpu_helper");
+    let (down, up) = gpu.split(ctx);
     let (events_tx, events_rx) = mpsc::channel::<String>();
     spawn_reader("test-gpu-up", up, move |event: PumpEvent<GpuUp>| {
         let name = match event {
@@ -431,7 +438,7 @@ fn foreign_payload_on_typed_channel_should_err() {
 
 #[test]
 fn repeated_shm_sends_should_not_leak() {
-    let (guard, gpu) = spawn_child::<GpuP>("gpu_helper");
+    let (guard, gpu, gpu_ctx) = spawn_child::<GpuP>("gpu_helper");
     let gpu_pid = guard.0.id();
     let (frame_tx, frame_rx) = channel::<FrameMsg>().expect("frame channel");
     gpu.send(GpuDown::FrameSender(frame_tx))
@@ -453,7 +460,7 @@ fn repeated_shm_sends_should_not_leak() {
             assert_eq!(copy.len(), usize::try_from(max).expect("fits"));
         }
         assert!(matches!(
-            gpu.recv_timeout(TIMEOUT).expect("gpu reply"),
+            gpu.recv_timeout(TIMEOUT, &gpu_ctx).expect("gpu reply"),
             GpuUp::FramesSent
         ));
     };

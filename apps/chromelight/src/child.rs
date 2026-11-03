@@ -1,12 +1,16 @@
-//! Main for every non-browser role. In M0 all roles behave identically: apply sandbox, connect,
-//! handshake, answer pings until Shutdown.
+//! Main for every non-browser role: apply the sandbox, connect, handshake, then serve the role's
+//! protocol. Until the renderer and gpu process loops land (M1b Tasks 8 and 9) both roles only
+//! answer pings and exit on Shutdown.
 
 use cl_ipc::{
-    M0Protocol,
     bootstrap::connect_child,
     handshake,
-    message::{ToBrowser, ToChild},
+    proto::{
+        gpu::{FromGpu, GpuProtocol, ToGpu},
+        renderer::{FromRenderer, RendererProtocol, ToRenderer},
+    },
 };
+use cl_platform::ProcessType;
 use cl_process::{Sandbox, SandboxPolicy};
 use tracing::{error, info};
 
@@ -55,20 +59,64 @@ fn serve(args: &Args, sandbox: &Sandbox<cl_process::Applied>) -> anyhow::Result<
         .ipc_bootstrap
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("--ipc-bootstrap is required"))?;
-    let ep = connect_child::<M0Protocol>(name, None)?;
-    handshake::child_side(&ep, args.process_type, std::process::id())?;
-    info!(role = %args.process_type, policy = sandbox.policy_name(), "child ready");
+    match args.process_type {
+        ProcessType::Renderer => serve_renderer(args, name, sandbox),
+        ProcessType::Gpu => serve_gpu(args, name, sandbox),
+        other => anyhow::bail!("no child protocol for role {other}"),
+    }
+}
+
+/// Returns `true` when the child should exit on this `Shutdown`.
+fn honour_shutdown(args: &Args) -> bool {
+    if ignores_shutdown(args) {
+        info!("ignoring Shutdown (--ignore-shutdown)");
+        return false;
+    }
+    true
+}
+
+fn serve_renderer(
+    args: &Args,
+    name: &str,
+    sandbox: &Sandbox<cl_process::Applied>,
+) -> anyhow::Result<()> {
+    let ep = connect_child::<RendererProtocol>(name, None)?;
+    handshake::child_side(&ep, ProcessType::Renderer, std::process::id())?;
+    info!(role = %ProcessType::Renderer, policy = sandbox.policy_name(), "child ready");
     loop {
         match ep.recv()? {
-            ToChild::Ping(n) => ep.send(&ToBrowser::Pong(n))?,
-            ToChild::Shutdown => {
-                if ignores_shutdown(args) {
-                    info!("ignoring Shutdown (--ignore-shutdown)");
-                    continue;
+            ToRenderer::Ping(n) => ep.send(&FromRenderer::Pong(n))?,
+            ToRenderer::Shutdown => {
+                if honour_shutdown(args) {
+                    return Ok(());
                 }
-                return Ok(());
             }
-            ToChild::HelloAck { .. } => anyhow::bail!("duplicate HelloAck"),
+            ToRenderer::HelloAck { .. } => anyhow::bail!("duplicate HelloAck"),
+            // M1b Task 8 serves the document messages.
+            other => anyhow::bail!("renderer cannot serve {other:?} yet"),
+        }
+    }
+}
+
+fn serve_gpu(
+    args: &Args,
+    name: &str,
+    sandbox: &Sandbox<cl_process::Applied>,
+) -> anyhow::Result<()> {
+    // M1b Task 9 creates the display-list channel here and sends its sender up.
+    let ep = connect_child::<GpuProtocol>(name, None)?;
+    handshake::child_side(&ep, ProcessType::Gpu, std::process::id())?;
+    info!(role = %ProcessType::Gpu, policy = sandbox.policy_name(), "child ready");
+    loop {
+        match ep.recv()? {
+            ToGpu::Ping(n) => ep.send(&FromGpu::Pong(n))?,
+            ToGpu::Shutdown => {
+                if honour_shutdown(args) {
+                    return Ok(());
+                }
+            }
+            ToGpu::HelloAck { .. } => anyhow::bail!("duplicate HelloAck"),
+            other => anyhow::bail!("gpu cannot serve {other:?} yet"),
         }
     }
 }

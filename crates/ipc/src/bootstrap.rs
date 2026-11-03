@@ -35,9 +35,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     codec,
     error::IpcError,
-    message::ToBrowser,
-    protocol::{ChildProtocol, M0Protocol},
+    message::Hello,
+    protocol::ChildProtocol,
     transfer::DisplayListMsg,
+    validate::{ReceiverCtx, Validate},
 };
 
 /// The single message that crosses the one-shot server: the child's channel ends.
@@ -54,7 +55,7 @@ struct BootstrapMsg<D> {
 
 /// Browser-side endpoint talking to one child of protocol `P`.
 #[derive(Debug)]
-pub struct BrowserEndpoint<P: ChildProtocol = M0Protocol> {
+pub struct BrowserEndpoint<P: ChildProtocol> {
     tx: IpcSender<P::Down>,
     rx: IpcBytesReceiver,
     display_lists: Option<IpcSender<DisplayListMsg>>,
@@ -62,14 +63,14 @@ pub struct BrowserEndpoint<P: ChildProtocol = M0Protocol> {
 
 /// Child-side endpoint talking to the browser.
 #[derive(Debug)]
-pub struct ChildEndpoint<P: ChildProtocol = M0Protocol> {
+pub struct ChildEndpoint<P: ChildProtocol> {
     tx: ChildSender<P>,
     rx: IpcReceiver<P::Down>,
 }
 
 /// The child's upward sender, cloneable so several threads of a child can report.
 #[derive(Debug)]
-pub struct ChildSender<P: ChildProtocol = M0Protocol> {
+pub struct ChildSender<P: ChildProtocol> {
     tx: IpcBytesSender,
     _protocol: PhantomData<fn() -> P>,
 }
@@ -83,21 +84,23 @@ impl<P: ChildProtocol> Clone for ChildSender<P> {
     }
 }
 
-/// The browser's upward receiver for one child: our codec over a byte channel (see
-/// [`crate::pump::PumpSource`]). Decoding failures are errors, never panics; validation is the
-/// consumer's job.
+/// The browser's upward receiver for one child: our codec over a byte channel, bounded by
+/// [`ChildProtocol::MAX_UP_BYTES`] and validated against `ctx` (see [`crate::pump::PumpSource`]).
+/// A message that fails either is reported with its [`crate::BadMessageReason`], never a panic.
 #[derive(Debug)]
-pub struct UpReceiver<P: ChildProtocol = M0Protocol> {
+pub struct UpReceiver<P: ChildProtocol> {
     rx: IpcBytesReceiver,
+    ctx: ReceiverCtx,
     _protocol: PhantomData<fn() -> P>,
 }
 
 impl<P: ChildProtocol> UpReceiver<P> {
     /// Wraps a raw byte receiver (tests feed it hand-made bytes).
     #[cfg(test)]
-    pub(crate) fn from_bytes_receiver(rx: IpcBytesReceiver) -> Self {
+    pub(crate) fn from_bytes_receiver(rx: IpcBytesReceiver, ctx: ReceiverCtx) -> Self {
         Self {
             rx,
+            ctx,
             _protocol: PhantomData,
         }
     }
@@ -106,10 +109,33 @@ impl<P: ChildProtocol> UpReceiver<P> {
     pub(crate) fn recv_bytes(&self) -> Result<Vec<u8>, ipc_channel::IpcError> {
         self.rx.recv()
     }
+
+    /// What the browser knows about this child, to validate against.
+    pub(crate) fn ctx(&self) -> &ReceiverCtx {
+        &self.ctx
+    }
 }
 
 fn timed_out(what: &'static str) -> IpcError {
     IpcError::Transport(std::io::Error::new(std::io::ErrorKind::TimedOut, what))
+}
+
+/// Decodes one upward message within `P::MAX_UP_BYTES` and validates it against `ctx`.
+pub(crate) fn decode_up<P: ChildProtocol>(
+    bytes: &[u8],
+    ctx: &ReceiverCtx,
+) -> Result<P::Up, IpcError> {
+    let msg: P::Up = codec::decode_bounded(bytes, P::MAX_UP_BYTES)?;
+    msg.validate(ctx)?;
+    Ok(msg)
+}
+
+/// The bad-message reason for an upward decoding or validation failure of protocol `P`.
+pub(crate) fn up_failure_reason<P: ChildProtocol>(e: &IpcError) -> crate::BadMessageReason {
+    match e {
+        IpcError::Violation(v) => v.bad_message_reason().unwrap_or(P::UNDECODABLE),
+        _ => P::UNDECODABLE,
+    }
 }
 
 impl<P: ChildProtocol> BrowserEndpoint<P> {
@@ -120,23 +146,24 @@ impl<P: ChildProtocol> BrowserEndpoint<P> {
         Ok(())
     }
 
-    /// Block for the next upward message. Decoding failure is an error, never a panic.
-    pub fn recv(&self) -> Result<P::Up, IpcError> {
+    /// Block for the next upward message, decoded within `P::MAX_UP_BYTES` and validated
+    /// against `ctx`. Failure is an error, never a panic.
+    pub fn recv(&self, ctx: &ReceiverCtx) -> Result<P::Up, IpcError> {
         let bytes = self.rx.recv()?;
-        Ok(codec::decode(&bytes)?)
+        decode_up::<P>(&bytes, ctx)
     }
 
-    /// Receive the next upward message with a deadline. The browser must never block
-    /// unboundedly on a child (ADR-0005).
-    pub fn recv_timeout(&self, timeout: Duration) -> Result<P::Up, IpcError> {
+    /// [`BrowserEndpoint::recv`] with a deadline. The browser must never block unboundedly on a
+    /// child (ADR-0005).
+    pub fn recv_timeout(&self, timeout: Duration, ctx: &ReceiverCtx) -> Result<P::Up, IpcError> {
         let bytes = self.recv_bytes_timeout(timeout, "child did not answer in time")?;
-        Ok(codec::decode(&bytes)?)
+        decode_up::<P>(&bytes, ctx)
     }
 
-    /// The first upward message is always the M0 `ToBrowser::Hello`, whatever `P::Up` is.
-    pub(crate) fn recv_hello_timeout(&self, timeout: Duration) -> Result<ToBrowser, IpcError> {
+    /// The first upward message is always a bare [`Hello`], whatever `P::Up` is.
+    pub(crate) fn recv_hello_timeout(&self, timeout: Duration) -> Result<Hello, IpcError> {
         let bytes = self.recv_bytes_timeout(timeout, "child did not say hello in time")?;
-        Ok(codec::decode(&bytes)?)
+        Ok(codec::decode_bounded(&bytes, HELLO_MAX_BYTES)?)
     }
 
     /// M0-ONLY: a 1 ms `park_timeout` poll over `try_recv`. Long-lived children are read by a
@@ -167,14 +194,16 @@ impl<P: ChildProtocol> BrowserEndpoint<P> {
     }
 
     /// Splits into the downward sender and the upward receiver, so the receiver can move to a
-    /// reader thread ([`crate::pump::spawn_reader`]). Take a gpu's display-list sender
-    /// ([`BrowserEndpoint::take_display_lists`]) first: `split` drops it.
+    /// reader thread ([`crate::pump::spawn_reader`]); the receiver validates every message
+    /// against `ctx`. Take a gpu's display-list sender ([`BrowserEndpoint::take_display_lists`])
+    /// first: `split` drops it.
     #[must_use]
-    pub fn split(self) -> (IpcSender<P::Down>, UpReceiver<P>) {
+    pub fn split(self, ctx: ReceiverCtx) -> (IpcSender<P::Down>, UpReceiver<P>) {
         (
             self.tx,
             UpReceiver {
                 rx: self.rx,
+                ctx,
                 _protocol: PhantomData,
             },
         )
@@ -189,8 +218,8 @@ impl<P: ChildProtocol> ChildSender<P> {
         Ok(())
     }
 
-    /// The handshake opener, encoded as the M0 `ToBrowser` the browser expects first.
-    pub(crate) fn send_hello(&self, msg: &ToBrowser) -> Result<(), IpcError> {
+    /// The handshake opener, sent bare as the first upward message.
+    pub(crate) fn send_hello(&self, msg: &Hello) -> Result<(), IpcError> {
         let bytes = codec::encode(msg)?;
         self.tx.send(&bytes)?;
         Ok(())
@@ -203,7 +232,7 @@ impl<P: ChildProtocol> ChildEndpoint<P> {
         self.tx.send(msg)
     }
 
-    pub(crate) fn send_hello(&self, msg: &ToBrowser) -> Result<(), IpcError> {
+    pub(crate) fn send_hello(&self, msg: &Hello) -> Result<(), IpcError> {
         self.tx.send_hello(msg)
     }
 
@@ -219,8 +248,11 @@ impl<P: ChildProtocol> ChildEndpoint<P> {
     }
 }
 
+/// Upper bound for the encoded [`Hello`] (three small integers).
+const HELLO_MAX_BYTES: usize = 64;
+
 /// One-shot named server created by the browser before spawning a child.
-pub struct BootstrapServer<P: ChildProtocol = M0Protocol> {
+pub struct BootstrapServer<P: ChildProtocol> {
     server: IpcOneShotServer<BootstrapMsg<P::Down>>,
     name: String,
 }
@@ -281,7 +313,7 @@ impl<P: ChildProtocol> BootstrapServer<P> {
 }
 
 /// A bootstrap accept in progress on its helper thread (see [`BootstrapServer::start_accept`]).
-pub struct PendingAccept<P: ChildProtocol = M0Protocol> {
+pub struct PendingAccept<P: ChildProtocol> {
     rx: mpsc::Receiver<Result<BootstrapMsg<P::Down>, ipc_channel::IpcError>>,
 }
 

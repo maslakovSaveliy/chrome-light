@@ -196,9 +196,9 @@ pub fn decode_bounded<T: DeserializeOwned>(bytes: &[u8], max: usize) -> Result<T
 ```
 `Validate` for `FromRenderer`/`FromGpu` enforces every limit above and maps a failure to a `BadMessageReason`. `message.rs` keeps only `Hello` (upward) — Ping/Pong/Shutdown move into the role protocols; `child.rs` serves `Ping`/`Shutdown` per role. A v1 `Hello` is rejected (`VersionMismatch`).
 
-- [ ] **Step 1: Failing tests:** one test per limit (`need_subresources_over_64_urls_is_invalid`, `url_over_8k_is_invalid`, `warning_over_1k_is_invalid`, `viewport_zero_or_over_16384_is_invalid`), `v1_hello_rejected`, `bad_message_reason_codes_are_stable` (asserts every numeric value), proptest round-trip of `FromRenderer`/`FromGpu` through `codec::encode`/`decode_bounded`.
-- [ ] **Step 2: Implement.** Extend `tools/fuzz/fuzz_targets/ipc_decode.rs` to decode `FromRenderer` and `FromGpu` with `decode_bounded` and run `validate`; run it 60 s (`cargo +nightly fuzz run --fuzz-dir tools/fuzz --target aarch64-apple-darwin ipc_decode -- -max_total_time=60`).
-- [ ] **Step 3: Gate + commit** `ipc: protocol v2 for renderer and gpu, limits and bad-message reasons`.
+- [x] **Step 1: Failing tests:** one test per limit (`need_subresources_over_64_urls_is_invalid`, `url_over_8k_is_invalid`, `warning_over_1k_is_invalid`, `viewport_zero_or_over_16384_is_invalid`), `v1_hello_rejected`, `bad_message_reason_codes_are_stable` (asserts every numeric value), proptest round-trip of `FromRenderer`/`FromGpu` through `codec::encode`/`decode_bounded`.
+- [x] **Step 2: Implement.** Extend `tools/fuzz/fuzz_targets/ipc_decode.rs` to decode `FromRenderer` and `FromGpu` with `decode_bounded` and run `validate`; run it 60 s (`cargo +nightly fuzz run --fuzz-dir tools/fuzz --target aarch64-apple-darwin ipc_decode -- -max_total_time=60`).
+- [x] **Step 3: Gate + commit** `ipc: protocol v2 for renderer and gpu, limits and bad-message reasons`.
 
 ---
 
