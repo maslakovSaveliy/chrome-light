@@ -19,3 +19,4 @@ Format — `template.md`. Once an ADR is Accepted it is not edited in substance;
 | [0013](0013-naming-and-trademark.md) | ChromeLight name and trademark (risk accepted) | Accepted |
 | [0014](0014-licensing.md) | Apache-2.0 OR MIT license | Accepted |
 | [0015](0015-stylo-integration.md) | stylo integration: unsafe in cl-style, Python 3, pinned version, Option B fallback | Accepted |
+| [0016](0016-m1b-raster-service-and-frame-transport.md) | M1b: the GPU process as a raster service, the browser presents; shm with copy-then-validate, channel ends only downward, kill on a bad message | Accepted |

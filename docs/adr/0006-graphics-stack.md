@@ -1,6 +1,7 @@
 # ADR-0006: Graphics — vello + wgpu, own compositor, CPU fallback
 
 **Status:** Accepted
+**Amended by:** ADR-0016 (2026-09-28)
 **Date:** 2026-09-07
 **Deciders:** project owner
 

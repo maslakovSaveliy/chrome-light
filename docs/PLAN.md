@@ -64,7 +64,7 @@ Scope: split into five sequential sub-plans (M1a–M1e), each tied to one critic
 | Sub-plan | What it does | Detailed plan |
 |---|---|---|
 | **M1a** | Single-process static pipeline: encoding sniff → html5ever → arena DOM → stylo cascade → block/inline layout (parley) → display list → CPU raster (tiny-skia). JS-free conformance (html5lib-tests, WPT `urltestdata.json`), 22 reftest pairs, 6 fuzz targets, golden dumps. | `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md` |
-| **M1b** | Renderer + GPU processes: display list over shm, validation on receipt, frame in a window. | written after M1a |
+| **M1b** | Renderer + GPU processes: display list over shm, validation on receipt, frame in a window. | `docs/superpowers/plans/2026-09-28-m1b-renderer-gpu-processes.md` (ADR-0016, spec `docs/superpowers/specs/2026-09-28-m1b-renderer-gpu-processes-design.md`) |
 | **M1c** | Sandbox: macOS seatbelt, Linux Landlock + seccomp + `no_new_privs`; `--probe` tests. | written after M1b |
 | **M1d** | egui shell: one tab, address bar, `file://` and `http://localhost` via `cl-net`. | written after M1c |
 | **M1e** | Bench corpus, Chrome baseline, closing the M1 exit gates. | written after M1d |

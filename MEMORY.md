@@ -4,9 +4,9 @@ Updated at the end of every working session. Short facts, links to documents. Se
 
 ## State as of 2026-11-03
 
-**Phase:** M1a Static Pipeline — **all 23 plan tasks done** on branch `m1a-static-pipeline` (PR #2, draft, https://github.com/maslakovSaveliy/chrome-light/pull/2), final whole-branch review done (three opus reviewers + one fix wave + scoped re-review, 2026-09-16). Plan: `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`. Execution log (SDD ledger, only on the owner's machine, in `.gitignore`): `.superpowers/sdd/2026-09-07-m1a-static-pipeline/progress.md` — the main source of state. `main` (PR #3: docs translated to English) was merged into the branch on 2026-11-03.
+**Phase:** M1b Renderer + GPU processes — started 2026-11-03 on branch `m1b-renderer-gpu` (from `main` `a1c3ea2`). Plan: `docs/superpowers/plans/2026-09-28-m1b-renderer-gpu-processes.md` (14 tasks, order T1 T2 T3 T4 T6 T5 T7 … T14; Task 0 = `ipc-channel` 0.23.1); ADR-0016 (Accepted), spec `docs/superpowers/specs/2026-09-28-m1b-renderer-gpu-processes-design.md`. Owner decisions 2026-11-03: one PR for the whole of M1b, risk accepted once for the plan, the main agent writes all code, fresh opus reviewers per task. Execution log (gitignored): `.superpowers/sdd/2026-11-03-m1b-renderer-gpu/progress.md`.
 
-**Before the merge of PR #2 (owner decision 2026-09-28):** close two debts — **both closed**. **D2** (super-linear style/inline paths): done and reviewed (`69df088`, `e798a28`, `53460f4`, `4b6a01f`); the `nextest list --filterset` evidence is in the ledger (exactly the 5 tests). **D1** (1 MB smoke page memory): `752e792` made the testshell stage dumps opt-in; median max RSS 73 424 896 bytes (criterion < 300 MB), reviewed and approved (2026-11-03). Debug smoke-test budget: **stays 5 s locally** (owner, 2026-11-03) — 3.3–3.6 s on a quiet machine after D1, 5.3–12 s under external load 5–19; a gate that goes red under load is re-run on a quiet machine, never committed red (CI keeps 15 s via `CL_SMOKE_SLOW=1`). Left: CI 5/5, owner decides merge + tag `m1a` → M1b (drafts in `.superpowers/m1b-drafts/`, gitignored).
+**M1a: closed.** PR #2 merged into `main` (merge `a1c3ea2`, 2026-11-03), tag `m1a` → `a1c3ea2`, CI on `main` 5/5. Both pre-merge debts closed: **D2** (super-linear style/inline paths; `nextest list` evidence in the M1a ledger) and **D1** (1 MB smoke page: median max RSS 73 424 896 bytes, criterion < 300 MB). Debug smoke-test budget **stays 5 s locally** (owner, 2026-11-03) — 3.3–3.6 s on a quiet machine, 5.3–12 s under external load 5–19; a gate that goes red under load is re-run on a quiet machine, never committed red (CI keeps 15 s via `CL_SMOKE_SLOW=1`). M1a ledger: `.superpowers/sdd/2026-09-07-m1a-static-pipeline/progress.md`.
 
 **M1a, tasks:** 1–23 — all done and reviewed (1–15 in sessions 3–4; 16–23 in session 6, then the final branch review).
 
@@ -102,6 +102,11 @@ Deferred to M1+; do not block the public beta:
 - Re-checked 2026-09-28 (M1b fact-check, `.superpowers/m1b-drafts/m1b-facts-2026-09-28.md`): CHANGED — stylo 0.21, cssparser 0.38, html5ever 0.40.1, Servo 0.6.0, Chrome 154 (2026-09-22). A stylo-family bump is a separate whole-family PR (ADR-0015 §4), not part of M1b.
 
 ## Session log
+
+### 2026-11-03 — session 9: M1a merged, M1b started
+- Owner: merge PR #2 + tag `m1a` (done, CI on `main` 5/5). Branch `m1b-renderer-gpu` from `main`.
+- Found `GHSA-fj85-w6rj-rxrc` (ipc-channel 0.23.0, macOS receive path, high) — Task 0 bumps to 0.23.1; RustSec has no entry, so `cargo deny` did not flag it.
+- Task 1: ADR-0016 and the M1b spec translated to English and accepted (bad-message policy with an evidence table, channel ownership, subresource policy, OS-layer facts re-checked on 0.23.1); the plan moved into `docs/` with the main-agent execution rules.
 
 ### 2026-11-03 — session 8: `main` merged into the M1a branch
 - Merged `origin/main` (13ddeab, PR #3 — docs translated to English) into `m1a-static-pipeline`. 13 conflicts, all in docs. CLAUDE.md/AGENTS.md: the branch version (built on top of main's in `c3b1fd2`). Every other conflicted file: main's English text plus the branch's M1a changes, translated (ARCHITECTURE, CODING_STANDARDS, DEPENDENCIES, DEVELOPMENT, FEATURE_MATRIX, PLAN, SECURITY, TESTING, ADR-0002, ADR index, this file). No code changed.
