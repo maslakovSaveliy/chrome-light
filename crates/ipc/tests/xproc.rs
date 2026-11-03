@@ -215,7 +215,7 @@ fn handle_count(pid: u32) -> u64 {
             &format!("(Get-Process -Id {pid}).HandleCount"),
         ])
         .output()
-        .expect("no way to count handles: /proc, lsof and powershell all missing");
+        .expect("no way to count handles: no /proc, lsof failed or is missing, powershell could not run");
     String::from_utf8_lossy(&out.stdout)
         .trim()
         .parse()

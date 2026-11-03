@@ -19,8 +19,11 @@ pub enum PumpEvent<T> {
     /// A message arrived but could not be decoded — from a less trusted peer this is a bad
     /// message (the browser kills the sender). The reader keeps going unless the sink stops it.
     Error(String),
-    /// The local transport failed (an OS error, not the peer's bytes). Not evidence against
-    /// the peer; the reader stops.
+    /// The transport reported an OS-level receive error; the channel is unusable and the reader
+    /// stops. The cause may be local, or a malformed message from the peer (on macOS
+    /// `ipc-channel` reports a malformed Mach message this way), so the consumer must tear the
+    /// child down — kill it (and restart a gpu) — without necessarily logging a bad-message
+    /// reason. Never leave the child running with a dead channel.
     Failed(String),
 }
 
@@ -31,7 +34,7 @@ pub enum PumpRecvError {
     Closed,
     /// A message arrived but was not acceptable.
     Bad(String),
-    /// The local transport failed.
+    /// The transport reported an OS-level receive error (see [`PumpEvent::Failed`]).
     Failed(String),
 }
 
