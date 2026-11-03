@@ -63,3 +63,7 @@ doc = false
 bench = false
 
 [workspace]
+
+[patch.crates-io]
+# Same vendored, patched ipc-channel as the root workspace (third_party/ipc-channel/CHROMELIGHT-PATCH.md).
+ipc-channel = { path = "../../third_party/ipc-channel" }

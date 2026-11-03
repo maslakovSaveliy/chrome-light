@@ -384,7 +384,7 @@ Debug-only `--renderer-test-mode=<garbage|oversized|wrong-seq|future-seq-flood|o
 | Risk | Signal | Action |
 |---|---|---|
 | ipc-channel shm/handles misbehave on Windows | Task 3 xproc tests red only on windows-2022 | fix the engine or stop before Task 4; never skip Windows |
-| Browser handle leak on Windows | `repeated_shm_sends_should_not_leak` growth in the browser | channel-ownership ruling (receiver creates) or own shm in cl-platform (separate ADR) |
+| Browser handle leak on Windows | `repeated_shm_sends_should_not_leak` growth in the browser | channel-ownership ruling (receiver creates) or own shm in cl-platform (separate ADR). **Happened 2026-11-03** (+1 handle per shm, an ipc-channel bug independent of channel ownership): owner chose a vendored one-line patch (`third_party/ipc-channel`) + an upstream report |
 | winit cannot open a window on a CI runner | Task 13 CI step red on one OS | runner setup; else ruling + manual check for that OS |
 | Parity breaks | any of 44 pages differs | a transport/decoding bug — never loosen the comparison |
 | Deadlock between processes | a test hangs | writer threads, bounded queues, ping watchdog; the browser never blocks |

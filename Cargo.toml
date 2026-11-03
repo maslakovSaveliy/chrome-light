@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*"]
-exclude = ["tools/fuzz"]
+exclude = ["tools/fuzz", "third_party/ipc-channel"]
 
 [workspace.package]
 version = "0.0.1"
@@ -101,3 +101,8 @@ lto = "thin"
 [profile.release-dev]
 inherits = "release"
 debug-assertions = true
+
+# Vendored, patched ipc-channel 0.23.1 (Windows handle leak per received shm/channel end).
+# See third_party/ipc-channel/CHROMELIGHT-PATCH.md; remove when upstream ships the fix.
+[patch.crates-io]
+ipc-channel = { path = "third_party/ipc-channel" }
