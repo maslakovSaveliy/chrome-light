@@ -87,6 +87,7 @@ Scope: `cl-net` full network process (rustls + platform verifier, hyper h1/h2, F
 
 Exit criteria:
 - [ ] Gate S0 met on 3 OSes; `--no-sandbox` does not exist in release.
+- [ ] The `ipc-channel` receive-path gaps (`docs/SECURITY.md` "Known gaps", ADR-0016 Context fact 3) are closed before Gate S0 — upstream fix, patched transport or our own upward transport, chosen in a separate ADR (owner decision 2026-11-03).
 - [ ] Open and render without first-level JS errors: example.com, wikipedia.org (article), news.ycombinator.com, mdn (a doc page), github.com README page — curated corpus v0 (5 sites) with a checklist.
 - [ ] WPT: `fetch/api` ≥ 60%, `xhr` ≥ 60%, `dom/events` ≥ 70%, `html/webappapis/scripting` ≥ 60%.
 - [ ] Test262 qualification set 100% (V8) — harness works.

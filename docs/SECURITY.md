@@ -44,8 +44,11 @@ Boundaries the table above claims but the code does not yet hold. Each one block
 
 | Gap | Where | Effect | Blocks | Tracking |
 |---|---|---|---|---|
-| The `ipc-channel` receive path panics or allocates on hostile input: Linux short-datagram `set_len` underflow, `pop().unwrap()`, peer-sized `reserve_exact` (servo/ipc-channel#457); Windows `expect`/`unwrap` on peer data and peer-named `PROCESS_DUP_HANDLE`; channel ends attached to a byte message dropped behind `debug_assert!` | every child → browser channel (M0 renderer → browser today; renderer/gpu → browser in M1b) | a compromised child crashes (panic = abort) or corrupts the browser | Gate S1; must be closed before any child is sandboxed against untrusted content | ADR-0016 Context fact 3, `docs/DEPENDENCIES.md` (`ipc-channel` row) |
-| Unsealed memfd shm on Linux | gpu → browser frames (M1b) | a sender that shrinks the memfd during the copy causes SIGBUS in the receiver | Gate S1 | ADR-0016 Context fact 3 |
+| The `ipc-channel` receive path panics or allocates on hostile input: Linux short-datagram `set_len` underflow, `pop().unwrap()`, peer-sized `reserve_exact` (servo/ipc-channel#457); Windows `expect`/`unwrap` on peer data and peer-named `PROCESS_DUP_HANDLE`; channel ends attached to a byte message dropped behind `debug_assert!` | every child → browser channel (M0 renderer → browser today; renderer/gpu → browser in M1b) | a compromised child crashes (panic = abort) or corrupts the browser | Gate S0 (M2) — before the first untrusted content (owner, 2026-11-03) | ADR-0016 Context fact 3, `docs/DEPENDENCIES.md` (`ipc-channel` row) |
+| Unsealed memfd shm on Linux | gpu → browser frames (M1b) | a sender that shrinks the memfd during the copy causes SIGBUS in the receiver | Gate S0 (M2) | ADR-0016 Context fact 3 |
+| No receive-size cap before allocation (macOS copies a peer-sized out-of-line payload; Linux `reserve_exact`, Windows `reserve` on a peer-chosen size) | every child → browser channel | a child forces large allocations in the browser; allocation failure aborts | Gate S0 (M2) | ADR-0016 Context fact 3 |
+| A forged `MACH_NOTIFY_NO_SENDERS` message id (macOS) | every child → browser channel | a child fakes its own disconnect and leaks the message's ports/memory | Gate S0 (M2) | ADR-0016 Context fact 3 |
+| Sending shm or ports on Windows needs `PROCESS_DUP_HANDLE` on the receiver | gpu → browser frames once Windows children are sandboxed | the sandbox would have to grant a handle-duplication right on the browser (a sandbox-escape primitive) | the Windows sandbox | ADR-0016 Context fact 3 |
 
 ## 4. Defense matrix
 
