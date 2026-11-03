@@ -50,7 +50,7 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 
 | Crate | Role | Risk |
 |---|---|---|
-| `ipc-channel` | IPC transport | medium — Servo-specific; possibly own on `interprocess` |
+| `ipc-channel` | IPC transport | medium — Servo-specific; possibly own on `interprocess`. **Minimum 0.23.1** (2026-11-03): 0.23.0 is affected by GHSA-fj85-w6rj-rxrc (high, macOS: a sender can make the receiver read and deallocate arbitrary memory; fixed by parsing and rejecting malformed Mach messages). The advisory is not in RustSec, so `cargo deny` does not flag 0.23.0 — re-check GitHub advisories on every bump. Still present in 0.23.1: deserialising an `IpcSender`/`IpcReceiver` with a bad index panics (`src/ipc.rs`, FIXME) — channel ends travel only browser → child (ADR-0016) |
 | `postcard` + `serde` | message serialization | low |
 | `shared_memory` / own via `memmap2` | shm | medium |
 | `seccompiler` / `libseccomp` (Linux) | seccomp-bpf | medium |

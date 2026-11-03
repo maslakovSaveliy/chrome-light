@@ -86,7 +86,7 @@ Deferred to M1+; do not block the public beta:
 9. **stylo build on CI** ~40–70 s cold; the local 18 min were an artifact of parallel agents (`docs/history/build-times.md`).
 10. **Platform cfg:** `tools/check-platform-cfg.sh` forbids `#[cfg(target_os|windows|unix)]` outside `crates/{platform,process,gfx}` — write tests platform-independently (`std::env::temp_dir()`).
 11. **Process:** `git add` explicit paths only, never `-A`; the gate chained with `&&` before a commit, and never commit on a red gate (a nudge to "finish" is not permission). Wall-clock tests are listed by exact name in `.config/nextest.toml` (`threads-required = "num-cpus"`).
-12. **`ipc-channel` 0.23:** deserialising an `IpcSender`/`IpcReceiver` with a bad index PANICS (`src/ipc.rs:1025/1054`), and release is `panic = "abort"` → channel ends travel only browser → child (bootstrap excepted). The sender's shm mapping stays writable → always copy-then-validate.
+12. **`ipc-channel` 0.23 (0.23.1 since 2026-11-03, GHSA-fj85-w6rj-rxrc in 0.23.0; not in RustSec, `cargo deny` misses it):** deserialising an `IpcSender`/`IpcReceiver` with a bad index PANICS (`src/ipc.rs:1025/1054`), and release is `panic = "abort"` → channel ends travel only browser → child (bootstrap excepted). The sender's shm mapping stays writable → always copy-then-validate.
 13. **`cl_net::load_file`** does not check for a regular file (a FIFO hangs, `/dev/zero` reads 32 MiB) — the M1b subresource policy closes it.
 14. **Upstream debts, no local patches:** html5ever quadratic on deep nesting in release (`close_p_element_in_button_scope`), `selectors` on `.x ~ p`.
 

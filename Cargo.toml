@@ -42,7 +42,7 @@ euclid = "0.22"
 fontique = { version = "0.11", default-features = false, features = ["std"] }
 html5ever = "0.39"
 insta = { version = "1.48", features = ["yaml"] }
-ipc-channel = "0.23"
+ipc-channel = "0.23.1"   # minimum: 0.23.0 has GHSA-fj85-w6rj-rxrc (macOS), see docs/DEPENDENCIES.md
 markup5ever = "0.39"
 # Same reasoning as fontique: parley/system re-enables fontique/system transitively.
 # `complex-scripts` (dictionary line breaking for CJK/Thai/Khmer/Lao/Myanmar) is a Task 18 decision.
