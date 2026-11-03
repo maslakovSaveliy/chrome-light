@@ -272,7 +272,7 @@ impl OutOfBandMessage {
         // `move_handle_to_process` against the pipe server's pid). When this process is that
         // target, the handles are already valid here; duplicating them again from ourselves
         // without DUPLICATE_CLOSE_SOURCE leaked the first copy — one handle per shared-memory
-        // region or channel end received.
+        // region, channel end or big-data receiver received.
         if self.target_process_id == *CURRENT_PROCESS_ID {
             return Ok(());
         }
