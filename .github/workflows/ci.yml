@@ -88,7 +88,8 @@ jobs:
           set -e
           cat gate-s0.err
           test "$code" -eq 78
-          grep -q "sandbox unavailable" gate-s0.err
+          # The renderer logs "sandbox unavailable" itself; this line can only come from the browser.
+          grep -q "renderer exited during bootstrap" gate-s0.err
           test $((end - start)) -le 3
           # Debug-only test flags must not exist in release (clap rejects an unknown flag with 2).
           for flag in --browser-fail-after-handshake --renderer-ignore-shutdown --ignore-shutdown; do

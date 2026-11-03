@@ -3,6 +3,7 @@
 //! must not exist.
 
 use std::{
+    ffi::OsString,
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
     time::{Duration, Instant},
@@ -57,10 +58,14 @@ pub struct SpawnOptions {
 }
 
 /// The trace file a child of `role` writes when the browser traces to `browser_trace`:
-/// `trace.json` → `trace.renderer.json`.
+/// `trace.json` → `trace.renderer.json`, `trace` → `trace.renderer.json`. A path with no file
+/// name (`..`, `/`) is treated as a directory: `../renderer.json`.
 #[must_use]
 pub fn child_trace_path(browser_trace: &Path, role: ProcessType) -> PathBuf {
-    browser_trace.with_extension(format!("{role}.json"))
+    match browser_trace.file_name() {
+        Some(_) => browser_trace.with_extension(format!("{role}.json")),
+        None => browser_trace.join(format!("{role}.json")),
+    }
 }
 
 /// Spawn `exe` as `process_type`, wait up to `opts.timeout` for bootstrap, run the handshake.
@@ -79,10 +84,10 @@ pub fn spawn(
     let mut cmd = Command::new(exe);
     cmd.args(args).args(&opts.extra_args).stdin(Stdio::null());
     if let Some(trace) = &opts.trace_path {
-        cmd.arg(format!(
-            "--trace-out={}",
-            child_trace_path(trace, process_type).display()
-        ));
+        // Built as an OsString so a non-UTF-8 path reaches the child unchanged.
+        let mut arg = OsString::from("--trace-out=");
+        arg.push(child_trace_path(trace, process_type));
+        cmd.arg(arg);
     }
     let mut child = cmd.spawn().map_err(ProcessError::Spawn)?;
     let pid = child.id();
@@ -117,12 +122,15 @@ pub fn spawn(
 /// Waits for the child to connect to `server`, polling `child` in between so that an early exit
 /// is reported at once. The caller kills and reaps the child on any error (for an exited child
 /// that is a no-op: its status has already been collected here).
+///
+/// A child that connects and exits within the same poll slice is reported as
+/// [`ProcessError::ExitedDuringBootstrap`] too; its connection is dropped unused.
 fn await_bootstrap(
     server: BootstrapServer,
     child: &mut Child,
     timeout: Duration,
 ) -> Result<BrowserEndpoint, ProcessError> {
-    let deadline = Instant::now() + timeout;
+    let deadline = deadline_after(timeout);
     let pending = server.start_accept()?;
     loop {
         if let Some(endpoint) = pending.poll(POLL_INTERVAL)? {
@@ -133,7 +141,7 @@ fn await_bootstrap(
                 code: status.code(),
             });
         }
-        if Instant::now() >= deadline {
+        if deadline.is_some_and(|d| Instant::now() >= d) {
             return Err(ProcessError::Ipc(cl_ipc::IpcError::Transport(
                 std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
@@ -144,12 +152,20 @@ fn await_bootstrap(
     }
 }
 
+/// `now + timeout`, or `None` (no deadline) when that instant is not representable — a caller
+/// passing `Duration::MAX` gets an unbounded wait instead of an overflow panic.
+fn deadline_after(timeout: Duration) -> Option<Instant> {
+    Instant::now().checked_add(timeout)
+}
+
 /// How a bounded wait on a child ended (see [`wait_timeout`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WaitOutcome {
-    /// The child's exit status. After a kill it reports the kill, not a normal exit.
+    /// The child's exit status. After a kill this normally reports the kill; if the child exited
+    /// on its own between the last poll and the kill, it is that natural status.
     pub status: ExitStatus,
-    /// `true` when the child was still running at the deadline and was killed.
+    /// `true` when the child was still running at the last poll before the deadline and a kill
+    /// was sent.
     pub killed: bool,
 }
 
@@ -160,8 +176,10 @@ pub struct WaitOutcome {
 /// `std::process::Child` has no wait-with-timeout, so this polls `try_wait` every
 /// [`POLL_INTERVAL`], parking the thread in between (`std::thread::sleep` is disallowed in this
 /// workspace; a spurious unpark only means one extra poll).
+///
+/// A `timeout` too large to add to the current instant means no deadline.
 pub fn wait_timeout(child: &mut Child, timeout: Duration) -> Result<WaitOutcome, ProcessError> {
-    let deadline = Instant::now() + timeout;
+    let deadline = deadline_after(timeout);
     loop {
         if let Some(status) = child.try_wait().map_err(ProcessError::Child)? {
             return Ok(WaitOutcome {
@@ -170,15 +188,19 @@ pub fn wait_timeout(child: &mut Child, timeout: Duration) -> Result<WaitOutcome,
             });
         }
         let now = Instant::now();
-        if now >= deadline {
-            child.kill().map_err(ProcessError::Child)?;
-            let status = child.wait().map_err(ProcessError::Child)?;
-            return Ok(WaitOutcome {
-                status,
-                killed: true,
-            });
-        }
-        std::thread::park_timeout(POLL_INTERVAL.min(deadline - now));
+        let slice = match deadline {
+            Some(d) if now >= d => {
+                child.kill().map_err(ProcessError::Child)?;
+                let status = child.wait().map_err(ProcessError::Child)?;
+                return Ok(WaitOutcome {
+                    status,
+                    killed: true,
+                });
+            }
+            Some(d) => POLL_INTERVAL.min(d - now),
+            None => POLL_INTERVAL,
+        };
+        std::thread::park_timeout(slice);
     }
 }
 
@@ -235,6 +257,26 @@ impl ChildProcess {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn child_trace_path_should_insert_the_role_before_the_extension() {
+        assert_eq!(
+            child_trace_path(Path::new("out/trace.json"), ProcessType::Renderer),
+            PathBuf::from("out/trace.renderer.json")
+        );
+        assert_eq!(
+            child_trace_path(Path::new("out/trace"), ProcessType::Renderer),
+            PathBuf::from("out/trace.renderer.json")
+        );
+    }
+
+    #[test]
+    fn child_trace_path_should_not_reuse_a_path_without_a_file_name() {
+        // `with_extension` is a no-op on `..`; the child must not get the browser's own path.
+        let path = child_trace_path(Path::new(".."), ProcessType::Renderer);
+        assert_ne!(path, PathBuf::from(".."));
+        assert_eq!(path, Path::new("..").join("renderer.json"));
+    }
 
     #[test]
     fn child_args_should_encode_type_and_bootstrap_name() {

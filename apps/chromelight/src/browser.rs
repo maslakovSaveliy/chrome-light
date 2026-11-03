@@ -60,7 +60,8 @@ pub fn run(args: &Args) -> anyhow::Result<i32> {
 
     renderer.endpoint.send(&ToChild::Shutdown)?;
     let outcome = renderer.wait_timeout(SHUTDOWN_TIMEOUT)?;
-    if outcome.killed {
+    // A child that exited cleanly in the race between the last poll and the kill is not an error.
+    if outcome.killed && !outcome.status.success() {
         warn!(
             pid = renderer.pid(),
             "renderer did not exit after Shutdown; killed after {SHUTDOWN_TIMEOUT:?}"

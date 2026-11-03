@@ -9,10 +9,11 @@ pub enum ProcessError {
     /// Bootstrap/handshake failed; child has been killed.
     #[error("ipc during bootstrap: {0}")]
     Ipc(#[from] cl_ipc::IpcError),
-    /// The child exited before connecting to the bootstrap server; `code` is its exit code
-    /// (`None` if it was killed by a signal). A child that refuses to run without a sandbox
-    /// exits 78 here.
-    #[error("child exited during bootstrap with {code:?}")]
+    /// The child exited while the browser waited for it to connect to the bootstrap server (a
+    /// child that connects and exits within one poll slice is reported here too); `code` is its
+    /// exit code (`None` if it was killed by a signal). A child that refuses to run without a
+    /// sandbox exits 78 here.
+    #[error("child exited during bootstrap with code {}", .code.map_or_else(|| "none (signal)".to_owned(), |c| c.to_string()))]
     ExitedDuringBootstrap {
         /// The child's exit code, if it exited normally.
         code: Option<i32>,
