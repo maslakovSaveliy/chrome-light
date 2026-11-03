@@ -15,8 +15,8 @@
 //!   during it coalesce into the latest size, requested when its frame lands.
 //! * One subresource batch per document; a renderer message for a document or `seq` the
 //!   browser never issued is a protocol violation.
-//! * Benign races are dropped silently: a stale display list, a repeated frame for a `seq`
-//!   already issued, a message from a child already killed, a failure report for a superseded
+//! * Benign races are dropped silently: a stale display list, one repeated frame per `seq`
+//!   already issued (seqs increasing; more is the gpu's fault), a message from a child already killed, a failure report for a superseded
 //!   `seq`, a reply for another document. A frame arriving after the renderer died is never
 //!   presented.
 //!
@@ -288,6 +288,8 @@ pub struct BrowserCore {
     finished: bool,
     /// The last frame number issued.
     seq: u64,
+    /// The highest seq whose frame was dropped as a benign duplicate (0: none).
+    last_dropped_seq: u64,
     in_flight: Option<InFlight>,
     /// The latest size the window wants.
     target: Surface,
@@ -320,6 +322,7 @@ impl BrowserCore {
             started: now,
             finished: false,
             seq: 1,
+            last_dropped_seq: 0,
             in_flight: Some(InFlight {
                 seq: 1,
                 surface: target,
@@ -464,11 +467,15 @@ impl BrowserCore {
             return;
         }
         let Some(expected) = self.in_flight.filter(|f| f.seq == meta.seq) else {
-            // A seq the browser issued earlier is a benign duplicate: the renderer holds the
-            // display-list sender and can send one list twice, and the gpu rasters both. Only
-            // a seq never issued is the gpu's own fault.
-            if meta.seq > self.seq {
+            // A seq the browser issued earlier, not yet dropped, is a benign race (a renderer
+            // that sent a list for a seq it reported failed, a duplicate list): dropped once,
+            // seqs in increasing order. A seq never issued, or a second drop, is the gpu's
+            // fault — an honest gpu rasters each seq once — so a hostile gpu cannot make the
+            // browser copy old frames without end.
+            if meta.seq > self.seq || meta.seq <= self.last_dropped_seq {
                 self.fail_gpu(Some(BadMessageReason::FrameUnexpectedSeq), now, out);
+            } else {
+                self.last_dropped_seq = meta.seq;
             }
             return;
         };
@@ -579,12 +586,15 @@ impl BrowserCore {
     }
 }
 
-/// `text` with every control character escaped (`\u{1b}`, `\n` …): renderer-chosen text goes
-/// to a terminal, where an escape sequence could set the title or write the clipboard (OSC 52).
+/// `text` with every control character escaped (`\u{1b}`, `\n` …), and the bidirectional
+/// overrides and isolates too: renderer-chosen text goes to a terminal, where an escape
+/// sequence could set the title or write the clipboard (OSC 52), and a bidi override could make
+/// a warning read as something else.
 fn escape_controls(text: &str) -> String {
     text.chars()
         .map(|c| {
-            if c.is_control() {
+            let bidi = matches!(c, '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
+            if c.is_control() || bidi {
                 c.escape_default().to_string()
             } else {
                 c.to_string()
@@ -1342,11 +1352,28 @@ mod tests {
             },
             t0,
         );
-        // Seq 2 in flight: an old seq 1 frame is still dropped, and seq 2 still lands.
-        assert_eq!(core.on_event(frame(1, 1, 800, 600), t0), []);
+        // Seq 2 in flight: it still lands after the dropped duplicate.
         assert_eq!(
             core.on_event(frame(1, 2, 400, 300), t0),
             [presented(2, 400, 300, 1)]
+        );
+    }
+
+    #[test]
+    fn a_gpu_repeating_old_frames_is_restarted() {
+        // One duplicate per seq, in increasing seq order, is a benign race; a gpu that sends
+        // more is not honest (it rasters each seq once) and is restarted, so it cannot make
+        // the browser copy frame after frame for free.
+        let (mut core, t0) = start(FATAL);
+        let _ = core.on_event(frame(1, 1, 800, 600), t0);
+        assert_eq!(core.on_event(frame(1, 1, 800, 600), t0), []);
+        let actions = core.on_event(frame(1, 1, 800, 600), t0);
+        assert_eq!(
+            actions.first(),
+            Some(&Action::KillGpu {
+                generation: 1,
+                reason: BadMessageReason::FrameUnexpectedSeq
+            })
         );
     }
 
@@ -1420,14 +1447,14 @@ mod tests {
         let actions = core.on_event(
             Event::RendererMsg(FromRenderer::DocumentReady {
                 seq: 1,
-                warnings: vec!["a\u{1b}]52;c;eA==\u{7}b\n".to_owned()],
+                warnings: vec!["a\u{1b}]52;c;eA==\u{7}b\n\u{202e}cba".to_owned()],
             }),
             t0,
         );
         assert_eq!(
             actions,
             [Action::Warnings(vec![
-                "a\\u{1b}]52;c;eA==\\u{7}b\\n".to_owned()
+                "a\\u{1b}]52;c;eA==\\u{7}b\\n\\u{202e}cba".to_owned()
             ])]
         );
     }

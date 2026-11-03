@@ -43,9 +43,10 @@ pub enum ToRenderer {
         /// Replies, by index into the request's URL list.
         replies: Vec<SubresourceReply>,
     },
-    /// Re-lay out the loaded document for a new size. Received before the first display
-    /// list was sent (the document still loading), it sets the size and `seq` of that first
-    /// list.
+    /// Re-lay out the document for a new size. Like [`ToRenderer::Redraw`], answered with a
+    /// display list for `seq` laid out for this size, or with
+    /// [`FromRenderer::RenderFailed`] for `seq`; received while the document is still loading,
+    /// it sets the size and `seq` of the first list.
     Resize {
         /// The new surface size.
         viewport: Viewport,
@@ -59,10 +60,13 @@ pub enum ToRenderer {
         /// The channel's sender.
         sender: IpcSender<DisplayListMsg>,
     },
-    /// Send the current display list again with a new frame number (after a gpu restart).
-    /// Received before the first display list was sent (the document still loading, or its
-    /// first render failed), it sets the `seq` of the first list instead — the browser waits
-    /// for exactly that `seq`.
+    /// Produce the display list again with a new frame number (after a gpu restart, or a
+    /// scale change that keeps the size). Every `Redraw` and [`ToRenderer::Resize`] is
+    /// answered with a display list for its `seq`, laid out for the latest viewport the
+    /// browser sent, or with [`FromRenderer::RenderFailed`] for that `seq` — the browser waits
+    /// for exactly one of them. Received while the document is still loading, it sets the
+    /// `seq` of the first list; if the last layout failed (or was for an older viewport), the
+    /// renderer lays out again rather than resending an old list.
     Redraw {
         /// The frame number the display list must carry.
         seq: u64,
