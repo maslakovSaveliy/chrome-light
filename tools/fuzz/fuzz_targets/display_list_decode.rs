@@ -1,7 +1,7 @@
 #![no_main]
 
 use cl_paint::wire::{MAX_DISPLAY_LIST_BYTES, WireError, decode_display_list};
-use cl_paint::{DisplayItem, DisplayList, MAX_ITEMS, MAX_TOTAL_GLYPHS};
+use cl_paint::{DisplayItem, DisplayList, MAX_GLYPHS_PER_RUN, MAX_ITEMS, MAX_TOTAL_GLYPHS};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -19,22 +19,42 @@ fuzz_target!(|data: &[u8]| {
         .map(|(dl, _)| dl);
     match ours {
         Ok(dl) => {
-            assert_eq!(derived.as_ref(), Some(&dl), "the derived decoding disagrees");
+            assert_eq!(
+                derived.as_ref(),
+                Some(&dl),
+                "the derived decoding disagrees"
+            );
             assert!(dl.items.len() <= MAX_ITEMS);
-            let glyphs: usize = dl
-                .items
-                .iter()
-                .map(|item| match item {
-                    DisplayItem::Text { run } => run.glyphs.len(),
-                    _ => 0,
-                })
-                .sum();
-            assert!(glyphs <= MAX_TOTAL_GLYPHS);
+            assert!(!over_limits(&dl));
             let _ = cl_paint::validate(&dl, cl_layout::Rect::from_px(0.0, 0.0, 800.0, 600.0));
         }
         Err(WireError::Undecodable(_) | WireError::Trailing(_)) => {
-            assert!(derived.is_none(), "the derived decoding accepts what we reject");
+            assert!(
+                derived.is_none(),
+                "the derived decoding accepts what we reject"
+            );
         }
-        Err(WireError::LimitsExceeded | WireError::TooLarge { .. }) => {}
+        Err(WireError::LimitsExceeded) => {
+            // Refused for a limit: the derived decoding must fail too, or produce a list that
+            // really is over one — never a legitimate list.
+            if let Some(dl) = &derived {
+                assert!(over_limits(dl), "a list within the limits was refused");
+            }
+        }
+        Err(WireError::TooLarge { .. }) => {}
     }
 });
+
+/// Whether `dl` is over `MAX_ITEMS`, `MAX_GLYPHS_PER_RUN` or `MAX_TOTAL_GLYPHS`.
+fn over_limits(dl: &DisplayList) -> bool {
+    let mut total: usize = 0;
+    for item in &dl.items {
+        if let DisplayItem::Text { run } = item {
+            if run.glyphs.len() > MAX_GLYPHS_PER_RUN {
+                return true;
+            }
+            total = total.saturating_add(run.glyphs.len());
+        }
+    }
+    dl.items.len() > MAX_ITEMS || total > MAX_TOTAL_GLYPHS
+}

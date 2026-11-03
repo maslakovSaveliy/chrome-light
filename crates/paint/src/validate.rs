@@ -88,7 +88,8 @@ pub const MAX_GLYPHS_PER_RUN: usize = 65_536;
 /// The culled area a list can cover is (800 + 2 × 4096) × (600 + 2 × 4096) CSS px at the
 /// default viewport — about 600 000 glyphs of solid, wrapped 16 px text — so a page of
 /// wrapped text stays under it. Culling is per item, so an unwrapped run (`white-space:
-/// pre`/`nowrap`) that crosses the culled area keeps all of its glyphs and counts in full. At 16 bytes per in-memory glyph the limit bounds glyph storage to 16 MiB;
+/// pre`/`nowrap`) that crosses the culled area keeps all of its glyphs and counts in full.
+/// At 16 bytes per in-memory glyph the limit bounds glyph storage to 16 MiB;
 /// [`MAX_GLYPHS_PER_RUN`] alone would allow [`MAX_ITEMS`] × 65 536 of them.
 pub const MAX_TOTAL_GLYPHS: usize = 1 << 20;
 
