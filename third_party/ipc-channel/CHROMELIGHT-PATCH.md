@@ -45,5 +45,5 @@ replaces or fixes.
 ## Removing this copy
 
 Drop the directory and both `[patch.crates-io]` entries once an upstream release contains an
-equivalent fix (upstream report: see `docs/DEPENDENCIES.md`, `ipc-channel` row). Until then any
+equivalent fix (upstream report: https://github.com/servo/ipc-channel/issues/461). Until then any
 upgrade of `ipc-channel` must re-apply the change to the new version.
