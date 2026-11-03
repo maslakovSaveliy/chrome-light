@@ -297,7 +297,7 @@ pub struct RestartPolicy; impl RestartPolicy { pub fn allow(&mut self, now: Inst
 
 **Interfaces:** `pub struct RendererState; impl RendererState { pub fn on(&mut self, input: RendererInput, now: Instant) -> Vec<RendererOutput>; }` with inputs `Down(ToRenderer)`, `Tick`, and outputs `Up(FromRenderer)`, `SendDisplayList { seq: u64, bytes: Vec<u8> }`, `Exit`. IO shell: pump for the downward channel, `cl_renderer` for the pipeline, `cl_paint::wire::encode_display_list` → `IpcSharedMemory::from_bytes` → `DisplayListMsg`. A failed display-list send means "the gpu is gone — wait for `DisplayListSender` of a newer generation and resend the latest list".
 
-- [ ] **Step 1: Failing tests:** `load_requests_subresources_then_renders`, `shutdown_honored_while_awaiting_subresources`, `subresource_timeout_renders_with_warnings` (5 s via injected `Instant`), `resize_during_await_renders_latest_only`, `new_display_list_sender_triggers_resend`.
+- [ ] **Step 1: Failing tests:** `load_requests_subresources_then_renders`, `shutdown_honored_while_awaiting_subresources`, `subresource_timeout_renders_with_warnings` (5 s via injected `Instant`), `resize_during_await_renders_latest_only`, `new_display_list_sender_triggers_resend`, `redraw_during_load_sets_the_first_seq` (a `Redraw`/`Resize` before the first display list sets that list's seq — the browser waits for exactly it; Task 7 review).
 - [ ] **Step 2: Implement; Gate + commit** `renderer: renderer process loop over cl-renderer`.
 
 ---
@@ -308,7 +308,7 @@ pub struct RestartPolicy; impl RestartPolicy { pub fn allow(&mut self, now: Inst
 
 **Interfaces:** `pub struct GpuState { surface: Option<(Viewport, u64)>, pending: Option<(u64, Vec<u8>)> }` with `on(GpuInput) -> Vec<GpuOutput>`; inputs `Down(ToGpu)`, `DisplayList(DisplayListMsg)`; outputs `Up(FromGpu)`, `Frame(FrameMsg)`. Pipeline per display list, in this order: length > `MAX_DISPLAY_LIST_BYTES` → `BadDisplayList{DisplayListTooLarge}` before any copy; `seq < surface.seq` → `Stale`; `copy_bounded` (so `pending` only ever holds an owned, size-checked copy); `seq > surface.seq` → hold the copy in `pending` (latest wins); otherwise → `decode_display_list` → `cl_gfx::cpu::rasterize(&dl, surface.w, surface.h, &fonts)` → `FrameMsg`. `GfxError::Invalid` → `DisplayListInvalid`, `FontNotBundled` → `DisplayListUnknownFont`.
 
-- [ ] **Step 1: Failing tests:** `dl_before_set_surface_held_then_rastered`, `stale_seq_rejected_as_stale`, `oversize_shm_rejected_before_copy`, `undecodable_bytes_reported_as_bad`, `unknown_font_rejected_gpu_alive`, `raster_size_comes_from_surface_not_display_list`.
+- [ ] **Step 1: Failing tests:** `dl_before_set_surface_held_then_rastered`, `stale_seq_rejected_as_stale`, `oversize_shm_rejected_before_copy`, `undecodable_bytes_reported_as_bad`, `unknown_font_rejected_gpu_alive`, `raster_size_comes_from_surface_not_display_list`, `a_seq_is_rastered_once` (after rastering seq N, a list with seq ≤ N is `Stale` — Task 7 review; the browser also drops a repeated frame for an issued seq).
 - [ ] **Step 2: Implement; Gate + commit** `gpu: raster service process with pending-seq slot and bad-list reporting`.
 
 ---

@@ -15,8 +15,10 @@
 //!   during it coalesce into the latest size, requested when its frame lands.
 //! * One subresource batch per document; a renderer message for a document or `seq` the
 //!   browser never issued is a protocol violation.
-//! * Benign races are dropped silently: a stale display list, a message from a child already
-//!   killed, a reply for another document.
+//! * Benign races are dropped silently: a stale display list, a repeated frame for a `seq`
+//!   already issued, a message from a child already killed, a failure report for a superseded
+//!   `seq`, a reply for another document. A frame arriving after the renderer died is never
+//!   presented.
 //!
 //! With [`CoreOptions::fatal_errors`] (headless, `--exit-after-first-present`) every failure
 //! ends in [`Action::Exit`] with its code from [`crate::exit`]; in a window the error is shown
@@ -244,7 +246,8 @@ pub enum Action {
     },
     /// Put this frame in the window (or the PNG, headless).
     Present(PresentFrame),
-    /// Report the document's warnings (stderr; the window's console later).
+    /// Report the document's warnings (stderr; the window's console later), control
+    /// characters already escaped.
     Warnings(Vec<String>),
     /// Show this error instead of the page.
     ShowError(ErrorKind),
@@ -428,7 +431,9 @@ impl BrowserCore {
                 } else if !self.renderer.warnings_reported {
                     self.renderer.warnings_reported = true;
                     if !warnings.is_empty() {
-                        out.push(Action::Warnings(warnings));
+                        out.push(Action::Warnings(
+                            warnings.iter().map(|w| escape_controls(w)).collect(),
+                        ));
                     }
                 }
             }
@@ -437,22 +442,34 @@ impl BrowserCore {
                     self.kill_renderer(unexpected, out);
                     return;
                 }
+                // Only the seq in flight counts; a failure of a superseded one is old news.
+                let Some(failed) = self.in_flight.filter(|f| f.seq == seq) else {
+                    return;
+                };
                 self.fail(ErrorKind::RenderFailed, out);
                 // In a window: the failed seq frees the slot; a different size wanted since
                 // gets its chance (the same size would only fail again).
-                if let Some(failed) = self.in_flight.filter(|f| f.seq == seq) {
-                    self.in_flight = None;
-                    if !self.finished && self.target != failed.surface {
-                        self.request(out);
-                    }
+                self.in_flight = None;
+                if !self.finished && self.target != failed.surface {
+                    self.request(out);
                 }
             }
         }
     }
 
     fn on_frame(&mut self, meta: &FrameMeta, pixels: Vec<u8>, now: Instant, out: &mut Vec<Action>) {
-        let Some(expected) = self.in_flight else {
-            self.fail_gpu(Some(BadMessageReason::FrameUnexpectedSeq), now, out);
+        // A frame still in flight when the renderer died carries its content: never paint it
+        // over the error.
+        if !self.renderer.alive {
+            return;
+        }
+        let Some(expected) = self.in_flight.filter(|f| f.seq == meta.seq) else {
+            // A seq the browser issued earlier is a benign duplicate: the renderer holds the
+            // display-list sender and can send one list twice, and the gpu rasters both. Only
+            // a seq never issued is the gpu's own fault.
+            if meta.seq > self.seq {
+                self.fail_gpu(Some(BadMessageReason::FrameUnexpectedSeq), now, out);
+            }
             return;
         };
         let size = (
@@ -560,6 +577,20 @@ impl BrowserCore {
             out.push(Action::Exit(kind.exit_code()));
         }
     }
+}
+
+/// `text` with every control character escaped (`\u{1b}`, `\n` …): renderer-chosen text goes
+/// to a terminal, where an escape sequence could set the title or write the clipboard (OSC 52).
+fn escape_controls(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_control() {
+                c.escape_default().to_string()
+            } else {
+                c.to_string()
+            }
+        })
+        .collect()
 }
 
 /// The surface for a window: [`surface_for`], each edge clamped to
@@ -884,8 +915,9 @@ mod tests {
             },
             t0,
         );
-        // Everything from generation 1 is now noise: its frame, its exit, its bad messages.
-        assert_eq!(core.on_event(frame(1, 1, 800, 600), t0), []);
+        // Everything from generation 1 is now noise: its frame (for the seq now in flight, so
+        // only the generation rejects it), its exit, its bad messages.
+        assert_eq!(core.on_event(frame(1, 2, 800, 600), t0), []);
         assert_eq!(
             core.on_event(
                 Event::GpuExited {
@@ -1294,6 +1326,110 @@ mod tests {
         let (mut core, t0) = start(FATAL);
         let _ = core.on_event(frame(1, 1, 800, 600), t0);
         assert_eq!(core.on_event(Event::Tick, at(t0, 60)), []);
+    }
+
+    #[test]
+    fn a_repeated_frame_for_an_issued_seq_is_dropped_not_blamed_on_the_gpu() {
+        // The renderer holds the display-list sender: it can send seq 1 twice, and the gpu
+        // rasters both. The second frame is a benign duplicate, not a gpu fault.
+        let (mut core, t0) = start(FATAL);
+        let _ = core.on_event(frame(1, 1, 800, 600), t0);
+        assert_eq!(core.on_event(frame(1, 1, 800, 600), t0), []);
+        let _ = core.on_event(
+            Event::Resized {
+                physical: (400, 300),
+                scale: 1.0,
+            },
+            t0,
+        );
+        // Seq 2 in flight: an old seq 1 frame is still dropped, and seq 2 still lands.
+        assert_eq!(core.on_event(frame(1, 1, 800, 600), t0), []);
+        assert_eq!(
+            core.on_event(frame(1, 2, 400, 300), t0),
+            [presented(2, 400, 300, 1)]
+        );
+    }
+
+    #[test]
+    fn a_frame_for_a_seq_never_issued_restarts_gpu() {
+        let (mut core, t0) = start(FATAL);
+        let _ = core.on_event(frame(1, 1, 800, 600), t0);
+        let actions = core.on_event(frame(1, 5, 800, 600), t0);
+        assert_eq!(
+            actions.first(),
+            Some(&Action::KillGpu {
+                generation: 1,
+                reason: BadMessageReason::FrameUnexpectedSeq
+            })
+        );
+    }
+
+    #[test]
+    fn a_frame_after_the_renderer_died_is_not_presented() {
+        let (mut core, t0) = start(WINDOW);
+        let _ = core.on_event(
+            Event::RendererBad(BadMessageReason::RendererUndecodable),
+            t0,
+        );
+        assert_eq!(core.on_event(frame(1, 1, 800, 600), t0), []);
+    }
+
+    #[test]
+    fn a_gpu_failure_after_the_renderer_died_is_not_respawned() {
+        let (mut core, t0) = start(WINDOW);
+        let _ = core.on_event(Event::RendererExited(Some(1)), t0);
+        assert_eq!(
+            core.on_event(
+                Event::GpuExited {
+                    generation: 1,
+                    code: None
+                },
+                t0
+            ),
+            []
+        );
+    }
+
+    #[test]
+    fn render_failed_for_a_superseded_seq_is_ignored() {
+        let (mut core, t0) = start(WINDOW);
+        let _ = core.on_event(frame(1, 1, 800, 600), t0);
+        let _ = core.on_event(
+            Event::Resized {
+                physical: (400, 300),
+                scale: 1.0,
+            },
+            t0,
+        );
+        assert_eq!(
+            core.on_event(
+                Event::RendererMsg(FromRenderer::RenderFailed {
+                    seq: 1,
+                    kind: RenderFailureKind::Layout
+                }),
+                t0
+            ),
+            []
+        );
+    }
+
+    #[test]
+    fn warnings_reach_the_terminal_with_control_characters_escaped() {
+        // OSC 52 (clipboard write) and a terminal-title sequence from a hostile renderer.
+        let (mut core, t0) = start(FATAL);
+        let actions = core.on_event(
+            Event::RendererMsg(FromRenderer::DocumentReady {
+                seq: 1,
+                warnings: vec!["a\u{1b}]52;c;eA==\u{7}b\n".to_owned()],
+            }),
+            t0,
+        );
+        assert_eq!(
+            actions,
+            [Action::Warnings(vec![
+                "a\\u{1b}]52;c;eA==\\u{7}b\\n".to_owned()
+            ])]
+        );
     }
 
     #[test]

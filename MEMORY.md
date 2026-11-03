@@ -78,6 +78,7 @@ Deferred to M1+; do not block the public beta:
 
 1. **No cap on `<link>`/`<style>` elements in the renderer** (Task 5 review): `subresource_requests` deduplicates URLs, but the style pass adds one sheet per element, so 100 000 `<link href=big.css>` clone and parse `big.css` 100 000 times per render (linear, same as the M1a testshell). The IPC limit caps the URL list, not the element count. Resource limits for the renderer (element count, sheet bytes) before Gate S0 — with the M1a tree-depth cap (debt 1).
 2. **`<link>` matched on the local name only** (`cl_style::sheets`): an SVG-namespace `<link rel=stylesheet>` counts as a stylesheet and, since Task 5, becomes a subresource request. Pre-existing; compat note, fix with the namespace check when SVG lands.
+3. **The subresource policy is as wide as the document's directory** (Task 7 review): a document opened from `~` or `/` lets a compromised renderer read every regular file under it. Harmless in M1b (no egress, no untrusted content before Gate S0); narrow it (an allow-list by extension or a per-document grant) before M2.
 
 ## M1a discoveries not to rediscover
 

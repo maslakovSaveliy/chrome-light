@@ -28,7 +28,8 @@ pub struct LoadedSubresource {
 }
 
 /// The file a renderer may read for `url`, given the canonical directory of the top-level
-/// document (`doc_dir`, canonicalised by the caller once per document).
+/// document (`doc_dir`, canonicalised by the caller once per document; a directory that is not
+/// absolute serves nothing).
 ///
 /// The check runs on the canonical path, so `..` segments and symlinks out of the directory
 /// are refused however they are spelled, and the file type is checked before anything opens
@@ -40,6 +41,11 @@ pub struct LoadedSubresource {
 /// [`SubresourceRefusal::Io`] if the path does not exist or cannot be canonicalised;
 /// [`SubresourceRefusal::OutsideDocumentDirectory`]; [`SubresourceRefusal::NotRegularFile`].
 pub fn resolve_subresource(doc_dir: &Path, url: &str) -> Result<PathBuf, SubresourceRefusal> {
+    // Every path starts with `""`, and a relative directory would be resolved against the
+    // browser's working directory: neither names a document directory.
+    if !doc_dir.is_absolute() {
+        return Err(SubresourceRefusal::OutsideDocumentDirectory);
+    }
     let url = cl_net::Url::parse(url).map_err(|_| SubresourceRefusal::NotFile)?;
     if url.scheme() != "file" {
         return Err(SubresourceRefusal::NotFile);
@@ -189,9 +195,10 @@ mod tests {
     #[test]
     fn path_escape_and_fifo_refused() {
         let fx = Fixture::new("escape");
-        // `..` out of the directory (the URL parser keeps the segments in the string here,
-        // the canonical path decides).
-        let dotdot = format!("{}/../secret.css", url(&fx.doc));
+        // `..` out of the directory. The URL parser removes a literal `/../`, but an encoded
+        // slash survives it and `to_file_path` decodes it into a real `..` component, so only
+        // the canonical path catches this one.
+        let dotdot = format!("{}/..%2Fsecret.css", url(&fx.doc));
         assert_eq!(
             resolve_subresource(&fx.doc, &dotdot),
             Err(SubresourceRefusal::OutsideDocumentDirectory)
@@ -221,6 +228,20 @@ mod tests {
             assert_eq!(
                 resolve_subresource(&fx.doc, &url(&fifo)),
                 Err(SubresourceRefusal::NotRegularFile)
+            );
+        }
+    }
+
+    #[test]
+    fn a_document_directory_that_is_not_absolute_serves_nothing() {
+        // `Path::new("page.html").parent()` is `""`, and every path starts with `""`.
+        let fx = Fixture::new("relative");
+        let a = url(&fx.doc.join("a.css"));
+        for dir in ["", "doc", "."] {
+            assert_eq!(
+                resolve_subresource(Path::new(dir), &a),
+                Err(SubresourceRefusal::OutsideDocumentDirectory),
+                "{dir:?}"
             );
         }
     }
