@@ -53,7 +53,7 @@ Deferred to M1+; do not block the public beta:
 1. `BootstrapServer::accept_with_timeout` starts one blocked accept-thread per call; the leak is bounded by one `spawn()` (not by the browser process lifetime) — revisit the handshake in M1.
 2. ~~Release sandbox-refusal path takes ~15 s~~ — **closed by M1b Task 2**: `spawn` polls the child while waiting for bootstrap and returns `ExitedDuringBootstrap`; the browser exits 78 in < 1 s, and CI Gate S0 asserts `== 78`, the message, ≤ 3 s, and exit 2 for every debug-only flag in release. Still: worst case `spawn` = 2×timeout (accept + handshake) for a child that connects and then stalls.
 3. `browser_side` masks `Violation` if the reject-ack send fails — log-and-ignore.
-4. `BrowserEndpoint`/`ChildEndpoint` are structurally identical — generic helper as the API grows.
+4. ~~`BrowserEndpoint`/`ChildEndpoint` are structurally identical~~ — **closed by M1b Task 3**: both are generic over `ChildProtocol` (typed downward channel, postcard upward).
 5. Fuzz job in CI without rust-cache.
 6. Test temp-dir boilerplate is duplicated (testshell, chromelight tests) — helper.
 7. Browser-side `recv_timeout` — M0-ONLY poll via `park_timeout(1 ms)`; `park_timeout` is not in disallowed-methods; blocking `BrowserEndpoint::recv` remains pub (used by tests). M1: `IpcReceiverSet`/multiplexed wait, type-level ban on unbounded recv on the browser side.

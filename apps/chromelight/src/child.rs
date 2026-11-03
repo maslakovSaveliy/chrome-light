@@ -2,6 +2,7 @@
 //! handshake, answer pings until Shutdown.
 
 use cl_ipc::{
+    M0Protocol,
     bootstrap::connect_child,
     handshake,
     message::{ToBrowser, ToChild},
@@ -54,7 +55,7 @@ fn serve(args: &Args, sandbox: &Sandbox<cl_process::Applied>) -> anyhow::Result<
         .ipc_bootstrap
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("--ipc-bootstrap is required"))?;
-    let ep = connect_child(name)?;
+    let ep = connect_child::<M0Protocol>(name, None)?;
     handshake::child_side(&ep, args.process_type, std::process::id())?;
     info!(role = %args.process_type, policy = sandbox.policy_name(), "child ready");
     loop {

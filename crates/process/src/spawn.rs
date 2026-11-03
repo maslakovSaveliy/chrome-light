@@ -10,7 +10,7 @@ use std::{
 };
 
 use cl_ipc::{
-    ReceiverCtx,
+    ChildProtocol, ReceiverCtx,
     bootstrap::{BootstrapServer, BrowserEndpoint},
     handshake,
     message::Hello,
@@ -19,13 +19,13 @@ use cl_platform::ProcessType;
 
 use crate::error::ProcessError;
 
-/// A live, handshaken child.
+/// A live, handshaken child of protocol `P`.
 #[derive(Debug)]
-pub struct ChildProcess {
-    /// What we spawned it as.
+pub struct ChildProcess<P: ChildProtocol> {
+    /// What we spawned it as (`P::ROLE`).
     pub process_type: ProcessType,
     /// Channel to the child.
-    pub endpoint: BrowserEndpoint,
+    pub endpoint: BrowserEndpoint<P>,
     /// The validated hello.
     pub hello: Hello,
     child: Child,
@@ -68,18 +68,19 @@ pub fn child_trace_path(browser_trace: &Path, role: ProcessType) -> PathBuf {
     }
 }
 
-/// Spawn `exe` as `process_type`, wait up to `opts.timeout` for bootstrap, run the handshake.
+/// Spawn `exe` as a child of protocol `P` (role `P::ROLE`), wait up to `opts.timeout` for
+/// bootstrap, run the handshake.
 ///
 /// While waiting for the child to connect, the child's exit status is polled every
 /// [`POLL_INTERVAL`]: a child that exits first (for example because it refuses to run without a
 /// sandbox) ends the wait at once with [`ProcessError::ExitedDuringBootstrap`] instead of
 /// running out the timeout.
-pub fn spawn(
+pub fn spawn<P: ChildProtocol>(
     exe: &Path,
-    process_type: ProcessType,
     opts: &SpawnOptions,
-) -> Result<ChildProcess, ProcessError> {
-    let server = BootstrapServer::new()?;
+) -> Result<ChildProcess<P>, ProcessError> {
+    let process_type = P::ROLE;
+    let server = BootstrapServer::<P>::new()?;
     let args = child_args(process_type, server.name());
     let mut cmd = Command::new(exe);
     cmd.args(args).args(&opts.extra_args).stdin(Stdio::null());
@@ -125,11 +126,11 @@ pub fn spawn(
 ///
 /// A child that connects and exits within the same poll slice is reported as
 /// [`ProcessError::ExitedDuringBootstrap`] too; its connection is dropped unused.
-fn await_bootstrap(
-    server: BootstrapServer,
+fn await_bootstrap<P: ChildProtocol>(
+    server: BootstrapServer<P>,
     child: &mut Child,
     timeout: Duration,
-) -> Result<BrowserEndpoint, ProcessError> {
+) -> Result<BrowserEndpoint<P>, ProcessError> {
     let deadline = deadline_after(timeout);
     let pending = server.start_accept()?;
     loop {
@@ -211,7 +212,7 @@ fn kill_and_reap(child: &mut Child) {
     let _ = child.wait();
 }
 
-impl Drop for ChildProcess {
+impl<P: ChildProtocol> Drop for ChildProcess<P> {
     /// A child that is still running when its handle is dropped is killed and reaped. The
     /// browser owns every child's lifetime; nothing may outlive its handle (docs/SECURITY.md §3).
     fn drop(&mut self) {
@@ -229,7 +230,7 @@ impl Drop for ChildProcess {
     }
 }
 
-impl ChildProcess {
+impl<P: ChildProtocol> ChildProcess<P> {
     /// OS pid.
     #[must_use]
     pub fn pid(&self) -> u32 {
