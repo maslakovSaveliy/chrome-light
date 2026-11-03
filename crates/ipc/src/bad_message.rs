@@ -39,7 +39,8 @@ pub enum BadMessageReason {
     GpuUnexpectedMessage = 44,
 }
 
-/// Every reason, for decoding a code back.
+/// Every reason, for decoding a code back. The test-only `in_all` stops compiling when a variant
+/// is added, as a reminder to list it here.
 const ALL: [BadMessageReason; 14] = [
     BadMessageReason::RendererUndecodable,
     BadMessageReason::RendererInvalidField,
@@ -56,6 +57,29 @@ const ALL: [BadMessageReason; 14] = [
     BadMessageReason::GpuUndecodable,
     BadMessageReason::GpuUnexpectedMessage,
 ];
+
+/// Exhaustive over the variants: a new variant breaks this match until it is added here — and,
+/// as the comment in each arm demands, to [`ALL`] (checked by `every_code_should_decode_back…`).
+#[cfg(test)]
+const fn in_all(reason: BadMessageReason) -> bool {
+    match reason {
+        // Each of these is in `ALL`.
+        BadMessageReason::RendererUndecodable
+        | BadMessageReason::RendererInvalidField
+        | BadMessageReason::RendererUnexpectedMessage
+        | BadMessageReason::RendererTooManySubresources
+        | BadMessageReason::DisplayListTooLarge
+        | BadMessageReason::DisplayListUndecodable
+        | BadMessageReason::DisplayListInvalid
+        | BadMessageReason::DisplayListUnknownFont
+        | BadMessageReason::DisplayListLimitsExceeded
+        | BadMessageReason::FrameWrongSize
+        | BadMessageReason::FrameShortPixels
+        | BadMessageReason::FrameUnexpectedSeq
+        | BadMessageReason::GpuUndecodable
+        | BadMessageReason::GpuUnexpectedMessage => true,
+    }
+}
 
 impl BadMessageReason {
     /// The stable numeric code.
@@ -134,8 +158,14 @@ mod tests {
     #[test]
     fn every_code_should_decode_back_and_unknown_codes_should_not() {
         for reason in super::ALL {
+            assert!(super::in_all(reason));
             assert_eq!(R::try_from(reason.code()), Ok(reason));
         }
+        // `ALL` lists each variant once: as many distinct codes as entries.
+        let mut codes: Vec<u16> = super::ALL.iter().map(|r| r.code()).collect();
+        codes.sort_unstable();
+        codes.dedup();
+        assert_eq!(codes.len(), super::ALL.len());
         assert!(R::try_from(5).is_err());
         assert!(R::try_from(0).is_err());
     }
