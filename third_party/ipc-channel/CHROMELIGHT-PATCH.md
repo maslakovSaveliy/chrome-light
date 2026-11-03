@@ -45,5 +45,5 @@ replaces or fixes.
 ## Removing this copy
 
 Drop the directory and both `[patch.crates-io]` entries once an upstream release contains an
-equivalent fix (upstream report: https://github.com/servo/ipc-channel/issues/461). Until then any
+equivalent fix (upstream report: https://github.com/servo/ipc-channel/issues/461; our fix: https://github.com/servo/ipc-channel/pull/462, which puts the same check at the only call site, `Message::oob_data`, so `recover_handles`' own unit tests keep calling it with the current pid). Until then any
 upgrade of `ipc-channel` must re-apply the change to the new version.
