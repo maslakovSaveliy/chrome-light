@@ -210,7 +210,10 @@ mod tests {
         );
         // A symlink inside the directory that points out of it.
         let link = fx.doc.join("link.css");
-        if run("ln", &[Path::new("-s"), &secret, &link]) {
+        // Only a real symlink counts: Git for Windows' `ln -s` may copy the file instead.
+        let made_symlink = run("ln", &[Path::new("-s"), &secret, &link])
+            && std::fs::symlink_metadata(&link).is_ok_and(|m| m.file_type().is_symlink());
+        if made_symlink {
             assert_eq!(
                 resolve_subresource(&fx.doc, &url(&link)),
                 Err(SubresourceRefusal::OutsideDocumentDirectory)
@@ -225,10 +228,15 @@ mod tests {
         );
         let fifo = fx.doc.join("fifo.css");
         if run("mkfifo", &[&fifo]) {
-            assert_eq!(
-                resolve_subresource(&fx.doc, &url(&fifo)),
-                Err(SubresourceRefusal::NotRegularFile)
-            );
+            let result = resolve_subresource(&fx.doc, &url(&fifo));
+            if std::fs::metadata(&fifo).is_ok_and(|m| !m.is_file() && !m.is_dir()) {
+                // A real FIFO (Unix): refused for what it is, before anything opens it.
+                assert_eq!(result, Err(SubresourceRefusal::NotRegularFile));
+            } else {
+                // Git for Windows ships an `mkfifo` whose result `canonicalize` cannot
+                // resolve (windows-2022 CI): refused as Io — never served either way.
+                assert!(result.is_err(), "{result:?}");
+            }
         }
     }
 
