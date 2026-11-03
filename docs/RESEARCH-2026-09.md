@@ -1,47 +1,47 @@
-# Исследование: состояние браузерных движков и Rust-экосистемы
+# Research: state of browser engines and the Rust ecosystem
 
-**Срез: 2026-09-07.** Базовые референсы — skill `browser-engine-research` (срез 2026-09-05); volatile-факты перепроверены в сети 2026-09-07. Факты старше 3 месяцев перепроверять перед использованием.
+**Snapshot: 2026-09-07.** Base references — skill `browser-engine-research` (snapshot 2026-09-05); volatile facts re-verified online 2026-09-07. Re-verify facts older than 3 months before use.
 
-## 1. Вывод для проекта
+## 1. Conclusion for the project
 
-«Полный аналог Chrome, на Rust, в разы легче» — три цели, которые нельзя достичь одновременно в v1. Владелец выбрал класс **независимый движок с нуля** (соло + AI-агенты), поэтому:
+"A full Chrome equivalent, in Rust, many times lighter" — three goals that cannot be achieved simultaneously in v1. The owner chose the class **independent engine from scratch** (solo + AI agents), therefore:
 
-- совместимость — асимптотическая цель, измеряемая WPT/Test262/corpus, а не обещание паритета;
-- «легче» — измеримый бюджет (ADR-0012), достигаемый архитектурой (freeze/hibernate, один isolate, отсутствие лишних процессов), а не «Rust сам по себе»;
-- «всё как в Chrome» — реализуется через Chrome-интероп (импорт профиля, MV3, CDP), а не через Chromium-код.
+- compatibility is an asymptotic goal, measured by WPT/Test262/corpus, not a parity promise;
+- "lighter" is a measurable budget (ADR-0012), achieved through architecture (freeze/hibernate, one isolate, no extra processes), not "Rust by itself";
+- "everything like in Chrome" is delivered via Chrome interop (profile import, MV3, CDP), not via Chromium code.
 
-Реалистичный масштаб по референсу: узкий secure engine для контролируемого контента — 8–20 инженеров × 2–4 года; движок с полезной долей открытого веба — десятки инженеров, 5+ лет. Соло + агенты меняет производительность, но не объём спецификаций. Отсюда жёсткие milestone-гейты и feature matrix.
+Realistic scale per the reference: a narrow secure engine for controlled content — 8–20 engineers × 2–4 years; an engine with a useful share of the open Web — dozens of engineers, 5+ years. Solo + agents changes productivity, but not the volume of specs. Hence the hard milestone gates and the feature matrix.
 
-## 2. Движки (сентябрь 2026)
+## 2. Engines (September 2026)
 
-| Проект | Статус | Значение для нас |
+| Project | Status | Significance for us |
 |---|---|---|
-| **Servo** | 0.1.0 LTS на crates.io (2026-04-13), 0.5.0 (2026-08-21). Embedding API: proxies, root certs, cookies, local/sessionStorage, dialogs, console, DevTools. Multithreaded canvas (+55% fps), Linux aarch64, Android 10+. Донаты ~7.8k USD/мес. Multiprocess есть, sandbox незрелый. | Не embed-им. Источник архитектурных решений и crate-ов (stylo, servo_arc, ipc-channel, webrender-идеи). Verso (браузер на Servo) заархивирован — не поспевал за API. |
-| **Ladybird** | C++→Rust: LibJS frontend (фев 2026), HTML parser (май), style+layout (июль). PR закрыты (июнь 2026). Alpha Linux/macOS — 2026, beta — 2027. Swift-направление удалено. | Не embeddable. Reference для «vertical stack с нуля», подтверждение что AI-assisted порт C++→Rust реален. |
-| **Chromium/Blink/V8** | Chrome 153 — 2026-09-08; далее **релиз каждые 2 недели**. MV2 отключён с Chrome 138 (июль 2025), Web Store очищен 2026-08-31. Rust в Chromium production с M119 (PNG/JSON/fonts парсеры). | Compat-target и источник V8. 2-недельный ритм = мы обновляем V8 crate так же часто. |
-| **CEF** | crate `cef` 151.8.1 (2026-09-03); bitbucket-релизы отстают от crate. | Отвергнут (ADR-0001): не «легче», не «свой». |
-| **Blitz (DioxusLabs)** | `blitz-dom` 0.2.4: stylo + taffy + parley + vello, experimental. | Доказательство сборки движка из crate-ов; заимствуем структуру интеграции stylo↔taffy (`stylo_taffy`). |
-| **wry/Tauri** | системные WebView: WebView2 / WKWebView / WebKitGTK. | Отвергнут: три разных движка, нет паритета. |
+| **Servo** | 0.1.0 LTS on crates.io (2026-04-13), 0.5.0 (2026-08-21). Embedding API: proxies, root certs, cookies, local/sessionStorage, dialogs, console, DevTools. Multithreaded canvas (+55% fps), Linux aarch64, Android 10+. Donations ~7.8k USD/month. Multiprocess exists, sandbox immature. | We don't embed it. Source of architectural decisions and crates (stylo, servo_arc, ipc-channel, webrender ideas). Verso (a Servo-based browser) is archived — it couldn't keep up with the API. |
+| **Ladybird** | C++→Rust: LibJS frontend (Feb 2026), HTML parser (May), style+layout (July). PRs closed (June 2026). Alpha Linux/macOS — 2026, beta — 2027. Swift direction dropped. | Not embeddable. Reference for "vertical stack from scratch", confirmation that an AI-assisted C++→Rust port is real. |
+| **Chromium/Blink/V8** | Chrome 153 — 2026-09-08; then **a release every 2 weeks**. MV2 disabled since Chrome 138 (July 2025), Web Store purged 2026-08-31. Rust in Chromium production since M119 (PNG/JSON/fonts parsers). | Compat target and source of V8. 2-week cadence = we update the V8 crate just as often. |
+| **CEF** | crate `cef` 151.8.1 (2026-09-03); bitbucket releases lag behind the crate. | Rejected (ADR-0001): not "lighter", not "our own". |
+| **Blitz (DioxusLabs)** | `blitz-dom` 0.2.4: stylo + taffy + parley + vello, experimental. | Proof of assembling an engine from crates; we borrow the stylo↔taffy integration structure (`stylo_taffy`). |
+| **wry/Tauri** | system WebViews: WebView2 / WKWebView / WebKitGTK. | Rejected: three different engines, no parity. |
 
-## 3. Chrome-интероп: факты
+## 3. Chrome interop: facts
 
-- **Chrome Sync через Google-аккаунт** закрыт для сторонних сборок с 2021-03-15 (аудит Google). Обходы (флаги/патчи) — нарушение ToS. **Non-goal навсегда.**
-- **Протокол** `components/sync/protocol/sync.proto` открыт; Brave `go-sync` — open-source сервер, «поддерживает любой Chromium-браузер». Vivaldi — свой закрытый. Есть `chromium-sync-server` (Python, experimental). → ADR-0007: свой сервер на Rust по этому протоколу.
-- **Локальный профиль Chrome:** `Bookmarks` (JSON), `History`/`Login Data`/`Web Data`/`Cookies` (SQLite, lock при запущенном Chrome — копировать), `Preferences` (JSON), `Extensions/<id>/<ver>/manifest.json`. Пароли/cookies шифруются: macOS — Keychain «Chrome Safe Storage» (AES-128-CBC, PBKDF2), Linux — libsecret/kwallet/«peanuts», Windows — DPAPI (`v10`) и **App-Bound Encryption `v20`** с Chrome 127 (июль 2024) для cookies, план расширения на пароли/платежи. ABE привязан к SYSTEM-сервису Chrome → сторонний процесс легально не расшифрует. Импорт на Windows — только через пользовательский экспорт (CSV паролей) либо ограниченный набор (закладки, история, настройки).
-- **MV3**: declarative permissions, background service worker, content scripts в isolated world, `declarativeNetRequest`, запрет remote code. CRX3 формат, Web Store update URL публичен (Chromium использует его же).
-- **CDP** — tip-of-tree нестабилен; **WebDriver BiDi** — стандарт. Делаем CDP-подмножество для DevTools frontend + BiDi для automation.
+- **Chrome Sync via Google account** closed to third-party builds since 2021-03-15 (Google audit). Workarounds (flags/patches) violate the ToS. **Non-goal forever.**
+- **Protocol** `components/sync/protocol/sync.proto` is open; Brave `go-sync` is an open-source server, "supports any Chromium-based browser". Vivaldi — its own closed one. There is `chromium-sync-server` (Python, experimental). → ADR-0007: our own server in Rust on this protocol.
+- **Local Chrome profile:** `Bookmarks` (JSON), `History`/`Login Data`/`Web Data`/`Cookies` (SQLite, locked while Chrome is running — copy), `Preferences` (JSON), `Extensions/<id>/<ver>/manifest.json`. Passwords/cookies are encrypted: macOS — Keychain "Chrome Safe Storage" (AES-128-CBC, PBKDF2), Linux — libsecret/kwallet/"peanuts", Windows — DPAPI (`v10`) and **App-Bound Encryption `v20`** since Chrome 127 (July 2024) for cookies, with a plan to extend it to passwords/payments. ABE is bound to Chrome's SYSTEM service → a third-party process cannot legally decrypt. Import on Windows — only via user export (passwords CSV) or a limited set (bookmarks, history, settings).
+- **MV3**: declarative permissions, background service worker, content scripts in an isolated world, `declarativeNetRequest`, remote code ban. CRX3 format, the Web Store update URL is public (Chromium uses the same one).
+- **CDP** — tip-of-tree is unstable; **WebDriver BiDi** is the standard. We do a CDP subset for the DevTools frontend + BiDi for automation.
 
-## 4. Память Chrome (открытые источники, 2026)
+## 4. Chrome memory (public sources, 2026)
 
-- Memory Saver с Chrome 140 (сент 2025): ML-предсказание возврата к вкладке, три режима; «до 80% меньше» на discarded tab.
-- 10 активных вкладок в Chrome 140+ — ~1.4 ГБ (1.8 ГБ в Chrome 135). Тяжёлые web-apps (Figma/Notion/Slack) — 0.5–1.5 ГБ на вкладку.
-- Energy Saver замораживает JS, но не освобождает память; Memory Saver discard-ит renderer.
+- Memory Saver since Chrome 140 (Sep 2025): ML prediction of returning to a tab, three modes; "up to 80% less" on a discarded tab.
+- 10 active tabs in Chrome 140+ — ~1.4 GB (1.8 GB in Chrome 135). Heavy web apps (Figma/Notion/Slack) — 0.5–1.5 GB per tab.
+- Energy Saver freezes JS, but does not free memory; Memory Saver discards the renderer.
 
-→ Наши цели в ADR-0012 ставятся относительно этих чисел и подтверждаются `tools/bench` ежемесячно на той же машине.
+→ Our targets in ADR-0012 are set relative to these numbers and confirmed by `tools/bench` monthly on the same machine.
 
-## 5. Rust-стек: версии на 2026-09-07
+## 5. Rust stack: versions as of 2026-09-07
 
-| Crate | Версия | Роль | Лицензия (проверить в DEPENDENCIES) |
+| Crate | Version | Role | License (check in DEPENDENCIES) |
 |---|---|---|---|
 | stylo | 0.20.0 | CSS cascade/computed style (Firefox/Servo) | MPL-2.0 |
 | cssparser | 0.37.0 | CSS tokenizer | MPL-2.0 |
@@ -54,29 +54,29 @@
 | wgpu | 30.0.1 | GPU abstraction (Metal/DX12/Vulkan) | MIT/Apache |
 | winit | 0.30.13 | windows/input | Apache-2.0 |
 | accesskit | 0.25.0 | accessibility tree → AX/UIA/AT-SPI | MIT/Apache |
-| v8 (rusty_v8) | 152.2.0 | V8 bindings; версии = Chrome | MIT |
-| deno_core | 0.411.0 | reference для интеграции V8 (не используем напрямую) | MIT |
-| mozjs | 0.26.0 | SpiderMonkey (альтернатива, не выбрана) | MPL-2.0 |
+| v8 (rusty_v8) | 152.2.0 | V8 bindings; versions = Chrome | MIT |
+| deno_core | 0.411.0 | reference for V8 integration (not used directly) | MIT |
+| mozjs | 0.26.0 | SpiderMonkey (alternative, not chosen) | MPL-2.0 |
 | hyper | 1.11.1 | HTTP/1.1, HTTP/2 | MIT |
 | rustls | 0.23.43 | TLS 1.2/1.3 | MIT/Apache/ISC |
-| quinn / h3 | 0.11.11 / 0.0.8 | QUIC / HTTP/3 | MIT/Apache; h3 pre-1.0 — риск |
+| quinn / h3 | 0.11.11 / 0.0.8 | QUIC / HTTP/3 | MIT/Apache; h3 pre-1.0 — risk |
 | url | 2.5.8 | WHATWG URL | MIT/Apache |
-| image | 0.25.10 | декодеры (в utility process) | MIT/Apache |
+| image | 0.25.10 | decoders (in utility process) | MIT/Apache |
 | rusqlite | 0.40.2 | SQLite | MIT |
-| ipc-channel | 0.23.0 | IPC транспорт (Servo) | MIT/Apache |
-| prost | 0.14.4 | protobuf для sync.proto | Apache-2.0 |
+| ipc-channel | 0.23.0 | IPC transport (Servo) | MIT/Apache |
+| prost | 0.14.4 | protobuf for sync.proto | Apache-2.0 |
 | tokio | 1.53.1 | async runtime (network process, browser process) | MIT |
 | tracing | 0.1.44 | observability | MIT |
-| insta / proptest / arbitrary | 1.48 / 1.11 / 1.4.2 | тесты | MIT/Apache |
+| insta / proptest / arbitrary | 1.48 / 1.11 / 1.4.2 | tests | MIT/Apache |
 | tiny-skia | 0.12.0 | CPU raster fallback | BSD-3 |
 
-Хост: rustc 1.95.0 (2026-04-14). Edition 2024.
+Host: rustc 1.95.0 (2026-04-14). Edition 2024.
 
-## 6. Rust GUI для shell
+## 6. Rust GUI for the shell
 
-egui — быстрее всего до окна, immediate mode, wgpu backend; iced — Elm-стиль; Slint — DSL + коммерческая лицензия; Xilem — не production. Для соло-разработчика с wgpu-стеком выбран egui (ADR-0008) с планом миграции на privileged web UI на своём движке.
+egui — fastest to a window, immediate mode, wgpu backend; iced — Elm style; Slint — DSL + commercial license; Xilem — not production. For a solo developer with a wgpu stack, egui was chosen (ADR-0008) with a plan to migrate to a privileged web UI on our own engine.
 
-## 7. Источники
+## 7. Sources
 
 - Servo: https://servo.org/blog/ ; https://servo.org/about/ ; https://github.com/servo/servo/wiki/Roadmap ; https://byteiota.com/servo-0-1-0-ships-on-crates-io-embeddable-rust-browser/ ; https://www.phoronix.com/news/Servo-January-2026 ; https://www.osnews.com/story/140462/verso-a-browser-using-servo/
 - Ladybird: https://ladybird.org/ ; https://linuxiac.com/ladybird-browser-closes-public-pull-requests-ahead-of-first-alpha/ ; https://alternativeto.net/news/2026/2/ladybird-web-browser-begins-rust-adoption-starting-with-javascript-engine-with-ai-help
@@ -92,5 +92,5 @@ egui — быстрее всего до окна, immediate mode, wgpu backend; 
 - wry: https://docs.rs/wry/latest/wry/
 - Rust GUI: https://wrenlearnsrust.com/posts/2026-03-11-rust-gui-landscape-2026.html ; https://blog.logrocket.com/state-rust-gui-libraries/
 - Supporters of Chromium-Based Browsers: https://blog.chromium.org/2025/01/announcing-supporters-of-chromium-based.html
-- Версии crate-ов: crates.io API, 2026-09-07.
-- Нормативные спецификации и архитектурные референсы: см. `docs/SPEC_REGISTRY.md` и skill `browser-engine-research/references/*` (33 + 45 + 23 + 37 источников).
+- Crate versions: crates.io API, 2026-09-07.
+- Normative specs and architectural references: see `docs/SPEC_REGISTRY.md` and skill `browser-engine-research/references/*` (33 + 45 + 23 + 37 sources).

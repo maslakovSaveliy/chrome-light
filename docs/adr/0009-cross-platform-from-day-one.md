@@ -1,27 +1,27 @@
-# ADR-0009: Три платформы с первого дня
+# ADR-0009: Three platforms from day one
 
 **Status:** Accepted
 **Date:** 2026-09-07
-**Deciders:** владелец проекта
+**Deciders:** project owner
 
 ## Context
 
-Владелец выбрал все три ОС сразу (macOS, Windows, Linux). Референс рекомендует ≤2 ОС для MVP; выбор увеличивает стоимость на старте в 2–3 раза. Смягчение — изоляция платформенного кода и CI-матрица, чтобы «сразу» означало «компилируется и тестируется», а не «полируется» на всех трёх одновременно.
+The owner chose all three OSes at once (macOS, Windows, Linux). The reference recommends ≤2 OSes for an MVP; this choice raises the up-front cost 2–3×. Mitigation — isolating platform code and a CI matrix, so that "at once" means "compiles and is tested", not "polished" on all three simultaneously.
 
 ## Decision
 
-- CI-матрица PR: `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu` — build + tests обязательны для merge с M0.
-- Платформенный код — только `cl-platform` (ОС API), `cl-process` (sandbox), backends `cl-gfx`. `#[cfg(target_os)]` в других crate-ах — reject на review; `tools/check-platform-cfg.sh` в CI.
-- Приоритет полировки: macOS (хост владельца) → Linux (CI/sandbox проще) → Windows (sandbox сложнее). Функциональные milestone-гейты считаются пройденными, когда фича работает на **всех трёх**; sandbox-гейт S0 на Windows допускает лаг в один milestone, но без него Windows-сборка не открывает untrusted URL.
-- Кросс-компиляция с macOS: Linux через Docker; Windows — только CI/VM.
+- PR CI matrix: `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu` — build + tests required for merge from M0.
+- Platform code — only in `cl-platform` (OS API), `cl-process` (sandbox), `cl-gfx` backends. `#[cfg(target_os)]` in other crates — rejected at review; `tools/check-platform-cfg.sh` in CI.
+- Polish priority: macOS (the owner's host) → Linux (CI/sandbox simpler) → Windows (sandbox harder). Functional milestone gates count as passed when the feature works on **all three**; sandbox gate S0 on Windows may lag by one milestone, but without it the Windows build does not open untrusted URLs.
+- Cross-compilation from macOS: Linux via Docker; Windows — CI/VM only.
 
 ## Consequences
 
-- Легче: нет «портирования» как отдельной фазы; платформенные абстракции честные с первого дня.
-- Труднее: каждый milestone дороже; Windows sandbox — отдельная компетенция.
-- Пересмотреть когда: Windows-работа блокирует >30% времени milestone → временно перевести Windows в nightly-матрицу с явной пометкой в MEMORY.md.
+- Easier: no "porting" as a separate phase; platform abstractions are honest from day one.
+- Harder: every milestone costs more; the Windows sandbox is a separate area of expertise.
+- Revisit when: Windows work blocks >30% of milestone time → temporarily move Windows to the nightly matrix with an explicit note in MEMORY.md.
 
 ## Action Items
 
-1. [ ] `.github/workflows/ci.yml` с матрицей (M0).
+1. [ ] `.github/workflows/ci.yml` with the matrix (M0).
 2. [ ] `cl-platform` API: fs, shm, clock, keystore, quarantine, fonts (M0/M1).

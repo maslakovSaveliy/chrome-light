@@ -1,26 +1,26 @@
-# ADR-0013: Кодовое имя `chrome-light` и торговая марка
+# ADR-0013: Codename `chrome-light` and trademark
 
 **Status:** Accepted
 **Date:** 2026-09-07
-**Deciders:** владелец проекта
+**Deciders:** project owner
 
 ## Context
 
-Директория и рабочее имя — `chrome-light`. «Chrome» и «Google Chrome» — зарегистрированные торговые марки Google. Продукт, имитирующий Chrome по имени, создаёт риск претензий и вводит пользователей в заблуждение (особенно при импорте профиля и «sync»).
+The directory and working name is `chrome-light`. "Chrome" and "Google Chrome" are registered trademarks of Google. A product that imitates Chrome by name creates a risk of claims and misleads users (especially with profile import and "sync").
 
 ## Decision
 
-- Имя продукта: **ChromeLight** (решение владельца 2026-09-07). Репозиторий/workspace — `chrome-light`, бинарник `chromelight`, схема `chromelight://`, префикс crate-ов `cl-`.
-- **Риск принят владельцем:** «Chrome» — торговая марка Google; имя ChromeLight может получить претензию (trademark dilution/confusion). Смягчение: в UI/документации — «ChromeLight is not affiliated with Google»; никаких логотипов/цветов Chrome; формулировки «импорт данных из Google Chrome», «совместимость с расширениями Chrome Web Store». `tools/rename-checklist.md` (M5) остаётся на случай вынужденного переименования.
-- В UI и документации никогда не утверждать «аналог Chrome» или «синхронизация с Chrome».
+- Product name: **ChromeLight** (owner's decision 2026-09-07). Repository/workspace — `chrome-light`, binary `chromelight`, scheme `chromelight://`, crate prefix `cl-`.
+- **Risk accepted by the owner:** "Chrome" is a Google trademark; the name ChromeLight may draw a claim (trademark dilution/confusion). Mitigation: in UI/docs — "ChromeLight is not affiliated with Google"; no Chrome logos/colors; wording such as "import data from Google Chrome", "compatibility with Chrome Web Store extensions". `tools/rename-checklist.md` (M5) remains in case a rename is forced.
+- In UI and docs never claim "a Chrome equivalent" or "sync with Chrome".
 
 ## Consequences
 
-- Легче: разработка без блокировки на нейминг.
-- Труднее: переименование перед релизом — рутинная, но обязательная работа.
+- Easier: development is not blocked on naming.
+- Harder: renaming before release — routine but mandatory work.
 
 ## Action Items
 
-1. [x] Владелец выбрал ChromeLight.
-2. [ ] `tools/rename-checklist.md` (M5) — на случай претензии.
-3. [ ] Disclaimer «not affiliated with Google» в About и README до публичного релиза.
+1. [x] The owner chose ChromeLight.
+2. [ ] `tools/rename-checklist.md` (M5) — in case of a claim.
+3. [ ] Disclaimer "not affiliated with Google" in About and README before the public release.

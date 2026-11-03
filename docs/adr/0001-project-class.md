@@ -1,66 +1,66 @@
-# ADR-0001: Класс проекта — независимый движок и полный браузер
+# ADR-0001: Project class — independent engine and full browser
 
 **Status:** Accepted
 **Date:** 2026-09-07
-**Deciders:** владелец проекта
+**Deciders:** project owner
 
 ## Context
 
-Запрос: браузер-аналог Chrome, кратно легче по памяти, быстрее, на Rust, три десктопные ОС, полный функционал, интероп с Chrome. Исследование (`docs/RESEARCH-2026-09.md`, skill `browser-engine-research`) показывает, что эти цели конфликтуют: 100% функционала Chrome сегодня даёт только Chromium-код (CEF/fork), который не «в разы легче»; Rust-движки (Servo) легче, но не совместимы на 100%; свой движок — многолетняя программа. Команда — один разработчик + AI-агенты.
+Request: a Chrome-like browser, many times lighter on memory, faster, in Rust, three desktop OSes, full functionality, interop with Chrome. Research (`docs/RESEARCH-2026-09.md`, skill `browser-engine-research`) shows these goals conflict: 100% of Chrome's functionality today comes only from Chromium code (CEF/fork), which is not "many times lighter"; Rust engines (Servo) are lighter, but not 100% compatible; our own engine is a multi-year program. The team is one developer + AI agents.
 
-Владелец, зная оценки масштаба, выбрал независимый движок.
+The owner, knowing the scale estimates, chose an independent engine.
 
 ## Decision
 
-Строим **независимый open-Web движок на Rust + полный браузерный продукт**. Не форк Chromium, не shell над CEF/WebView/Servo. Экосистемные crate-ы используем как компоненты (ADR-0003), но архитектура, DOM, layout, paint, compositor, процессная модель, IPC, сеть, storage, продукт — свои. Chrome-паритет — направление, измеряемое WPT/Test262/corpus. Функционал «как у Chrome» для пользователя даётся через интероп (ADR-0007, 0011), а не через Chromium-код.
+We build an **independent open-Web engine in Rust + a full browser product**. Not a Chromium fork, not a shell over CEF/WebView/Servo. We use ecosystem crates as components (ADR-0003), but the architecture, DOM, layout, paint, compositor, process model, IPC, network, storage, product are our own. Chrome parity is a direction, measured by WPT/Test262/corpus. "Chrome-like" functionality for the user is delivered via interop (ADR-0007, 0011), not via Chromium code.
 
 ## Options Considered
 
-### Option A: Shell на CEF (Rust crate `cef` 151.x)
+### Option A: Shell on CEF (Rust crate `cef` 151.x)
 | Dimension | Assessment |
 |---|---|
 | Complexity | Low–Med |
-| Cost | кварталы до MVP |
-| Memory/perf | = Chrome минус UI; выигрыш 20–40% через policy |
-| Security | Chromium-grade, патчи через CEF с лагом |
+| Cost | quarters to MVP |
+| Memory/perf | = Chrome minus UI; 20–40% gain via policy |
+| Security | Chromium-grade, patches via CEF with a lag |
 | Compat | 100%, MV3, DevTools |
-**Pros:** быстро, совместимо. **Cons:** не «свой», не «в разы легче», зависимость от CEF-релизов, C++ FFI.
+**Pros:** fast, compatible. **Cons:** not "our own", not "many times lighter", dependency on CEF releases, C++ FFI.
 
 ### Option B: Embedding Servo
 | Dimension | Assessment |
 |---|---|
 | Complexity | Med |
-| Cost | кварталы до демо, годы до daily-driver |
-| Memory/perf | легче Chrome |
-| Security | multiprocess есть, sandbox незрел |
-| Compat | частичная; нет расширений, DevTools-паритета |
-**Pros:** Rust, реальный движок. **Cons:** мы не контролируем roadmap; Verso умер именно от гонки за API; паритет с Chrome недостижим.
+| Cost | quarters to a demo, years to a daily driver |
+| Memory/perf | lighter than Chrome |
+| Security | multiprocess exists, sandbox immature |
+| Compat | partial; no extensions, no DevTools parity |
+**Pros:** Rust, a real engine. **Cons:** we don't control the roadmap; Verso died precisely from the race to keep up with the API; parity with Chrome is unreachable.
 
-### Option C: Форк Chromium
-Отвергнут: 100+ ГБ сборка, C++, релиз каждые 2 недели = вечная гонка патчей, не Rust, не легче.
+### Option C: Chromium fork
+Rejected: 100+ GB build, C++, a release every 2 weeks = an eternal patch race, not Rust, not lighter.
 
-### Option D: Свой движок (выбран)
+### Option D: Our own engine (chosen)
 | Dimension | Assessment |
 |---|---|
 | Complexity | Very High |
-| Cost | годы; порядок — сотни engineer-years для широкой совместимости |
-| Memory/perf | под нашим контролем — единственный путь к «в разы легче» |
-| Security | наша ответственность целиком; Rust снижает класс memory-багов |
-| Compat | растёт асимптотически |
-**Pros:** полный контроль, память/безопасность как архитектурные цели, Rust. **Cons:** масштаб; риск никогда не достичь широкой совместимости; соло.
+| Cost | years; order of magnitude — hundreds of engineer-years for broad compatibility |
+| Memory/perf | under our control — the only path to "many times lighter" |
+| Security | entirely our responsibility; Rust reduces the class of memory bugs |
+| Compat | grows asymptotically |
+**Pros:** full control, memory/security as architectural goals, Rust. **Cons:** scale; risk of never reaching broad compatibility; solo.
 
 ## Trade-off Analysis
 
-Единственный вариант, удовлетворяющий «Rust + свой + легче». Плата — время и неполная совместимость на годы. Смягчение: жёсткий feature matrix, milestone-гейты, переиспользование аудированных crate-ов (stylo, V8, html5ever), Chrome-интероп для пользовательской ценности до полной совместимости.
+The only option that satisfies "Rust + our own + lighter". The price is time and incomplete compatibility for years. Mitigation: strict feature matrix, milestone gates, reuse of audited crates (stylo, V8, html5ever), Chrome interop for user value before full compatibility.
 
 ## Consequences
 
-- Легче: любое архитектурное решение по памяти/безопасности — наше.
-- Труднее: каждая Web API — наша реализация + bindings + тесты; long tail совместимости.
-- Пересмотреть когда: через 12 месяцев если WPT-покрытие фокус-областей < 50% или curated corpus < 30% — вернуться к Option B как fallback-движку для несовместимых вкладок.
+- Easier: every architectural decision on memory/security is ours.
+- Harder: every Web API is our implementation + bindings + tests; the long tail of compatibility.
+- Revisit when: after 12 months, if WPT coverage of focus areas < 50% or curated corpus < 30% — return to Option B as a fallback engine for incompatible tabs.
 
 ## Action Items
 
-1. [x] Зафиксировать non-goals в CLAUDE.md и FEATURE_MATRIX.
-2. [ ] План milestones с exit-критериями (следующий документ).
-3. [ ] Через 12 месяцев — review этого ADR по метрикам.
+1. [x] Record non-goals in CLAUDE.md and FEATURE_MATRIX.
+2. [ ] Milestone plan with exit criteria (next document).
+3. [ ] After 12 months — review this ADR against the metrics.

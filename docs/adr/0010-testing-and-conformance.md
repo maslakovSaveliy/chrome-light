@@ -1,32 +1,32 @@
-# ADR-0010: WPT, Test262, fuzz и reftests с первого milestone
+# ADR-0010: WPT, Test262, fuzz and reftests from the first milestone
 
 **Status:** Accepted
 **Date:** 2026-09-07
-**Deciders:** владелец проекта
+**Deciders:** project owner
 
 ## Context
 
-Тесты собственных happy-path не дают совместимости; pass rate не измеряет безопасность. Референс: WPT product adapter, expected failures как versioned metadata, fuzz + sanitizers, differential как triage-сигнал.
+Tests of our own happy paths do not deliver compatibility; pass rate does not measure security. Reference: WPT product adapter, expected failures as versioned metadata, fuzz + sanitizers, differential as a triage signal.
 
 ## Decision
 
-- `cl-testshell` — headless детерминированный shell (bundled fonts, фиксированный clock/RNG, DPR 1) — существует с M1; он же WPT product и reftest runner.
-- WPT product adapter с M1; директории включаются по порядку из TESTING.md §3; expectations в `tools/wpt/expectations/` с bug ID и датой пересмотра.
-- Test262 — qualification set при каждом V8 bump / изменении bindings.
-- Fuzz target — в том же PR, что парсер/декодер/IPC-сообщение. Nightly fuzz 30 мин.
-- Reftests для layout/paint; golden (`insta`) для деревьев.
-- Differential против headless Chrome — nightly, только сигнал.
-- Bench/memory CI-гейт (ADR-0012).
-- Дашборд WPT: pass/expected-fail/crash/timeout раздельно; регрессии отдельно.
+- `cl-testshell` — a headless deterministic shell (bundled fonts, fixed clock/RNG, DPR 1) — exists from M1; it is also the WPT product and the reftest runner.
+- WPT product adapter from M1; directories are enabled in the order given in TESTING.md §3; expectations in `tools/wpt/expectations/` with a bug ID and a revisit date.
+- Test262 — qualification set on every V8 bump / bindings change.
+- Fuzz target — in the same PR as the parser/decoder/IPC message. Nightly fuzz 30 min.
+- Reftests for layout/paint; golden (`insta`) for trees.
+- Differential against headless Chrome — nightly, signal only.
+- Bench/memory CI gate (ADR-0012).
+- WPT dashboard: pass/expected-fail/crash/timeout separately; regressions separately.
 
 ## Consequences
 
-- Легче: измеримый прогресс совместимости; регрессии видны по коммитам.
-- Труднее: инфраструктура в M0/M1 до «первой красивой страницы».
-- Пересмотреть когда: время полного WPT-прогона > 2 ч на 3 ОС → шардинг/выбор поддиректорий.
+- Easier: measurable compatibility progress; regressions visible per commit.
+- Harder: infrastructure in M0/M1 before the "first pretty page".
+- Revisit when: a full WPT run takes > 2 h across 3 OSes → sharding/choosing subdirectories.
 
 ## Action Items
 
 1. [ ] `tools/wpt/product/chrome_light.py` + `run.sh` (M1).
 2. [ ] `tools/test262/` harness (M2).
-3. [ ] `tools/fuzz/` с первыми targets: url, html_tokenizer, css, ipc (M1).
+3. [ ] `tools/fuzz/` with the first targets: url, html_tokenizer, css, ipc (M1).

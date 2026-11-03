@@ -1,87 +1,87 @@
-# Зависимости
+# Dependencies
 
-Каждая новая зависимость — строка здесь + `cargo deny check`. Версии — в `[workspace.dependencies]`; здесь — намерение и обоснование. Лицензии перепроверять при добавлении (`cargo deny list`).
+Every new dependency — a row here + `cargo deny check`. Versions — in `[workspace.dependencies]`; here — intent and rationale. Re-check licenses when adding (`cargo deny list`).
 
-Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, MPL-2.0 (file-level copyleft, совместимо с нашим Apache/MIT при неизменённых файлах; изменения stylo/cssparser — только через upstream или отдельный форк с публикацией), Unicode-3.0, CC0-1.0. Запрещены: GPL/LGPL/AGPL (кроме явного ADR), SSPL, BUSL.
+Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, ISC, Zlib, MPL-2.0 (file-level copyleft, compatible with our Apache/MIT as long as files are unmodified; changes to stylo/cssparser — only via upstream or a separate published fork), Unicode-3.0, CC0-1.0. Forbidden: GPL/LGPL/AGPL (except via an explicit ADR), SSPL, BUSL.
 
-## Движок
+## Engine
 
-`parley` и `fontique` подключены как `default-features = false, features = ["std"]`: это выключает `system` (fontconfig/DirectWrite/CoreText) — движок рендерит только свои встроенные шрифты (детерминизм reftest'ов, ADR-0009) — и `complex-scripts` (словарный перенос строк для CJK/тайского/кхмерского; решение Task 18, вернуться к нему вместе с поддержкой этих письменностей).
+`parley` and `fontique` are pulled in as `default-features = false, features = ["std"]`: this turns off `system` (fontconfig/DirectWrite/CoreText) — the engine renders only its own bundled fonts (reftest determinism, ADR-0009) — and `complex-scripts` (dictionary line breaking for CJK/Thai/Khmer; a Task 18 decision, to be revisited together with support for those scripts).
 
-| Crate | Роль | Почему этот | Альтернативы | Риск |
+| Crate | Role | Why this one | Alternatives | Risk |
 |---|---|---|---|---|
-| `html5ever`, `markup5ever` | HTML tokenizer/tree builder | spec-conformant, Servo, WPT-проверен, `Atom` | свой парсер | средний — API меняется |
-| `cssparser` | CSS tokenizer | требуется stylo | — | низкий |
-| `stylo_traits`, `stylo_dom`, `stylo_atoms`, `stylo_static_prefs` | часть stylo | та же версия | — | низкий |
-| `selectors` | CSS селекторы | требуется stylo | — | низкий |
-| `stylo` (+`stylo_atoms`, `stylo_dom`, `selectors`, `servo_arc`) | CSS cascade/computed style | Firefox-grade, параллельный, огромное покрытие | свой cascade (годы) | высокий — Python 3 на сборке, API без гарантий стабильности (pre-1.0, ADR-0015). Про `unsafe`: в `cl-style` его **ноль** — поправки к ADR-0015 сняли изначальное допущение, `tools/check-unsafe-scope.sh` держит `#![forbid(unsafe_code)]` во всех крейтах M1a |
-| `euclid` 0.22 | typed 2D geometry (`Size2D`, `Scale`) для `style::device::Device::new` (viewport/device-pixel-ratio) | версия, которую сам `stylo` 0.20 использует внутри (`style_traits`/`app_units`); не реэкспортируется из `style::`, поэтому нужен как прямая зависимость `cl-style` (обнаружено в task-2 build spike) | — | низкий |
-| `taffy` | flex/grid/block math | CSS-корректный, используется Blitz/Bevy | свой | низкий |
-| `parley` 0.11 (Apache-2.0 OR MIT) | shaping + line breaking + `text-align` внутри `cl-layout` (Task 18: inline formatting context); тянет `harfrust` (shaper), `skrifa`, `parley_data`, `icu_segmenter` | Linebender-стек, чистый Rust, тот же `fontique`, что и `cl-fonts` | harfbuzz-rs (C), cosmic-text | средний — pre-1.0 |
-| `swash` 0.2 (Apache-2.0 OR MIT) | растеризация глифов в 8-битные alpha-маски внутри `cl-gfx` (Task 21: CPU backend) — `ScaleContext`/`Render::new(&[Source::Outline])`/`Format::Alpha`, хинтинг выключен ради детерминизма; тянет `zeno` (scan conversion) и `yazi` (распаковка `woff2`-таблиц) | Linebender-стек, чистый Rust, тот же `skrifa`, что и `parley`; `tiny-skia` не умеет растеризовать глифы сам | harfbuzz-rs + FreeType (C), `vello_cpu` | средний — pre-1.0 |
-| `fontique` | font discovery | Linebender-стек | system fontconfig | низкий |
-| `skrifa` (два в `Cargo.lock`: 0.46.2 прямая dev-dependency `cl-fonts`, 0.44.0 транзитивная через `parley` 0.11.1 и `swash` 0.2.10) | font-table parsing (glyph metrics/outlines) | обнаружено Task 23 (`cargo tree -d`): `parley`/`swash` ещё не подняли зависимость до 0.46 | обновить `parley`/`swash` когда выйдет релиз на `skrifa` 0.46 | низкий — типы двух версий не пересекаются в нашем коде (`cl-fonts` и `parley`/`swash` никогда не передают друг другу значения `skrifa::Tag`/`FontRef`), но раздувает бинарник; отслеживать при апдейте `parley`/`swash` |
-| `tendril` | веб-строки (rope/small-string для текстовых узлов) | Servo | — | низкий — **не прямая зависимость**: приходит через `markup5ever` и берётся как `markup5ever::tendril` (у markup5ever 0.39 это tendril 0.5; отдельный пин 0.4 дал бы два несовместимых `StrTendril`) |
-| `vello`, `wgpu`, `peniko`, `kurbo` | 2D GPU raster, GPU abstraction | чистый Rust, Metal/DX12/Vulkan | skia-safe (C++), tiny-skia only | средний — wgpu breaking каждый релиз |
-| `tiny-skia` | CPU raster fallback, reftests | детерминизм | vello_cpu | низкий |
-| `winit` | окна, input | стандарт | tao | низкий |
-| `accesskit` (+platform adapters) | accessibility | единственный кросс-платформенный | — | средний |
-| `v8` | JS/Wasm VM | Chrome-семантика, stable, версия = Chrome | `mozjs`, `boa`, свой | высокий — C++, большой бинарник, prebuilt download; см. ADR-0004 |
-| `image`, `zune-jpeg`, `png`, `image-webp`, `ravif`/`dav1d` (AVIF — later) | декодеры | чистый Rust где возможно | libjpeg-turbo | средний — производительность vs C |
-| `resvg`/`usvg` | SVG | зрелые, чистый Rust | свой SVG на cl-paint | низкий (позже интеграция с DOM SVG потребует своего) |
-| `url`, `idna` | WHATWG URL | стандарт де-факто | — | низкий |
-| `encoding_rs` | WHATWG Encoding | Firefox | — | низкий |
-| `data-url`, `mime`, `percent-encoding` | утилиты | — | — | низкий |
+| `html5ever`, `markup5ever` | HTML tokenizer/tree builder | spec-conformant, Servo, WPT-verified, `Atom` | own parser | medium — API changes |
+| `cssparser` | CSS tokenizer | required by stylo | — | low |
+| `stylo_traits`, `stylo_dom`, `stylo_atoms`, `stylo_static_prefs` | part of stylo | the same version | — | low |
+| `selectors` | CSS selectors | required by stylo | — | low |
+| `stylo` (+`stylo_atoms`, `stylo_dom`, `selectors`, `servo_arc`) | CSS cascade/computed style | Firefox-grade, parallel, huge coverage | own cascade (years) | high — Python 3 at build time, API without stability guarantees (pre-1.0, ADR-0015). On `unsafe`: there is **none** in `cl-style` — the ADR-0015 amendments removed the original assumption, and `tools/check-unsafe-scope.sh` keeps `#![forbid(unsafe_code)]` in every M1a crate |
+| `euclid` 0.22 | typed 2D geometry (`Size2D`, `Scale`) for `style::device::Device::new` (viewport/device-pixel-ratio) | the version `stylo` 0.20 itself uses internally (`style_traits`/`app_units`); not re-exported from `style::`, so it is a direct dependency of `cl-style` (found in the task-2 build spike) | — | low |
+| `taffy` | flex/grid/block math | CSS-correct, used by Blitz/Bevy | own | low |
+| `parley` 0.11 (Apache-2.0 OR MIT) | shaping + line breaking + `text-align` inside `cl-layout` (Task 18: inline formatting context); pulls in `harfrust` (shaper), `skrifa`, `parley_data`, `icu_segmenter` | Linebender stack, pure Rust, the same `fontique` as `cl-fonts` | harfbuzz-rs (C), cosmic-text | medium — pre-1.0 |
+| `swash` 0.2 (Apache-2.0 OR MIT) | rasterising glyphs into 8-bit alpha masks inside `cl-gfx` (Task 21: CPU backend) — `ScaleContext`/`Render::new(&[Source::Outline])`/`Format::Alpha`, hinting off for determinism; pulls in `zeno` (scan conversion) and `yazi` (`woff2` table decompression) | Linebender stack, pure Rust, the same `skrifa` as `parley`; `tiny-skia` cannot rasterise glyphs itself | harfbuzz-rs + FreeType (C), `vello_cpu` | medium — pre-1.0 |
+| `fontique` | font discovery | Linebender stack | system fontconfig | low |
+| `skrifa` (two in `Cargo.lock`: 0.46.2 as a direct dev-dependency of `cl-fonts`, 0.44.0 transitively via `parley` 0.11.1 and `swash` 0.2.10) | font-table parsing (glyph metrics/outlines) | found by Task 23 (`cargo tree -d`): `parley`/`swash` have not moved to 0.46 yet | update `parley`/`swash` once they release on `skrifa` 0.46 | low — the two versions' types never meet in our code (`cl-fonts` and `parley`/`swash` never pass `skrifa::Tag`/`FontRef` values to each other), but it bloats the binary; track on `parley`/`swash` updates |
+| `tendril` | web strings (rope/small-string for text nodes) | Servo | — | low — **not a direct dependency**: it comes through `markup5ever` and is used as `markup5ever::tendril` (markup5ever 0.39 has tendril 0.5; a separate 0.4 pin would give two incompatible `StrTendril`s) |
+| `vello`, `wgpu`, `peniko`, `kurbo` | 2D GPU raster, GPU abstraction | pure Rust, Metal/DX12/Vulkan | skia-safe (C++), tiny-skia only | medium — wgpu breaking every release |
+| `tiny-skia` | CPU raster fallback, reftests | determinism | vello_cpu | low |
+| `winit` | windows, input | standard | tao | low |
+| `accesskit` (+platform adapters) | accessibility | the only cross-platform one | — | medium |
+| `v8` | JS/Wasm VM | Chrome semantics, stable, version = Chrome | `mozjs`, `boa`, own | high — C++, large binary, prebuilt download; see ADR-0004 |
+| `image`, `zune-jpeg`, `png`, `image-webp`, `ravif`/`dav1d` (AVIF — later) | decoders | pure Rust where possible | libjpeg-turbo | medium — performance vs C |
+| `resvg`/`usvg` | SVG | mature, pure Rust | own SVG on cl-paint | low (later, integration with DOM SVG will require our own) |
+| `url`, `idna` | WHATWG URL | de facto standard | — | low |
+| `encoding_rs` | WHATWG Encoding | Firefox | — | low |
+| `data-url`, `mime`, `percent-encoding` | utilities | — | — | low |
 
-## Сеть
+## Network
 
-| Crate | Роль | Почему | Риск |
+| Crate | Role | Why | Risk |
 |---|---|---|---|
-| `hyper` 1.x, `http`, `http-body` | HTTP/1.1, /2 | зрелый, low-level | низкий |
-| `rustls`, `rustls-platform-verifier`, `webpki-roots` (fallback) | TLS | чистый Rust, системные root stores | низкий |
-| `quinn`, `h3`, `h3-quinn` | QUIC/HTTP/3 | единственный зрелый Rust QUIC | средний — `h3` 0.0.x |
-| `hickory-resolver` | DNS | async, DoH/DoT | низкий |
-| `tokio` | async runtime | стандарт | низкий |
-| `tokio-tungstenite` или свой на hyper upgrade | WebSocket | — | низкий |
-| `brotli`, `flate2`, `zstd` | content-encoding | — | низкий |
-| `cookie` (парсинг) — вероятно свой | cookies | RFC 6265bis нюансы | — |
+| `hyper` 1.x, `http`, `http-body` | HTTP/1.1, /2 | mature, low-level | low |
+| `rustls`, `rustls-platform-verifier`, `webpki-roots` (fallback) | TLS | pure Rust, system root stores | low |
+| `quinn`, `h3`, `h3-quinn` | QUIC/HTTP/3 | the only mature Rust QUIC | medium — `h3` 0.0.x |
+| `hickory-resolver` | DNS | async, DoH/DoT | low |
+| `tokio` | async runtime | standard | low |
+| `tokio-tungstenite` or own on hyper upgrade | WebSocket | — | low |
+| `brotli`, `flate2`, `zstd` | content-encoding | — | low |
+| `cookie` (parsing) — probably own | cookies | RFC 6265bis nuances | — |
 
-## Платформа / процессы / IPC
+## Platform / processes / IPC
 
-| Crate | Роль | Риск |
+| Crate | Role | Risk |
 |---|---|---|
-| `ipc-channel` | IPC транспорт | средний — Servo-специфика; возможно свой на `interprocess` |
-| `postcard` + `serde` | сериализация сообщений | низкий |
-| `shared_memory` / свой через `memmap2` | shm | средний |
-| `seccompiler` / `libseccomp` (Linux) | seccomp-bpf | средний |
-| `nix`, `libc`, `windows-sys`, `objc2`/`objc2-foundation` | OS API | низкий (unsafe изолирован) |
-| `security-framework` (macOS Keychain), `windows` DPAPI, `secret-service` (Linux) | keystore | низкий |
-| `minidumper`, `crash-handler`, `minidump-writer` | crash dumps | средний |
-| `sysinfo` | memory pressure metrics | низкий |
+| `ipc-channel` | IPC transport | medium — Servo-specific; possibly own on `interprocess` |
+| `postcard` + `serde` | message serialization | low |
+| `shared_memory` / own via `memmap2` | shm | medium |
+| `seccompiler` / `libseccomp` (Linux) | seccomp-bpf | medium |
+| `nix`, `libc`, `windows-sys`, `objc2`/`objc2-foundation` | OS API | low (unsafe isolated) |
+| `security-framework` (macOS Keychain), `windows` DPAPI, `secret-service` (Linux) | keystore | low |
+| `minidumper`, `crash-handler`, `minidump-writer` | crash dumps | medium |
+| `sysinfo` | memory pressure metrics | low |
 
-## Хранилище / продукт
+## Storage / product
 
-| Crate | Роль | Риск |
+| Crate | Role | Risk |
 |---|---|---|
-| `rusqlite` (bundled) | SQLite | низкий |
-| `egui`, `eframe`/`egui-wgpu`, `egui-winit` | shell UI (M5) | средний — миграция позже |
-| `prost`, `prost-build` | sync.proto | низкий |
-| `axum`, `tower` | sync-server | низкий |
-| `ed25519-dalek`, `sha2`, `aes-gcm`, `argon2`, `hkdf` | подписи, шифрование профиля/sync | низкий (RustCrypto, аудировано) |
-| `zip`/свой CRX3 reader, `x509-parser` | CRX3 | низкий |
-| `tracing`, `tracing-subscriber`, `tracing-chrome` | observability | низкий |
-| `thiserror`, `anyhow` | ошибки | низкий |
-| `clap` | CLI флаги | низкий |
-| `insta`, `proptest`, `arbitrary`, `libfuzzer-sys`, `criterion` | тесты | низкий — `arbitrary` (MIT OR Apache-2.0) опциональный, за feature-флагом `arbitrary` в `cl-fonts`/`cl-layout`/`cl-paint`: даёт `derive(Arbitrary)` для типов, которые структурно генерируют фаззеры `display_list_validate`/`display_list_rasterize`, плюс `FontKey::from_raw` (doc-hidden, только тесты/фаззинг). В обычной сборке движка выключен |
-| `serde_json` | парсинг WPT/html5lib JSON/тест-фикстур в conformance-гарнесах (dev-dependency) | низкий |
+| `rusqlite` (bundled) | SQLite | low |
+| `egui`, `eframe`/`egui-wgpu`, `egui-winit` | shell UI (M5) | medium — migration later |
+| `prost`, `prost-build` | sync.proto | low |
+| `axum`, `tower` | sync-server | low |
+| `ed25519-dalek`, `sha2`, `aes-gcm`, `argon2`, `hkdf` | signatures, profile/sync encryption | low (RustCrypto, audited) |
+| `zip`/own CRX3 reader, `x509-parser` | CRX3 | low |
+| `tracing`, `tracing-subscriber`, `tracing-chrome` | observability | low |
+| `thiserror`, `anyhow` | errors | low |
+| `clap` | CLI flags | low |
+| `insta`, `proptest`, `arbitrary`, `libfuzzer-sys`, `criterion` | tests | low — `arbitrary` (MIT OR Apache-2.0) is optional, behind the `arbitrary` feature in `cl-fonts`/`cl-layout`/`cl-paint`: it provides `derive(Arbitrary)` for the types the `display_list_validate`/`display_list_rasterize` fuzzers generate structurally, plus `FontKey::from_raw` (doc-hidden, tests/fuzzing only). Off in the normal engine build |
+| `serde_json` | parsing WPT/html5lib JSON/test fixtures in the conformance harnesses (dev-dependency) | low |
 
 ## Bundled assets
 
-| Ресурс | Лицензия | Примечание |
+| Asset | License | Note |
 |---|---|---|
 | `Ahem.ttf` | CC0-1.0 | WPT fonts/Ahem.ttf |
-| `NotoSans-Regular.ttf` | OFL-1.1 | unmodified (Reserved Font Name clause не затрагивает) |
+| `NotoSans-Regular.ttf` | OFL-1.1 | unmodified (the Reserved Font Name clause does not apply) |
 
-## Запрещено
+## Forbidden
 
-`openssl`, `native-tls`, `reqwest` (в движке), `curl`, `gtk`/`webkit2gtk`, `cef`, любые crate-ы с сетевыми `build.rs` кроме `v8` (checksum-verified prebuilt).
+`openssl`, `native-tls`, `reqwest` (in the engine), `curl`, `gtk`/`webkit2gtk`, `cef`, any crates with networking `build.rs` except `v8` (checksum-verified prebuilt).
