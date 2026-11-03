@@ -1,4 +1,21 @@
 //! Browser process main (M0: spawn one renderer, ping, optionally idle, shut down).
+//!
+//! M1b: the decisions the browser makes — frame, restart and subresource policy — live in
+//! the pure modules below ([`core`] and its helpers); the IO layer that executes their actions
+//! (spawning, pumps, writer threads, the window) arrives with Task 10.
+
+// The IO layer that drives these modules arrives in M1b Task 10; until then only their tests
+// use them, and the commands only it sends (`Ping`, `Shutdown`) are not built anywhere.
+#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
+pub mod core;
+#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
+pub mod frames;
+#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
+pub mod present;
+#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
+pub mod restart;
+#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
+pub mod subresources;
 
 use std::time::Duration;
 
