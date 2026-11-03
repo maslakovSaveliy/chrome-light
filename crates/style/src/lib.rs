@@ -45,7 +45,7 @@ pub(crate) mod traversal;
 
 pub use engine::{StyleEngine, StyledDocument};
 pub use error::StyleError;
-pub use sheets::SheetWarning;
+pub use sheets::{SheetWarning, stylesheet_requests};
 
 /// stylo's computed-value bundle for one element, re-exported so consumers can name the
 /// type [`StyledDocument::computed`] hands back without depending on `stylo` themselves.

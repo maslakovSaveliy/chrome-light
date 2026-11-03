@@ -249,11 +249,11 @@ impl LoadedDocument {
 }
 pub struct Rendered { pub display_list: DisplayList, pub warnings: Vec<String>, pub stages: Option<Stages> }
 ```
-The testshell keeps its public API; `render_bytes` becomes: `ParsedDocument::parse` → load each requested URL with `cl_net::load_file` into a `SubresourceMap` → `attach` → `render` → `cl_gfx::cpu::rasterize`. `reftest::run_pair` unchanged in behaviour. `StageDumps`/`Stages` move to `cl-renderer` (re-exported by the testshell) — keep whatever opt-in shape debt D1 established.
+As built (ledger): `collect_document_sheets`' `load` returns `Result<Vec<u8>, String>`; `subresource_requests` is deduplicated; a failed style pass loses the document (`RenderError::DocumentLost`, unreachable today). The testshell keeps its public API; `render_bytes` becomes: `ParsedDocument::parse` → load each requested URL with `cl_net::load_file` into a `SubresourceMap` → `attach` → `render` → `cl_gfx::cpu::rasterize`. `reftest::run_pair` unchanged in behaviour. `StageDumps`/`Stages` move to `cl-renderer` (re-exported by the testshell) — keep whatever opt-in shape debt D1 established.
 
-- [ ] **Step 1: Failing tests:** `requests_should_follow_document_order_and_rel_tokens` (cl-style), `rerender_should_equal_fresh_render_all_44_pages` (render at 800×600, then `render` again at 500×700 on the same `LoadedDocument`; the second display list equals a fresh `ParsedDocument` rendered at 500×700), `missing_subresource_should_warn_not_fail`.
-- [ ] **Step 2: Implement**; all goldens unchanged, 22/22 reftests.
-- [ ] **Step 3: Gate + commit** `renderer: cl-renderer document pipeline shared by the renderer process and the testshell`.
+- [x] **Step 1: Failing tests:** `requests_should_follow_document_order_and_rel_tokens` (cl-style), `rerender_should_equal_fresh_render_all_44_pages` (render at 800×600, then `render` again at 500×700 on the same `LoadedDocument`; the second display list equals a fresh `ParsedDocument` rendered at 500×700), `missing_subresource_should_warn_not_fail`.
+- [x] **Step 2: Implement**; all goldens unchanged, 22/22 reftests.
+- [x] **Step 3: Gate + commit** `renderer: cl-renderer document pipeline shared by the renderer process and the testshell`.
 
 ---
 

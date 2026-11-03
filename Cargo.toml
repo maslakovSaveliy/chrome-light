@@ -23,6 +23,7 @@ cl-fonts = { path = "crates/fonts", version = "0.0.1" }
 cl-layout = { path = "crates/layout", version = "0.0.1" }
 cl-paint = { path = "crates/paint", version = "0.0.1" }
 cl-gfx = { path = "crates/gfx", version = "0.0.1" }
+cl-renderer = { path = "crates/renderer", version = "0.0.1" }
 
 anyhow = "1"
 # `derive` for `#[derive(arbitrary::Arbitrary)]` on the geometry/display-list types the

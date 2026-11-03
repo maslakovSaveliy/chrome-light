@@ -78,6 +78,23 @@ pub enum ShellError {
     /// `cl-gfx` failed to rasterise the display list.
     #[error("gfx: {0}")]
     Gfx(#[from] cl_gfx::GfxError),
+    /// A [`cl_renderer::RenderError`] with no variant of its own here (a lost document —
+    /// unreachable for the testshell, which renders each document once).
+    #[error("render: {0}")]
+    Render(cl_renderer::RenderError),
+}
+
+impl From<cl_renderer::RenderError> for ShellError {
+    /// Keeps the testshell's error variants as they were before the pipeline moved into
+    /// `cl-renderer` (M1b Task 5).
+    fn from(error: cl_renderer::RenderError) -> Self {
+        match error {
+            cl_renderer::RenderError::Html(e) => ShellError::Html(e),
+            cl_renderer::RenderError::Style(e) => ShellError::Style(e),
+            cl_renderer::RenderError::Layout(e) => ShellError::Layout(e),
+            other @ cl_renderer::RenderError::DocumentLost => ShellError::Render(other),
+        }
+    }
 }
 
 /// Result of comparing two PNGs.

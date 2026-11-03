@@ -7,6 +7,11 @@
 //! `<link rel~=stylesheet href>`'s resolved, loaded resource as an author sheet, exactly
 //! the way a real browser builds up a document's `DocumentOrShadowRoot.styleSheets`.
 //!
+//! [`stylesheet_requests`] lists the same `<link>` stylesheets without loading them, so a
+//! renderer process can ask the browser for every one in a single batch before styling
+//! (M1b Task 5). Both resolve an `href` through the one helper, `resolve_link`, so the URL
+//! the renderer asks for is exactly the URL the style pass later looks up.
+//!
 //! A missing or unloadable external stylesheet must never blank the rest of the page: a
 //! bad `href`, a `load` failure, or non-UTF-8 content all become a [`SheetWarning`] pushed
 //! onto the returned list rather than aborting collection. The only way
@@ -15,7 +20,7 @@
 //! `href` in the document could be resolved at all, so there is nothing sound left to do.
 
 use cl_dom::{Document, NodeId, NodeKind, local_name};
-use cl_net::{NetError, Url};
+use cl_net::Url;
 
 use crate::StyleEngine;
 use crate::error::StyleError;
@@ -71,8 +76,10 @@ impl StyleEngine {
     /// case-insensitively against any one token — see [`rel_has_stylesheet_token`] for the
     /// full reasoning, including why `rel="alternate stylesheet"` matches.
     ///
-    /// `load` fetches the bytes for a resolved stylesheet URL (the test shell passes
-    /// `cl_net::load_file`; a future network process would pass something HTTP-aware). A
+    /// `load` fetches the bytes for a resolved stylesheet URL, or says why it could not, in
+    /// words that become the warning's [`SheetWarning::cause`] (the renderer pipeline looks
+    /// the URL up in the bytes the browser sent; the test shell's loads go through
+    /// `cl_net::load_file`). A
     /// `<link>` with no `href`, or whose `rel` does not carry the `stylesheet` token, is
     /// silently skipped — it names no stylesheet, so there is nothing to warn about.
     ///
@@ -84,7 +91,7 @@ impl StyleEngine {
     pub fn collect_document_sheets(
         &mut self,
         doc: &Document,
-        load: &dyn Fn(&Url) -> Result<Vec<u8>, NetError>,
+        load: &dyn Fn(&Url) -> Result<Vec<u8>, String>,
     ) -> Result<Vec<SheetWarning>, StyleError> {
         let base = Url::parse(doc.base_url()).map_err(|e| StyleError::Url(e.to_string()))?;
         let mut warnings = Vec::new();
@@ -114,34 +121,26 @@ impl StyleEngine {
         doc: &Document,
         id: NodeId,
         base: &Url,
-        load: &dyn Fn(&Url) -> Result<Vec<u8>, NetError>,
+        load: &dyn Fn(&Url) -> Result<Vec<u8>, String>,
         warnings: &mut Vec<SheetWarning>,
     ) {
-        let rel = doc.attr(id, &local_name!("rel")).unwrap_or_default();
-        if !rel_has_stylesheet_token(rel) {
-            return;
-        }
-        let Some(href) = doc.attr(id, &local_name!("href")) else {
+        let Some(href) = link_stylesheet_href(doc, id) else {
             return;
         };
-
-        let url = match base.join(href) {
+        let url = match resolve_link(base, href) {
             Ok(url) => url,
-            Err(e) => {
-                warnings.push(SheetWarning {
-                    url_or_href: href.to_owned(),
-                    cause: e.to_string(),
-                });
+            Err(warning) => {
+                warnings.push(warning);
                 return;
             }
         };
 
         let bytes = match load(&url) {
             Ok(bytes) => bytes,
-            Err(e) => {
+            Err(cause) => {
                 warnings.push(SheetWarning {
                     url_or_href: url.as_str().to_owned(),
-                    cause: e.to_string(),
+                    cause,
                 });
                 return;
             }
@@ -159,6 +158,62 @@ impl StyleEngine {
             });
         }
     }
+}
+
+/// The `<link rel~=stylesheet href>` stylesheets of `doc`, in document order, resolved
+/// against the document's base URL exactly as [`StyleEngine::collect_document_sheets`]
+/// resolves them — nothing is loaded. Duplicates are kept: this is the document's list, not
+/// a fetch plan.
+///
+/// An `href` that does not resolve becomes a [`SheetWarning`] instead of a URL (the same
+/// warning `collect_document_sheets` reports for it); if the document's base URL itself is
+/// invalid, every stylesheet link does.
+pub fn stylesheet_requests(doc: &Document) -> (Vec<Url>, Vec<SheetWarning>) {
+    let base = Url::parse(doc.base_url());
+    let mut urls = Vec::new();
+    let mut warnings = Vec::new();
+    for id in doc.descendants(doc.root()) {
+        let is_link = doc
+            .element(id)
+            .is_some_and(|element| element.name.local == local_name!("link"));
+        if !is_link {
+            continue;
+        }
+        let Some(href) = link_stylesheet_href(doc, id) else {
+            continue;
+        };
+        let resolved = match &base {
+            Ok(base) => resolve_link(base, href),
+            Err(e) => Err(SheetWarning {
+                url_or_href: href.to_owned(),
+                cause: format!("invalid document base url: {e}"),
+            }),
+        };
+        match resolved {
+            Ok(url) => urls.push(url),
+            Err(warning) => warnings.push(warning),
+        }
+    }
+    (urls, warnings)
+}
+
+/// The `href` of a `<link>` element whose `rel` carries the `stylesheet` token, or `None` if
+/// it names no stylesheet (no such token, or no `href`).
+fn link_stylesheet_href(doc: &Document, id: NodeId) -> Option<&str> {
+    let rel = doc.attr(id, &local_name!("rel")).unwrap_or_default();
+    if !rel_has_stylesheet_token(rel) {
+        return None;
+    }
+    doc.attr(id, &local_name!("href"))
+}
+
+/// Resolves a stylesheet `href` against the document's base URL — the one place both
+/// [`stylesheet_requests`] and [`StyleEngine::collect_document_sheets`] do it.
+fn resolve_link(base: &Url, href: &str) -> Result<Url, SheetWarning> {
+    base.join(href).map_err(|e| SheetWarning {
+        url_or_href: href.to_owned(),
+        cause: e.to_string(),
+    })
 }
 
 /// Concatenates the text of every descendant text node of `id`, in document order.
@@ -226,10 +281,8 @@ mod tests {
     /// A `load` callback for tests that must never actually be called (no `<link>` in the
     /// fixture). Returns `Err` rather than panicking, so an accidental call is a normal
     /// assertion failure (via the returned warning) instead of a test-harness panic.
-    fn unreachable_load(_url: &Url) -> Result<Vec<u8>, NetError> {
-        Err(NetError::UnsupportedScheme(
-            "no <link> in this fixture".to_owned(),
-        ))
+    fn unreachable_load(_url: &Url) -> Result<Vec<u8>, String> {
+        Err("no <link> in this fixture".to_owned())
     }
 
     #[test]
@@ -289,11 +342,8 @@ mod tests {
         doc.append_child(root, link).expect("link");
 
         let mut engine = StyleEngine::new((800.0, 600.0), 1.0).expect("engine");
-        let result = engine.collect_document_sheets(&doc, &|_url| {
-            Err(NetError::Io(std::io::Error::other(
-                "missing.css does not exist",
-            )))
-        });
+        let result = engine
+            .collect_document_sheets(&doc, &|_url| Err("missing.css does not exist".to_owned()));
 
         let warnings = result.expect("a missing link is a warning, not an Err");
         assert_eq!(warnings.len(), 1);
@@ -336,6 +386,93 @@ mod tests {
         let mut engine = StyleEngine::new((800.0, 600.0), 1.0).expect("engine");
         let result = engine.collect_document_sheets(&doc, &unreachable_load);
         assert!(matches!(result, Err(StyleError::Url(_))));
+    }
+
+    #[test]
+    fn requests_should_follow_document_order_and_rel_tokens() {
+        let mut doc = Document::new("file:///dir/page.html");
+        let root = doc.root();
+        let links = [
+            el(
+                &mut doc,
+                "link",
+                &[("rel", "stylesheet"), ("href", "a.css")],
+            ),
+            el(&mut doc, "link", &[("rel", "icon"), ("href", "icon.css")]),
+            el(&mut doc, "style", &[]),
+            el(
+                &mut doc,
+                "link",
+                &[("rel", "Alternate STYLESHEET"), ("href", "../b.css")],
+            ),
+            el(&mut doc, "link", &[("rel", "stylesheet")]),
+            el(
+                &mut doc,
+                "link",
+                &[("rel", "stylesheet"), ("href", "http://[::1")],
+            ),
+            el(
+                &mut doc,
+                "link",
+                &[("rel", "stylesheet"), ("href", "file:///abs/c.css")],
+            ),
+        ];
+        for link in links {
+            doc.append_child(root, link).expect("append");
+        }
+
+        let (urls, warnings) = stylesheet_requests(&doc);
+
+        let urls: Vec<&str> = urls.iter().map(Url::as_str).collect();
+        assert_eq!(
+            urls,
+            ["file:///dir/a.css", "file:///b.css", "file:///abs/c.css"]
+        );
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert_eq!(
+            warnings.first().expect("one warning").url_or_href,
+            "http://[::1"
+        );
+    }
+
+    #[test]
+    fn requests_should_resolve_like_collect_document_sheets() {
+        // The renderer asks for exactly the URLs the style pass will look up: both go through
+        // the same resolution.
+        let mut doc = Document::new("file:///dir/page.html");
+        let root = doc.root();
+        let link = el(
+            &mut doc,
+            "link",
+            &[("rel", "stylesheet"), ("href", "x/../s.css")],
+        );
+        doc.append_child(root, link).expect("link");
+
+        let (urls, _) = stylesheet_requests(&doc);
+        let requested = std::cell::RefCell::new(Vec::new());
+        let mut engine = StyleEngine::new((800.0, 600.0), 1.0).expect("engine");
+        engine
+            .collect_document_sheets(&doc, &|url| {
+                requested.borrow_mut().push(url.clone());
+                Ok(Vec::new())
+            })
+            .expect("collects");
+        assert_eq!(urls, requested.into_inner());
+    }
+
+    #[test]
+    fn requests_should_warn_for_every_link_when_the_base_is_invalid() {
+        let mut doc = Document::new("not a url");
+        let root = doc.root();
+        let link = el(
+            &mut doc,
+            "link",
+            &[("rel", "stylesheet"), ("href", "a.css")],
+        );
+        doc.append_child(root, link).expect("link");
+        let (urls, warnings) = stylesheet_requests(&doc);
+        assert!(urls.is_empty());
+        assert_eq!(warnings.len(), 1);
     }
 
     #[test]

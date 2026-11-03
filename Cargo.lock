@@ -339,6 +339,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cl-renderer"
+version = "0.0.1"
+dependencies = [
+ "cl-dom",
+ "cl-fonts",
+ "cl-html",
+ "cl-layout",
+ "cl-net",
+ "cl-paint",
+ "cl-style",
+ "thiserror",
+]
+
+[[package]]
 name = "cl-style"
 version = "0.0.1"
 dependencies = [
@@ -371,6 +385,7 @@ dependencies = [
  "cl-layout",
  "cl-net",
  "cl-paint",
+ "cl-renderer",
  "cl-style",
  "clap",
  "thiserror",

@@ -143,7 +143,7 @@ crates/
   webapi/        cl-webapi       Fetch API, Storage APIs, Workers, Canvas, timers… (feature-gated modules)
   storage/       cl-storage      SQLite backends, quota, StorageKey
   a11y/          cl-a11y         DOM → accesskit tree
-  renderer/      cl-renderer     renderer process main
+  renderer/      cl-renderer     renderer document pipeline (parse → subresources → display list), shared with cl-testshell; the process main lives in apps/chromelight (M1b)
   browser/       cl-browser      browser process core
   shell-ui/      cl-shell-ui     egui chrome UI
   chrome-import/ cl-chrome-import
@@ -163,7 +163,7 @@ tools/
 docs/
 ```
 
-**Status as of 2026-09-07 (M0):** existing: `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `apps/chromelight` binary, `tools/fuzz`, `tools/bench`; the remaining crates — per plan, M1+.
+**Status as of 2026-09-07 (M0):** existing: `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `apps/chromelight` binary, `tools/fuzz`, `tools/bench`; the remaining crates — per plan, M1+. M1a added `cl-net`, `cl-dom`, `cl-html`, `cl-style`, `cl-fonts`, `cl-layout`, `cl-paint`, `cl-gfx`; M1b Task 5 added `cl-renderer`.
 
 Inter-crate dependency rule (checked by `cargo deny` bans + `tools/check-deps.sh`): `cl-dom` does not depend on `cl-layout`; `cl-layout` does not depend on `cl-js`; nothing in the renderer depends on `cl-browser`; `cl-platform` — a leaf.
 
