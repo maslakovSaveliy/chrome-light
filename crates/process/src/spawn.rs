@@ -3,9 +3,9 @@
 //! must not exist.
 
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cl_ipc::{
@@ -39,36 +39,67 @@ pub fn child_args(process_type: ProcessType, bootstrap_name: &str) -> [String; 2
     ]
 }
 
-/// Spawn `exe` as `process_type`, wait up to `timeout` for bootstrap, run the handshake.
+/// How often [`spawn`] checks whether a child that has not connected yet has already exited, and
+/// how often [`wait_timeout`] polls a child's exit status.
+const POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// What [`spawn`] needs besides the executable and the role.
+#[derive(Debug, Clone)]
+pub struct SpawnOptions {
+    /// Extra command-line arguments for the child, after `--type` and `--ipc-bootstrap`.
+    pub extra_args: Vec<String>,
+    /// Upper bound for each of the two waits: the child connecting to the bootstrap server, and
+    /// the handshake.
+    pub timeout: Duration,
+    /// The browser's own `--trace-out` path, if any. The child then writes its trace next to it
+    /// as `<stem>.<role>.json` (see [`child_trace_path`]).
+    pub trace_path: Option<PathBuf>,
+}
+
+/// The trace file a child of `role` writes when the browser traces to `browser_trace`:
+/// `trace.json` → `trace.renderer.json`.
+#[must_use]
+pub fn child_trace_path(browser_trace: &Path, role: ProcessType) -> PathBuf {
+    browser_trace.with_extension(format!("{role}.json"))
+}
+
+/// Spawn `exe` as `process_type`, wait up to `opts.timeout` for bootstrap, run the handshake.
+///
+/// While waiting for the child to connect, the child's exit status is polled every
+/// [`POLL_INTERVAL`]: a child that exits first (for example because it refuses to run without a
+/// sandbox) ends the wait at once with [`ProcessError::ExitedDuringBootstrap`] instead of
+/// running out the timeout.
 pub fn spawn(
     exe: &Path,
     process_type: ProcessType,
-    extra_args: &[String],
-    timeout: Duration,
+    opts: &SpawnOptions,
 ) -> Result<ChildProcess, ProcessError> {
     let server = BootstrapServer::new()?;
     let args = child_args(process_type, server.name());
-    let mut child = Command::new(exe)
-        .args(args)
-        .args(extra_args)
-        .stdin(Stdio::null())
-        .spawn()
-        .map_err(ProcessError::Spawn)?;
+    let mut cmd = Command::new(exe);
+    cmd.args(args).args(&opts.extra_args).stdin(Stdio::null());
+    if let Some(trace) = &opts.trace_path {
+        cmd.arg(format!(
+            "--trace-out={}",
+            child_trace_path(trace, process_type).display()
+        ));
+    }
+    let mut child = cmd.spawn().map_err(ProcessError::Spawn)?;
     let pid = child.id();
     tracing::info!(%process_type, pid, "spawned child");
 
-    let endpoint = match server.accept_with_timeout(timeout) {
+    let endpoint = match await_bootstrap(server, &mut child, opts.timeout) {
         Ok(ep) => ep,
         Err(e) => {
             kill_and_reap(&mut child);
-            return Err(e.into());
+            return Err(e);
         }
     };
     let ctx = ReceiverCtx {
         expected_process_type: process_type,
         expected_pid: Some(pid),
     };
-    let hello = match handshake::browser_side(&endpoint, &ctx, timeout) {
+    let hello = match handshake::browser_side(&endpoint, &ctx, opts.timeout) {
         Ok(h) => h,
         Err(e) => {
             kill_and_reap(&mut child);
@@ -81,6 +112,74 @@ pub fn spawn(
         hello,
         child,
     })
+}
+
+/// Waits for the child to connect to `server`, polling `child` in between so that an early exit
+/// is reported at once. The caller kills and reaps the child on any error (for an exited child
+/// that is a no-op: its status has already been collected here).
+fn await_bootstrap(
+    server: BootstrapServer,
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<BrowserEndpoint, ProcessError> {
+    let deadline = Instant::now() + timeout;
+    let pending = server.start_accept()?;
+    loop {
+        if let Some(endpoint) = pending.poll(POLL_INTERVAL)? {
+            return Ok(endpoint);
+        }
+        if let Some(status) = child.try_wait().map_err(ProcessError::Child)? {
+            return Err(ProcessError::ExitedDuringBootstrap {
+                code: status.code(),
+            });
+        }
+        if Instant::now() >= deadline {
+            return Err(ProcessError::Ipc(cl_ipc::IpcError::Transport(
+                std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "child did not connect to bootstrap server in time",
+                ),
+            )));
+        }
+    }
+}
+
+/// How a bounded wait on a child ended (see [`wait_timeout`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaitOutcome {
+    /// The child's exit status. After a kill it reports the kill, not a normal exit.
+    pub status: ExitStatus,
+    /// `true` when the child was still running at the deadline and was killed.
+    pub killed: bool,
+}
+
+/// Waits up to `timeout` for `child` to exit; if it is still running then, kills it. Either way
+/// the child is reaped before this returns, so no zombie is left behind and a later `try_wait`
+/// reports the same status.
+///
+/// `std::process::Child` has no wait-with-timeout, so this polls `try_wait` every
+/// [`POLL_INTERVAL`], parking the thread in between (`std::thread::sleep` is disallowed in this
+/// workspace; a spurious unpark only means one extra poll).
+pub fn wait_timeout(child: &mut Child, timeout: Duration) -> Result<WaitOutcome, ProcessError> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait().map_err(ProcessError::Child)? {
+            return Ok(WaitOutcome {
+                status,
+                killed: false,
+            });
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            child.kill().map_err(ProcessError::Child)?;
+            let status = child.wait().map_err(ProcessError::Child)?;
+            return Ok(WaitOutcome {
+                status,
+                killed: true,
+            });
+        }
+        std::thread::park_timeout(POLL_INTERVAL.min(deadline - now));
+    }
 }
 
 /// Kill a child and reap it, ignoring failures: this runs on error paths where the process may
@@ -115,9 +214,14 @@ impl ChildProcess {
         self.child.id()
     }
 
-    /// Wait for exit.
-    pub fn wait(&mut self) -> Result<ExitStatus, ProcessError> {
-        self.child.wait().map_err(ProcessError::Child)
+    /// The child's exit status if it has exited, without blocking.
+    pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, ProcessError> {
+        self.child.try_wait().map_err(ProcessError::Child)
+    }
+
+    /// Wait up to `timeout` for exit, then kill; always reaps. See [`wait_timeout`].
+    pub fn wait_timeout(&mut self, timeout: Duration) -> Result<WaitOutcome, ProcessError> {
+        wait_timeout(&mut self.child, timeout)
     }
 
     /// Kill and reap.

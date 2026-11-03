@@ -6,7 +6,8 @@
 # Wall-clock-bounded tests run alone.
 #
 # Each test below asserts that a pathological input (a deep or wide tree, many inline items,
-# a 1 MB page) finishes under a fixed time budget: 5 s locally, 15 s under `CL_SMOKE_SLOW=1`
+# a 1 MB page) — or a process-lifecycle wait (a child that exits during bootstrap, a child that
+# ignores Shutdown) — finishes under a fixed time budget: 5 s locally, 15 s under `CL_SMOKE_SLOW=1`
 # as CI sets it (`crates/dom/src/document.rs` uses 2 s / 6 s). That checks the algorithm's
 # complexity class, but it is only meaningful if the test has the CPU to itself. Under
 # nextest's default one-test-per-core scheduling, two of these running together, or one
@@ -27,5 +28,8 @@ filter = '''
     | test(=many_inline_spans_should_lay_out_in_linear_time)
     | test(=nth_child_over_twenty_thousand_siblings_should_resolve_under_the_time_bound)
     | test(=render_should_finish_a_1mb_document_within_the_time_budget)
+    | test(=sandbox_refusal_should_fail_spawn_within_3s_with_78)
+    | test(=wait_timeout_should_kill_child_ignoring_shutdown)
+    | test(=wait_timeout_should_kill_and_reap_a_child_that_never_exits)
 '''
 threads-required = "num-cpus"

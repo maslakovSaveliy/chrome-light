@@ -9,6 +9,14 @@ use clap::Parser;
 /// `ChromeLight` process entry arguments.
 #[derive(Debug, Parser)]
 #[command(name = "chromelight", version, about)]
+#[cfg_attr(
+    debug_assertions,
+    expect(
+        clippy::struct_excessive_bools,
+        reason = "CLI switches are booleans by nature; the debug-only test flags push the count \
+                  over the lint's limit in debug builds only"
+    )
+)]
 pub struct Args {
     /// Process role. Omit for the browser process.
     #[arg(long = "type", value_parser = parse_process_type, default_value = "browser")]
@@ -34,10 +42,22 @@ pub struct Args {
     #[arg(long = "trace-out")]
     pub trace_out: Option<PathBuf>,
 
-    /// Dev/test only: return an error right after the handshake without shutting the renderer
-    /// down, to exercise `ChildProcess`'s kill-on-drop safety net.
+    /// Debug builds only: return an error right after the handshake without shutting the
+    /// renderer down, to exercise `ChildProcess`'s kill-on-drop safety net.
+    #[cfg(debug_assertions)]
     #[arg(long = "browser-fail-after-handshake", hide = true)]
     pub browser_fail_after_handshake: bool,
+
+    /// Debug builds only: start the renderer with `--ignore-shutdown`, to exercise the browser's
+    /// bounded wait on a child that does not exit.
+    #[cfg(debug_assertions)]
+    #[arg(long = "renderer-ignore-shutdown", hide = true)]
+    pub renderer_ignore_shutdown: bool,
+
+    /// Debug builds only, child roles: keep serving after `Shutdown` instead of exiting.
+    #[cfg(debug_assertions)]
+    #[arg(long = "ignore-shutdown", hide = true)]
+    pub ignore_shutdown: bool,
 }
 
 fn parse_process_type(s: &str) -> Result<ProcessType, String> {

@@ -7,6 +7,7 @@
 mod args;
 mod browser;
 mod child;
+mod exit;
 mod telemetry;
 
 use cl_platform::ProcessType;
@@ -25,7 +26,7 @@ fn main() {
 
     let code = match args.process_type {
         ProcessType::Browser => match browser::run(&args) {
-            Ok(()) => 0,
+            Ok(code) => code,
             Err(e) => {
                 tracing::error!(%e, "browser process failed");
                 1

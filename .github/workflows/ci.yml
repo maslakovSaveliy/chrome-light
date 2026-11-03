@@ -77,11 +77,27 @@ jobs:
         shell: bash
         run: |
           cargo build --release -p chromelight --locked
+          # --no-sandbox is inert in release: the renderer refuses to run without a sandbox and
+          # exits 78; the browser must notice that at once (not by its 15 s bootstrap timeout)
+          # and exit 78 itself.
           set +e
-          ./target/release/chromelight --exit-after-handshake --no-sandbox
+          start=$(date +%s)
+          ./target/release/chromelight --exit-after-handshake --no-sandbox 2> gate-s0.err
           code=$?
+          end=$(date +%s)
           set -e
-          test "$code" -ne 0
+          cat gate-s0.err
+          test "$code" -eq 78
+          grep -q "sandbox unavailable" gate-s0.err
+          test $((end - start)) -le 3
+          # Debug-only test flags must not exist in release (clap rejects an unknown flag with 2).
+          for flag in --browser-fail-after-handshake --renderer-ignore-shutdown --ignore-shutdown; do
+            set +e
+            ./target/release/chromelight "$flag" --exit-after-handshake 2>/dev/null
+            code=$?
+            set -e
+            if [ "$code" -ne 2 ]; then echo "release binary accepted debug-only flag $flag (exit $code)"; exit 1; fi
+          done
 
   fuzz-short:
     runs-on: ubuntu-24.04

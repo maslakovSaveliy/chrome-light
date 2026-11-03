@@ -50,13 +50,13 @@ Updated at the end of every working session. Short facts, links to documents. Se
 Deferred to M1+; do not block the public beta:
 
 1. `BootstrapServer::accept_with_timeout` starts one blocked accept-thread per call; the leak is bounded by one `spawn()` (not by the browser process lifetime) — revisit the handshake in M1.
-2. Release sandbox-refusal path takes ~15 s (browser waits for the bootstrap timeout instead of polling `try_wait`); worst case `spawn` = 2×timeout (accept + handshake) — M1 optimization. The CI Gate S0 step currently passes by this timeout, not by the refusal — M1b Task 2 fixes it.
+2. ~~Release sandbox-refusal path takes ~15 s~~ — **closed by M1b Task 2**: `spawn` polls the child while waiting for bootstrap and returns `ExitedDuringBootstrap`; the browser exits 78 in < 1 s, and CI Gate S0 asserts `== 78`, the message, ≤ 3 s, and exit 2 for every debug-only flag in release. Still: worst case `spawn` = 2×timeout (accept + handshake) for a child that connects and then stalls.
 3. `browser_side` masks `Violation` if the reject-ack send fails — log-and-ignore.
 4. `BrowserEndpoint`/`ChildEndpoint` are structurally identical — generic helper as the API grows.
 5. Fuzz job in CI without rust-cache.
 6. Test temp-dir boilerplate is duplicated (testshell, chromelight tests) — helper.
 7. Browser-side `recv_timeout` — M0-ONLY poll via `park_timeout(1 ms)`; `park_timeout` is not in disallowed-methods; blocking `BrowserEndpoint::recv` remains pub (used by tests). M1: `IpcReceiverSet`/multiplexed wait, type-level ban on unbounded recv on the browser side.
-8. `browser.rs`: `renderer.wait()` after `Shutdown` — unbounded wait on the process; M1: `try_wait` poll with a deadline + kill (same class as ADR-0005 §4).
+8. ~~`browser.rs`: `renderer.wait()` after `Shutdown` — unbounded wait~~ — **closed by M1b Task 2**: `ChildProcess::wait_timeout` (2 s after `Shutdown`, then kill + reap).
 9. CI: fmt/clippy — in the 3-OS matrix; `deny`/`doc`/scripts — ubuntu only (platform-independent).
 
 ## M1a debts (open as of 2026-11-03)

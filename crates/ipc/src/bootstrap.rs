@@ -124,27 +124,55 @@ impl BootstrapServer {
 
     /// Wait for the child to connect. `ipc-channel`'s accept has no timeout, so it runs on a
     /// helper thread; a hung or crashed child yields `IpcError::Transport(TimedOut)` and the
-    /// caller kills it.
+    /// caller kills it. A caller that can also watch the child process should use
+    /// [`BootstrapServer::start_accept`] instead, to stop waiting as soon as the child exits.
     pub fn accept_with_timeout(self, timeout: Duration) -> Result<BrowserEndpoint, IpcError> {
+        match self.start_accept()?.poll(timeout)? {
+            Some(endpoint) => Ok(endpoint),
+            None => Err(IpcError::Transport(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "child did not connect to bootstrap server in time",
+            ))),
+        }
+    }
+
+    /// Start waiting for the child to connect, without blocking the caller. The accept runs on a
+    /// helper thread (`ipc-channel`'s accept has no timeout); the caller polls the returned
+    /// [`PendingAccept`] in short slices and can check on the child in between.
+    ///
+    /// If the child never connects, the helper thread stays blocked in `accept` until the
+    /// process exits — one thread per abandoned bootstrap (known M0 debt).
+    pub fn start_accept(self) -> Result<PendingAccept, IpcError> {
         let (tx, rx) = mpsc::channel();
         let server = self.server;
         thread::Builder::new()
             .name("ipc-bootstrap-accept".into())
             .spawn(move || {
                 let result = server.accept().map(|(_, msg)| msg);
-                // Receiver may have timed out and gone away; nothing to do then.
+                // Receiver may have stopped waiting and gone away; nothing to do then.
                 let _ = tx.send(result);
             })?;
-        match rx.recv_timeout(timeout) {
-            Ok(Ok(msg)) => Ok(BrowserEndpoint {
+        Ok(PendingAccept { rx })
+    }
+}
+
+/// A bootstrap accept in progress on its helper thread (see [`BootstrapServer::start_accept`]).
+#[derive(Debug)]
+pub struct PendingAccept {
+    rx: mpsc::Receiver<Result<BootstrapMsg, ipc_channel::IpcError>>,
+}
+
+impl PendingAccept {
+    /// Wait up to `wait` for the child's connection. `Ok(None)` means it has not connected yet;
+    /// call again or give up. An error means the accept itself failed and will not succeed later.
+    pub fn poll(&self, wait: Duration) -> Result<Option<BrowserEndpoint>, IpcError> {
+        match self.rx.recv_timeout(wait) {
+            Ok(Ok(msg)) => Ok(Some(BrowserEndpoint {
                 tx: msg.to_child,
                 rx: msg.to_browser,
-            }),
+            })),
             Ok(Err(e)) => Err(IpcError::Channel(e.to_string())),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err(IpcError::Transport(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "child did not connect to bootstrap server in time",
-            ))),
+            Err(mpsc::RecvTimeoutError::Timeout) => Ok(None),
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 Err(IpcError::Channel("bootstrap accept thread died".into()))
             }

@@ -9,10 +9,7 @@ use cl_ipc::{
 use cl_process::{Sandbox, SandboxPolicy};
 use tracing::{error, info};
 
-use crate::args::Args;
-
-/// `EX_CONFIG` from sysexits.h: the environment cannot run this role safely.
-pub const EXIT_SANDBOX_UNAVAILABLE: i32 = 78;
+use crate::{args::Args, exit::EXIT_SANDBOX_UNAVAILABLE};
 
 /// Returns the process exit code.
 pub fn run(args: &Args) -> i32 {
@@ -31,6 +28,16 @@ pub fn run(args: &Args) -> i32 {
             1
         }
     }
+}
+
+/// `--ignore-shutdown` exists only in debug builds.
+fn ignores_shutdown(args: &Args) -> bool {
+    #[cfg(debug_assertions)]
+    if args.ignore_shutdown {
+        return true;
+    }
+    let _ = args;
+    false
 }
 
 fn choose_policy(no_sandbox: bool) -> Box<dyn SandboxPolicy> {
@@ -53,7 +60,13 @@ fn serve(args: &Args, sandbox: &Sandbox<cl_process::Applied>) -> anyhow::Result<
     loop {
         match ep.recv()? {
             ToChild::Ping(n) => ep.send(&ToBrowser::Pong(n))?,
-            ToChild::Shutdown => return Ok(()),
+            ToChild::Shutdown => {
+                if ignores_shutdown(args) {
+                    info!("ignoring Shutdown (--ignore-shutdown)");
+                    continue;
+                }
+                return Ok(());
+            }
             ToChild::HelloAck { .. } => anyhow::bail!("duplicate HelloAck"),
         }
     }
