@@ -159,6 +159,7 @@ dependencies = [
  "cl-paint",
  "cl-style",
  "libfuzzer-sys",
+ "postcard",
 ]
 
 [[package]]

@@ -28,5 +28,8 @@ height. The bundled `FontDb` is built once per thread, not per iteration: measur
 build against 4.2 us per `rasterize`, so caching it roughly doubles the iteration rate), `display_list_decode` (cl-paint
 `wire::decode_display_list` over raw bytes, then `validate` on whatever decodes — the gpu's
 receive path for the renderer's display list, M1b Task 6; built with cl-paint's `serde`
-feature). Every
+feature; asserts a decoded list is within the item/glyph limits and that the result agrees
+with the derived postcard decoding, except where the bounded decoder refuses for a limit.
+The default `-max_len` (4096) keeps inputs far below the limits, whose paths are covered by
+`crates/paint/tests/wire.rs`). Every
 new parser/decoder adds a target in the same PR (CLAUDE.md §3.1).

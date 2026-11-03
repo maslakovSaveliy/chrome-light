@@ -10,6 +10,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+postcard = { version = "1", features = ["use-std"] }
 cl-dom = { path = "../../crates/dom" }
 cl-fonts = { path = "../../crates/fonts", features = ["arbitrary"] }
 cl-gfx = { path = "../../crates/gfx" }

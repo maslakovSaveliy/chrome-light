@@ -19,7 +19,10 @@
 //! left for, so this is never more than the input could fill), and a sequence whose length
 //! postcard did not report grows in steps that never request capacity past the limit. So
 //! one decode holds at most the input (≤ [`MAX_DISPLAY_LIST_BYTES`], copied out of shm by
-//! the caller), ≈ 14 MiB of items and 16 MiB of glyphs.
+//! the caller), ≈ 14 MiB of items (≈ 21 MiB for a moment while an unreported-length item
+//! vector regrows), 16 MiB of finished glyph runs plus ≤ 1 MiB for the run being decoded,
+//! and allocator overhead for up to [`MAX_ITEMS`] glyph vectors — ≈ 55 MiB in all. Time is
+//! linear in the input.
 //!
 //! The decoder still accepts any geometry: [`crate::validate()`] runs on the result, as for
 //! a list from any other source.
@@ -39,9 +42,12 @@ use crate::validate::{MAX_GLYPHS_PER_RUN, MAX_ITEMS, MAX_TOTAL_GLYPHS};
 ///
 /// Set in M1b Task 6 from a measurement (owner decision 2026-11-04): the 1 MB smoke page's
 /// list encodes to 49 749 bytes (133 items, 7 182 glyphs) and the largest reftest page's to
-/// 132, so this is ≈ 337× the smoke page. A list at every other limit — [`MAX_ITEMS`] items
-/// at ≈ 30 bytes plus [`MAX_TOTAL_GLYPHS`] glyphs at ≈ 6 — encodes to ≈ 14 MiB, so the cap
-/// does not cut off a list the item and glyph limits allow.
+/// 132, so this is ≈ 337× the smoke page. A list at every other limit with typical varint
+/// sizes — [`MAX_ITEMS`] items at ≈ 30 bytes plus [`MAX_TOTAL_GLYPHS`] glyphs at ≈ 6 —
+/// encodes to ≈ 14 MiB. Varints can be longer (a glyph is 4 to 18 bytes: CJK glyph ids
+/// above 16 383 or offsets beyond ≈ 8 700 px take ≈ 9), so a list near both limits can
+/// exceed the cap; [`encode_display_list`] then reports [`WireError::TooLarge`] on the
+/// renderer side, before anything is sent.
 pub const MAX_DISPLAY_LIST_BYTES: usize = 16 * 1024 * 1024;
 
 /// Why a display list could not be encoded or decoded.

@@ -107,6 +107,25 @@ fn varint(mut n: u64) -> Vec<u8> {
 /// `PopClip`'s variant index in `DisplayItem` — one byte per item on the wire.
 const POP_CLIP: u8 = 4;
 
+/// `Text`'s variant index in `DisplayItem`.
+const TEXT: u8 = 2;
+
+/// A `Glyph` with every field zero: four one-byte varints on the wire.
+const ZERO_GLYPH: [u8; 4] = [0; 4];
+
+/// The bytes of a `Text` item up to (not including) its glyph count: variant, font, size,
+/// origin — the derived field order of `GlyphRun`.
+fn text_run_header() -> Vec<u8> {
+    let DisplayItem::Text { run } = text(0) else {
+        unreachable!("text() builds a Text item")
+    };
+    let mut bytes = vec![TEXT];
+    bytes.extend(postcard::to_allocvec(&run.font).expect("encode font"));
+    bytes.extend(postcard::to_allocvec(&run.size).expect("encode size"));
+    bytes.extend(postcard::to_allocvec(&run.origin).expect("encode origin"));
+    bytes
+}
+
 #[test]
 fn every_item_kind_should_roundtrip() {
     let dl = every_kind();
@@ -130,6 +149,48 @@ fn popclip_flood_should_fail_during_decode() {
     // derived decoder would grow a Vec item by item; this one must stop at MAX_ITEMS.
     let mut bytes = varint(1_000_000_000);
     bytes.extend(std::iter::repeat_n(POP_CLIP, MAX_ITEMS + 1));
+    assert_eq!(
+        decode_display_list(&bytes, MAX_DISPLAY_LIST_BYTES),
+        Err(WireError::LimitsExceeded)
+    );
+}
+
+#[test]
+fn glyph_flood_in_one_run_should_fail_during_decode() {
+    // One run declares 10^9 glyphs (more than the bytes left, so postcard reports no length
+    // and nothing is checked up front), then carries one glyph more than a run may hold.
+    let mut bytes = varint(1);
+    bytes.extend(text_run_header());
+    bytes.extend(varint(1_000_000_000));
+    for _ in 0..=MAX_GLYPHS_PER_RUN {
+        bytes.extend(ZERO_GLYPH);
+    }
+    assert_eq!(
+        decode_display_list(&bytes, MAX_DISPLAY_LIST_BYTES),
+        Err(WireError::LimitsExceeded)
+    );
+}
+
+#[test]
+fn glyph_flood_after_the_total_is_spent_should_fail_during_decode() {
+    // Full runs use up MAX_TOTAL_GLYPHS exactly; one more run declares 10^9 glyphs and
+    // carries a single one — already over the total.
+    let runs = MAX_TOTAL_GLYPHS / MAX_GLYPHS_PER_RUN;
+    let full = list((0..runs).map(|_| text(MAX_GLYPHS_PER_RUN)).collect());
+    let encoded = postcard::to_allocvec(&full).expect("derived encode");
+    let count_len = varint(u64::try_from(runs).expect("fits u64")).len();
+    let bounds_len = postcard::to_allocvec(&bounds())
+        .expect("encode bounds")
+        .len();
+    let runs_bytes = encoded
+        .get(count_len..encoded.len() - bounds_len)
+        .expect("the encoding is count, runs, bounds");
+
+    let mut bytes = varint(u64::try_from(runs + 1).expect("fits u64"));
+    bytes.extend_from_slice(runs_bytes);
+    bytes.extend(text_run_header());
+    bytes.extend(varint(1_000_000_000));
+    bytes.extend(ZERO_GLYPH);
     assert_eq!(
         decode_display_list(&bytes, MAX_DISPLAY_LIST_BYTES),
         Err(WireError::LimitsExceeded)
