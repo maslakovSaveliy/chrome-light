@@ -192,6 +192,36 @@ fn rss_kib(pid: u32) -> u64 {
     digits.parse().expect("tasklist working set")
 }
 
+/// Open handles of `pid`: fds from `/proc/<pid>/fd` (Linux), `lsof` entries (macOS), or the
+/// kernel handle count (Windows, via PowerShell). RSS cannot see a leaked handle whose mapping
+/// is gone, so the leak test counts these too. On macOS `lsof` does not list Mach port rights,
+/// so a leaked port is invisible here; Linux and Windows CI carry that check.
+fn handle_count(pid: u32) -> u64 {
+    if let Ok(entries) = std::fs::read_dir(format!("/proc/{pid}/fd")) {
+        return u64::try_from(entries.count()).expect("fits");
+    }
+    if let Ok(out) = Command::new("lsof")
+        .args(["-n", "-P", "-p", &pid.to_string()])
+        .output()
+        && out.status.success()
+    {
+        let lines = String::from_utf8_lossy(&out.stdout).lines().count();
+        return u64::try_from(lines.saturating_sub(1)).expect("fits"); // minus the header
+    }
+    let out = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!("(Get-Process -Id {pid}).HandleCount"),
+        ])
+        .output()
+        .expect("no way to count handles: /proc, lsof and powershell all missing");
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse()
+        .expect("powershell HandleCount")
+}
+
 // ---- child roles (no-ops in a normal test run) ------------------------------------------------
 
 /// The gpu child: creates the display-list channel (the receiver creates it) and sends its
@@ -374,6 +404,7 @@ fn peer_exit_should_surface_closed() {
             PumpEvent::Message(_) => "message",
             PumpEvent::Closed => "closed",
             PumpEvent::Error(_) => "error",
+            PumpEvent::Failed(_) => "failed",
         };
         let _ = events_tx.send(name.to_owned());
         true
@@ -427,12 +458,27 @@ fn repeated_shm_sends_should_not_leak() {
         ));
     };
 
+    let me = std::process::id();
     receive(20); // warm up allocators and channel buffers before measuring
-    let (browser_before, gpu_before) = (rss_kib(std::process::id()), rss_kib(gpu_pid));
+    let (browser_before, gpu_before) = (rss_kib(me), rss_kib(gpu_pid));
+    let (browser_handles_before, gpu_handles_before) = (handle_count(me), handle_count(gpu_pid));
     receive(500);
-    let (browser_after, gpu_after) = (rss_kib(std::process::id()), rss_kib(gpu_pid));
+    let (browser_after, gpu_after) = (rss_kib(me), rss_kib(gpu_pid));
+    let (browser_handles_after, gpu_handles_after) = (handle_count(me), handle_count(gpu_pid));
     eprintln!(
-        "RSS KiB: browser {browser_before} -> {browser_after}, gpu {gpu_before} -> {gpu_after}"
+        "RSS KiB: browser {browser_before} -> {browser_after}, gpu {gpu_before} -> {gpu_after}; \
+         handles: browser {browser_handles_before} -> {browser_handles_after}, \
+         gpu {gpu_handles_before} -> {gpu_handles_after}"
+    );
+    // 500 frames each carrying one shm region: a per-frame handle leak would add ~500.
+    let handle_limit = 64;
+    assert!(
+        browser_handles_after.saturating_sub(browser_handles_before) < handle_limit,
+        "browser handles {browser_handles_before} -> {browser_handles_after} over 500 frames"
+    );
+    assert!(
+        gpu_handles_after.saturating_sub(gpu_handles_before) < handle_limit,
+        "gpu handles {gpu_handles_before} -> {gpu_handles_after} over 500 frames"
     );
 
     let limit = 64 * 1024; // 64 MiB in KiB, against 2 000 MiB sent

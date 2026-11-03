@@ -22,6 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use cl_platform::ProcessType;
 use ipc_channel::{
     TryRecvError,
     ipc::{
@@ -92,6 +93,15 @@ pub struct UpReceiver<P: ChildProtocol = M0Protocol> {
 }
 
 impl<P: ChildProtocol> UpReceiver<P> {
+    /// Wraps a raw byte receiver (tests feed it hand-made bytes).
+    #[cfg(test)]
+    pub(crate) fn from_bytes_receiver(rx: IpcBytesReceiver) -> Self {
+        Self {
+            rx,
+            _protocol: PhantomData,
+        }
+    }
+
     /// Block for the next raw upward message.
     pub(crate) fn recv_bytes(&self) -> Result<Vec<u8>, ipc_channel::IpcError> {
         self.rx.recv()
@@ -157,7 +167,8 @@ impl<P: ChildProtocol> BrowserEndpoint<P> {
     }
 
     /// Splits into the downward sender and the upward receiver, so the receiver can move to a
-    /// reader thread ([`crate::pump::spawn_reader`]).
+    /// reader thread ([`crate::pump::spawn_reader`]). Take a gpu's display-list sender
+    /// ([`BrowserEndpoint::take_display_lists`]) first: `split` drops it.
     #[must_use]
     pub fn split(self) -> (IpcSender<P::Down>, UpReceiver<P>) {
         (
@@ -285,11 +296,20 @@ impl<P: ChildProtocol> PendingAccept<P> {
     /// call again or give up. An error means the accept itself failed and will not succeed later.
     pub fn poll(&self, wait: Duration) -> Result<Option<BrowserEndpoint<P>>, IpcError> {
         match self.rx.recv_timeout(wait) {
-            Ok(Ok(msg)) => Ok(Some(BrowserEndpoint {
-                tx: msg.to_child,
-                rx: msg.to_browser,
-                display_lists: msg.display_lists,
-            })),
+            Ok(Ok(msg)) => {
+                // Only a gpu creates the display-list channel (ADR-0016 §5); any other role
+                // offering one is refused before the browser can relay it anywhere.
+                if msg.display_lists.is_some() && P::ROLE != ProcessType::Gpu {
+                    return Err(IpcError::UnexpectedMessage(
+                        "display-list sender from a non-gpu child",
+                    ));
+                }
+                Ok(Some(BrowserEndpoint {
+                    tx: msg.to_child,
+                    rx: msg.to_browser,
+                    display_lists: msg.display_lists,
+                }))
+            }
             Ok(Err(e)) => Err(IpcError::Channel(e.to_string())),
             Err(mpsc::RecvTimeoutError::Timeout) => Ok(None),
             Err(mpsc::RecvTimeoutError::Disconnected) => {

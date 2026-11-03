@@ -1,8 +1,14 @@
 //! Typed messages that carry bulk data upward, from a less trusted process (renderer → gpu,
 //! gpu → browser). They hold only [`IpcSharedMemory`] and fixed-size integers — no `Vec`,
-//! `String` or channel ends — so `ipc-channel`'s deserializer has nothing on them that can
-//! panic on a hostile index (ADR-0016 §3, §5). The receiver must treat the shared memory as
-//! hostile: check its length, copy it ([`crate::shm::copy_bounded`]), then validate the copy.
+//! `String` or channel ends — so `ipc-channel` never deserializes a channel end from them, and
+//! the hostile-index panic of `src/ipc.rs` cannot run (a bad shm index is an `Err`). The receiver
+//! must treat the shared memory as hostile: check its length, copy it
+//! ([`crate::shm::copy_bounded`]), then validate the copy.
+//!
+//! Not covered by the type: a sender can still attach extra channel ends, which `ipc-channel`
+//! drops behind a `debug_assert!` (a panic in debug, a port/fd leak in release), and on Linux a
+//! non-socket fd that cannot be mapped aborts the receiver. Those are transport gaps of
+//! `ipc-channel` itself, tracked in `docs/SECURITY.md` "Known gaps" and due before Gate S0.
 
 use ipc_channel::ipc::IpcSharedMemory;
 use serde::{Deserialize, Serialize};

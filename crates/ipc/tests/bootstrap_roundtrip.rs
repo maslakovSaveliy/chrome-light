@@ -104,3 +104,24 @@ fn recv_timeout_should_time_out_when_child_stays_silent() {
     let _ = stop_tx.send(());
     child.join().expect("child thread");
 }
+
+#[test]
+#[allow(clippy::expect_used)]
+fn browser_should_refuse_a_display_list_sender_from_a_non_gpu_child() {
+    let server = BootstrapServer::<M0Protocol>::new().expect("server");
+    let name = server.name().to_owned();
+    let child = thread::spawn(move || {
+        let (dl_tx, _dl_rx) =
+            ipc_channel::ipc::channel::<cl_ipc::transfer::DisplayListMsg>().expect("channel");
+        // An M0 renderer has no business offering a display-list channel.
+        let _ep = connect_child::<M0Protocol>(&name, Some(dl_tx)).expect("connect");
+    });
+    let err = server
+        .accept_with_timeout(Duration::from_secs(10))
+        .expect_err("a renderer's display-list sender must be refused");
+    assert!(
+        matches!(err, cl_ipc::IpcError::UnexpectedMessage(_)),
+        "got {err:?}"
+    );
+    child.join().expect("child thread");
+}
