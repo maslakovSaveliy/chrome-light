@@ -53,8 +53,9 @@ pub enum ShellError {
     /// I/O (reading a PNG to compare, or resolving/canonicalising an input path).
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    /// `cl-net` failed to resolve a URL or load a resource (the document itself, or a
-    /// `<link rel=stylesheet>` — see [`pipeline::render_bytes`]).
+    /// `cl-net` failed to resolve a URL or load the document itself. A
+    /// `<link rel=stylesheet>` that fails to load is a warning, not this error — see
+    /// [`pipeline::render_bytes`].
     #[error("net: {0}")]
     Net(#[from] cl_net::NetError),
     /// `cl-html` failed to parse the document. Uninhabited today — see

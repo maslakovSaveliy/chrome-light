@@ -17,10 +17,11 @@ pub enum RenderError {
     /// Layout failed (font plumbing only — see [`cl_layout::LayoutError`]).
     #[error("layout: {0}")]
     Layout(#[from] cl_layout::LayoutError),
-    /// An earlier render failed inside the style pass, which consumed the document; this
-    /// [`crate::LoadedDocument`] cannot render again. Not reachable today
-    /// ([`cl_style::StyleEngine::resolve`] never fails), kept so a fallible style pass
-    /// cannot silently leave an empty document behind.
+    /// An earlier render failed inside the cascade ([`cl_style::StyleEngine::resolve`],
+    /// which takes the document by value), so this [`crate::LoadedDocument`] cannot render
+    /// again. Every other failure gives the document back. Not reachable today (`resolve`
+    /// never fails), kept so a fallible cascade cannot silently leave an empty document
+    /// behind.
     #[error("the document was lost in an earlier failed render")]
     DocumentLost,
 }

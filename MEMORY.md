@@ -74,6 +74,11 @@ Deferred to M1+; do not block the public beta:
 10. **`cl-layout` memory/perf profiling (two known suspects)** — both found by the final review: (a) ~~`span_item` scans spans linearly per cluster~~ — **closed by D2.b (2026-09-28)**: binary search (`partition_point`), a `<p>` of 40 000 `<span>a</span>` — 2 665 → 311 ms (debug), 371 → 27 ms (release), test `many_inline_spans_should_lay_out_in_linear_time`; (b) `LayoutStyle` (with a `Vec<String>` `font_family` inside) is cloned once per fragment, per `Line` and per `Text` — a direct contributor to the peak RSS of debt 2 (D1 suspect 2).
 11. **17+ minor review findings (deferred)** — live in the SDD ledger as `minor (deferred)` lines; triaged by the final review, not listed here by name.
 
+## M1b debts (open as of 2026-11-04)
+
+1. **No cap on `<link>`/`<style>` elements in the renderer** (Task 5 review): `subresource_requests` deduplicates URLs, but the style pass adds one sheet per element, so 100 000 `<link href=big.css>` clone and parse `big.css` 100 000 times per render (linear, same as the M1a testshell). The IPC limit caps the URL list, not the element count. Resource limits for the renderer (element count, sheet bytes) before Gate S0 — with the M1a tree-depth cap (debt 1).
+2. **`<link>` matched on the local name only** (`cl_style::sheets`): an SVG-namespace `<link rel=stylesheet>` counts as a stylesheet and, since Task 5, becomes a subresource request. Pre-existing; compat note, fix with the namespace check when SVG lands.
+
 ## M1a discoveries not to rediscover
 
 1. **stylo, storage.** The `Box<[UnsafeCell<Option<ElementData>>]>` from ADR-0015 is impossible: `ElementDataMut`/`ElementDataRef` are created only through `ElementDataWrapper`. Production code in `cl-style` has zero `unsafe` blocks; `allow(unsafe_code)` only in `stylo_dom.rs` (implementing the trait's `unsafe fn`s).

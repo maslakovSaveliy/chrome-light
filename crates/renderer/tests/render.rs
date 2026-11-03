@@ -57,15 +57,29 @@ fn parse_inline(html: &str) -> ParsedDocument {
 fn rerender_should_equal_fresh_render_all_44_pages() {
     let pages = reftest_pages();
     assert_eq!(pages.len(), EXPECTED_PAGE_COUNT);
+    let mut changed_by_resize = 0;
     for page in &pages {
+        // One FontDb for both renders of the same document, as the renderer process keeps
+        // one; the fresh render gets its own.
+        let mut fonts = FontDb::bundled().expect("fonts");
         let mut doc = load(page);
-        let first = render(&mut doc, (800, 600));
+        let first = doc
+            .render((800, 600), &mut fonts, StageDumps::None)
+            .expect("render");
         assert!(first.warnings.is_empty(), "{page:?}: {:?}", first.warnings);
-        let resized = render(&mut doc, (500, 700));
+        let resized = doc
+            .render((500, 700), &mut fonts, StageDumps::None)
+            .expect("render");
         let fresh = render(&mut load(page), (500, 700));
         assert_eq!(resized.display_list, fresh.display_list, "{page:?}");
         assert_eq!(resized.warnings, fresh.warnings, "{page:?}");
+        if resized.display_list != first.display_list {
+            changed_by_resize += 1;
+        }
     }
+    // Every list carries its viewport as `bounds`, so a re-render that ignored the new size
+    // would differ from the fresh one on every page; this checks the comparison has force.
+    assert_eq!(changed_by_resize, EXPECTED_PAGE_COUNT);
 }
 
 #[test]
