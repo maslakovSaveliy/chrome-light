@@ -92,50 +92,50 @@ Dependency DAG (must stay acyclic; `tools/check-deps.sh` is M1b): `cl-fonts` and
 **Interfaces:**
 - Produces: the binding rules every later task cites; pinned versions in `[workspace.dependencies]`.
 
-- [ ] **Step 1: Write ADR-0015** (`docs/adr/0015-stylo-integration.md`, Russian like the others):
+- [ ] **Step 1: Write ADR-0015** (`docs/adr/0015-stylo-integration.md`, in the same format as the others):
 
 ```markdown
-# ADR-0015: Интеграция stylo — unsafe в cl-style, Python 3 на сборке, pinned версия
+# ADR-0015: stylo integration — unsafe in cl-style, Python 3 at build time, pinned version
 
 **Status:** Accepted
 **Date:** 2026-09-07
-**Deciders:** владелец проекта
-**Amends:** ADR-0002 (список unsafe-crates), ADR-0010 (action item 1 — WPT adapter → M2)
+**Deciders:** project owner
+**Amends:** ADR-0002 (list of unsafe crates), ADR-0010 (action item 1 — WPT adapter → M2)
 
 ## Context
-ADR-0003 выбрал stylo как CSS-движок. Разведка (2026-09-07): stylo 0.20 требует `python3` в `build.rs` (Mako-кодогенерация свойств); embedder реализует `style::dom::{TNode,TElement,...}` на `Copy`-хэндлах, а `TElement::{ensure_data, clear_data, set_dirty_descendants, ...}` — `unsafe fn`, хранилище `ElementData` требует interior mutability; Blitz (референс) держит сырой `*mut` на арену (открытая проблема DioxusLabs/blitz#151). Владелец подтвердил stylo с первого дня.
+ADR-0003 chose stylo as the CSS engine. Reconnaissance (2026-09-07): stylo 0.20 requires `python3` in `build.rs` (Mako codegen of properties); the embedder implements `style::dom::{TNode,TElement,...}` on `Copy` handles, while `TElement::{ensure_data, clear_data, set_dirty_descendants, ...}` are `unsafe fn`, and the `ElementData` storage needs interior mutability; Blitz (the reference) holds a raw `*mut` into the arena (open issue DioxusLabs/blitz#151). The owner confirmed stylo from day one.
 
 ## Decision
-1. `cl-style` — пятый crate с разрешённым `unsafe`, только в модулях `store.rs`, `handle.rs`, `stylo_dom.rs`; хэндл — `Copy`-тройка `(&Document, &StyleStore, NodeId)`, не сырой указатель; `ElementData` — side table на один проход стиля (`Box<[UnsafeCell<Option<ElementData>>]>`), пересоздаётся каждый `resolve()`; traversal только последовательный (`traverse_dom(.., None)`); `debug_assert` проверки потока в каждом `unsafe` входе.
-2. `servo_arc`/`style::*` не покидают `crates/style/**` и `crates/layout/src/style_adapt.rs` (скрипт `tools/check-stylo-scope.sh`).
-3. Python 3 ≥ 3.10 — build-зависимость; CI ставит `actions/setup-python@v5` во всех job-ах.
-4. Версии закреплены в `[workspace.dependencies]`: stylo 0.20.0, stylo_traits 0.20.0, stylo_dom 0.20.0, stylo_atoms 0.20.0, selectors 0.40, cssparser 0.37, html5ever/markup5ever 0.39 (одна версия markup5ever в дереве — проверка `cargo tree -d`). Обновление — только целиком, отдельным PR.
-5. `cargo miri` для cl-style невозможен (build.rs/кодоген); вместо него nightly `cargo careful test -p cl-style` + `careful` в CI nightly.
-6. **Option B (fallback):** если задача интеграции трейтов не проходит тест `p_with_color_rule_should_resolve_to_red` после 3 попыток / 5 рабочих дней — минимальный собственный cascade за тем же API `cl_style::{StyleEngine, StyledDocument, computed()}` (cssparser + selectors, ~20 longhand-свойств, без @media/custom properties); stylo возвращается в M2. Решение фиксируется здесь как «Option B taken» с датой.
+1. `cl-style` is the fifth crate allowed to use `unsafe`, only in the modules `store.rs`, `handle.rs`, `stylo_dom.rs`; the handle is a `Copy` triple `(&Document, &StyleStore, NodeId)`, not a raw pointer; `ElementData` is a side table for one style pass (`Box<[UnsafeCell<Option<ElementData>>]>`), recreated on every `resolve()`; traversal is sequential only (`traverse_dom(.., None)`); `debug_assert` thread checks at every `unsafe` entry.
+2. `servo_arc`/`style::*` do not leave `crates/style/**` and `crates/layout/src/style_adapt.rs` (script `tools/check-stylo-scope.sh`).
+3. Python 3 ≥ 3.10 is a build dependency; CI installs `actions/setup-python@v5` in every job.
+4. Versions are pinned in `[workspace.dependencies]`: stylo 0.20.0, stylo_traits 0.20.0, stylo_dom 0.20.0, stylo_atoms 0.20.0, selectors 0.40, cssparser 0.37, html5ever/markup5ever 0.39 (one markup5ever version in the tree — checked with `cargo tree -d`). Updates only as a whole, in a separate PR.
+5. `cargo miri` is impossible for cl-style (build.rs/codegen); instead nightly `cargo careful test -p cl-style` + `careful` in nightly CI.
+6. **Option B (fallback):** if the trait-integration task does not pass the test `p_with_color_rule_should_resolve_to_red` after 3 attempts / 5 working days — a minimal own cascade behind the same API `cl_style::{StyleEngine, StyledDocument, computed()}` (cssparser + selectors, ~20 longhand properties, no @media/custom properties); stylo returns in M2. The decision is recorded here as "Option B taken" with a date.
 
 ## Consequences
-- Легче: Firefox-grade cascade, selectors, @media, custom properties бесплатно.
-- Труднее: время сборки, Python в CI, unsafe-review для трёх модулей, Windows-сборка stylo.
-- Пересмотреть: при смене мажорной версии stylo или если Blitz#151 даст safe-паттерн — перейти на него.
+- Easier: a Firefox-grade cascade, selectors, @media, custom properties for free.
+- Harder: build time, Python in CI, unsafe review for three modules, the Windows build of stylo.
+- Revisit: on a stylo major version change, or if Blitz#151 yields a safe pattern — switch to it.
 ```
 
-- [ ] **Step 2: Amend ADR-0002 and README**: in `0002-language-and-unsafe-policy.md` change `**Status:** Accepted` to `**Status:** Accepted (amended by ADR-0015: cl-style added to the unsafe list)` and in the Decision bullet list add `cl-style` (modules `store.rs`, `handle.rs`, `stylo_dom.rs`). Add row `| [0015](0015-stylo-integration.md) | Интеграция stylo: unsafe в cl-style, Python 3, pinned версия, fallback Option B | Accepted |` to `docs/adr/README.md`.
+- [ ] **Step 2: Amend ADR-0002 and README**: in `0002-language-and-unsafe-policy.md` change `**Status:** Accepted` to `**Status:** Accepted (amended by ADR-0015: cl-style added to the unsafe list)` and in the Decision bullet list add `cl-style` (modules `store.rs`, `handle.rs`, `stylo_dom.rs`). Add row `| [0015](0015-stylo-integration.md) | stylo integration: unsafe in cl-style, Python 3, pinned version, Option B fallback | Accepted |` to `docs/adr/README.md`.
 
-- [ ] **Step 3: Rewrite `docs/PLAN.md` §2 M1**: keep the goal line; replace the "Scope по crate-ам" list with a sub-plan table (M1a–M1e as in Context above, one line each with what it delivers); replace the exit criteria block with:
+- [ ] **Step 3: Rewrite `docs/PLAN.md` §2 M1**: keep the goal line; replace the "Scope per crate" list with a sub-plan table (M1a–M1e as in Context above, one line each with what it delivers); replace the exit criteria block with:
 
 ```markdown
-Exit-критерии M1 (объединение M1a–M1e):
-- [ ] M1a: single-process pipeline; html5lib tree-construction ≥ 90% (0 panics), WPT `urltestdata.json` ≥ 92%, 20 reftests, 4 fuzz-targets, golden dumps 4 стадий — детальные критерии в `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
-- [ ] M1b: `chromelight file:///page.html` рендерит через renderer + GPU процессы (display list через shm).
-- [ ] M1c: sandbox renderer применяется на macOS и Linux; `--probe` тесты (open /etc/passwd, socket) → EPERM.
-- [ ] M1d: egui shell с одной вкладкой, `file://` и `http://localhost`.
-- [ ] M1e: бюджет ≤ 120 МБ RSS (пустой браузер + пустая вкладка), Chrome baseline на corpus записан.
-- wptrunner product adapter перенесён в M2 (testharness.js требует JS; текущий wptrunner ожидает WebDriver classic от продукта).
+M1 exit criteria (union of M1a–M1e):
+- [ ] M1a: single-process pipeline; html5lib tree-construction ≥ 90% (0 panics), WPT `urltestdata.json` ≥ 92%, 20 reftests, 4 fuzz-targets, 4-stage golden dumps — detailed criteria in `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
+- [ ] M1b: `chromelight file:///page.html` renders through renderer + GPU processes (display list over shm).
+- [ ] M1c: the renderer sandbox is applied on macOS and Linux; `--probe` tests (open /etc/passwd, socket) → EPERM.
+- [ ] M1d: egui shell with one tab, `file://` and `http://localhost`.
+- [ ] M1e: budget ≤ 120 MB RSS (empty browser + empty tab), Chrome baseline on the corpus recorded.
+- The wptrunner product adapter moved to M2 (testharness.js needs JS; the current wptrunner expects WebDriver classic from the product).
 ```
 
-Also in §0 add: "Python 3 — build-зависимость с M1a (stylo)."; in §4 risks table update the stylo row: "fallback = ADR-0015 Option B".
+Also in §0 add: "Python 3 is a build dependency from M1a on (stylo)."; in §4 risks table update the stylo row: "fallback = ADR-0015 Option B".
 
-- [ ] **Step 4: `docs/TESTING.md`**: §2 add "Исключение M1a: `cl-testshell` рендерит в одном процессе (`// M1a-ONLY`), multiprocess testshell — M1b." §3 heading becomes "WPT интеграция (M2+)" with one sentence: "В M1 — JS-free корпуса: html5lib-tests tree-construction (`tools/conformance/html5lib/`), WPT `urltestdata.json` (`tools/conformance/url/`), запускаются как `cargo test`." `docs/DEVELOPMENT.md` §1: Python row → "≥3.10 | **обязателен для сборки** (stylo codegen), WPT/Test262 tooling". `docs/CODING_STANDARDS.md` §4 first line: add `cl-style` (модули `store.rs`, `handle.rs`, `stylo_dom.rs`). `docs/DEPENDENCIES.md`: in "Движок" table replace the stylo row's risk cell with "высокий — unsafe в cl-style, Python 3 на сборке (ADR-0015)"; add rows `stylo_traits`, `stylo_dom`, `stylo_atoms`, `stylo_static_prefs` ("часть stylo, та же версия"), `selectors 0.40`, `encoding_rs 0.8.40`, `fontique 0.11`, `skrifa 0.46`, `tendril`; add section "## Bundled assets" with `Ahem.ttf — CC0-1.0 (WPT fonts/Ahem.ttf)` and `NotoSans-Regular.ttf — OFL-1.1, unmodified (Reserved Font Name clause не затрагивает)`.
+- [ ] **Step 4: `docs/TESTING.md`**: §2 add "M1a exception: `cl-testshell` renders in one process (`// M1a-ONLY`); a multiprocess testshell is M1b." §3 heading becomes "WPT integration (M2+)" with one sentence: "In M1 — JS-free corpora: html5lib-tests tree-construction (`tools/conformance/html5lib/`), WPT `urltestdata.json` (`tools/conformance/url/`), run as `cargo test`." `docs/DEVELOPMENT.md` §1: Python row → "≥3.10 | **required for the build** (stylo codegen), WPT/Test262 tooling". `docs/CODING_STANDARDS.md` §4 first line: add `cl-style` (modules `store.rs`, `handle.rs`, `stylo_dom.rs`). `docs/DEPENDENCIES.md`: in the "Engine" table replace the stylo row's risk cell with "high — unsafe in cl-style, Python 3 at build time (ADR-0015)"; add rows `stylo_traits`, `stylo_dom`, `stylo_atoms`, `stylo_static_prefs` ("part of stylo, the same version"), `selectors 0.40`, `encoding_rs 0.8.40`, `fontique 0.11`, `skrifa 0.46`, `tendril`; add section "## Bundled assets" with `Ahem.ttf — CC0-1.0 (WPT fonts/Ahem.ttf)` and `NotoSans-Regular.ttf — OFL-1.1, unmodified (the Reserved Font Name clause does not apply)`.
 
 - [ ] **Step 5: Scope-check scripts** (both `chmod +x`):
 
