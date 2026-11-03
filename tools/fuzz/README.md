@@ -9,6 +9,7 @@ Nightly-only workspace (excluded from root). Run:
     cargo +nightly fuzz run --fuzz-dir tools/fuzz css_stylesheet -- -max_total_time=60
     cargo +nightly fuzz run --fuzz-dir tools/fuzz display_list_validate -- -max_total_time=60
     cargo +nightly fuzz run --fuzz-dir tools/fuzz display_list_rasterize -- -max_total_time=60
+    cargo +nightly fuzz run --fuzz-dir tools/fuzz display_list_decode -- -max_total_time=60
 
 Targets: `ipc_decode` (cl-ipc codec, both directions), `url_parse` (cl-net `Url::parse` and
 `Url::parse_with_base`), `html_parse` (cl-html `parse_document`: encoding sniff, html5ever
@@ -24,5 +25,8 @@ geometry/text/font type a `DisplayList` embeds derives `arbitrary::Arbitrary`),
 `validate` itself and refuses an invalid list, so this target exercises the arithmetic past the
 gate, e.g. border strips whose top and bottom widths each validate but together exceed the box
 height. The bundled `FontDb` is built once per thread, not per iteration: measured 4.3 us to
-build against 4.2 us per `rasterize`, so caching it roughly doubles the iteration rate). Every
+build against 4.2 us per `rasterize`, so caching it roughly doubles the iteration rate), `display_list_decode` (cl-paint
+`wire::decode_display_list` over raw bytes, then `validate` on whatever decodes — the gpu's
+receive path for the renderer's display list, M1b Task 6; built with cl-paint's `serde`
+feature). Every
 new parser/decoder adds a target in the same PR (CLAUDE.md §3.1).

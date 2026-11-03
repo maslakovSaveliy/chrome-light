@@ -141,6 +141,7 @@ version = "0.0.1"
 dependencies = [
  "arbitrary",
  "fontique",
+ "serde",
  "thiserror",
 ]
 
@@ -205,6 +206,7 @@ dependencies = [
  "cl-fonts",
  "cl-style",
  "parley",
+ "serde",
  "stylo",
  "thiserror",
 ]
@@ -225,6 +227,8 @@ dependencies = [
  "cl-dom",
  "cl-fonts",
  "cl-layout",
+ "postcard",
+ "serde",
  "thiserror",
 ]
 

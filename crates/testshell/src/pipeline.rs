@@ -174,6 +174,43 @@ pub fn render_bytes(
     opts: &RenderOptions,
 ) -> Result<RenderOutput, ShellError> {
     let (width, height) = opts.viewport;
+    let painted = paint(bytes, base, opts)?;
+    let pixmap = cl_gfx::cpu::rasterize(&painted.display_list, width, height, &painted.fonts)?;
+    Ok(RenderOutput {
+        pixmap,
+        stages: painted.stages,
+        warnings: painted.warnings,
+    })
+}
+
+/// The display list [`render_bytes`] would rasterise for `bytes` — the pipeline up to and
+/// including [`cl_paint::build()`], no raster. Stage dumps are never built here.
+///
+/// # Errors
+/// As [`render_bytes`], minus the rasterisation errors.
+pub fn display_list_for_bytes(
+    bytes: &[u8],
+    base: &Url,
+    opts: &RenderOptions,
+) -> Result<cl_paint::DisplayList, ShellError> {
+    let opts = RenderOptions {
+        stage_dumps: StageDumps::None,
+        ..*opts
+    };
+    Ok(paint(bytes, base, &opts)?.display_list)
+}
+
+/// Everything [`render_bytes`] needs before rasterising.
+struct Painted {
+    display_list: cl_paint::DisplayList,
+    fonts: FontDb,
+    stages: Option<Stages>,
+    warnings: Vec<String>,
+}
+
+/// html → dom → style → layout → paint, with the stage dumps when `opts` asks for them.
+fn paint(bytes: &[u8], base: &Url, opts: &RenderOptions) -> Result<Painted, ShellError> {
+    let (width, height) = opts.viewport;
     #[allow(
         clippy::cast_precision_loss,
         reason = "viewport dimensions are well under f32's 24-bit exact integer range"
@@ -212,10 +249,9 @@ pub fn render_bytes(
         stages.display_list = display_list_dump(&display_list);
     }
 
-    let pixmap = cl_gfx::cpu::rasterize(&display_list, width, height, &fonts)?;
-
-    Ok(RenderOutput {
-        pixmap,
+    Ok(Painted {
+        display_list,
+        fonts,
         stages,
         warnings,
     })

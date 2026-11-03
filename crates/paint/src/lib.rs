@@ -25,6 +25,10 @@
 //! [`DisplayList`] before rasterising it — see that module's docs for the trust boundary and
 //! the exact rules.
 //!
+//! `wire` (feature `serde`, M1b Task 6) is the encoding that carries a [`DisplayList`]
+//! renderer → gpu, with a decoder that enforces [`MAX_ITEMS`], [`MAX_GLYPHS_PER_RUN`] and
+//! [`MAX_TOTAL_GLYPHS`] while it decodes — see that module's docs.
+//!
 //! # Scope (M1a)
 //!
 //! Painted: element backgrounds and solid borders on `Block`/element fragments, shaped text,
@@ -45,10 +49,13 @@ pub mod dump;
 pub mod error;
 pub mod list;
 pub mod validate;
+#[cfg(feature = "serde")]
+pub mod wire;
 
 pub use build::build;
 pub use error::PaintError;
 pub use list::{DisplayItem, DisplayList};
 pub use validate::{
-    DisplayListError, MAX_CLIP_DEPTH, MAX_GLYPHS_PER_RUN, MAX_ITEMS, OFFSCREEN_MARGIN_PX, validate,
+    DisplayListError, MAX_CLIP_DEPTH, MAX_GLYPHS_PER_RUN, MAX_ITEMS, MAX_TOTAL_GLYPHS,
+    OFFSCREEN_MARGIN_PX, validate,
 };

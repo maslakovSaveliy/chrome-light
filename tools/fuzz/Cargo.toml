@@ -17,7 +17,7 @@ cl-html = { path = "../../crates/html" }
 cl-ipc = { path = "../../crates/ipc" }
 cl-layout = { path = "../../crates/layout" }
 cl-net = { path = "../../crates/net" }
-cl-paint = { path = "../../crates/paint", features = ["arbitrary"] }
+cl-paint = { path = "../../crates/paint", features = ["arbitrary", "serde"] }
 cl-style = { path = "../../crates/style" }
 
 [[bin]]
@@ -58,6 +58,13 @@ bench = false
 [[bin]]
 name = "display_list_rasterize"
 path = "fuzz_targets/display_list_rasterize.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "display_list_decode"
+path = "fuzz_targets/display_list_decode.rs"
 test = false
 doc = false
 bench = false

@@ -27,5 +27,9 @@ cl-style.workspace = true
 thiserror.workspace = true
 tiny-skia.workspace = true
 
+[dev-dependencies]
+# The wire round-trip test (`tests/wire_roundtrip.rs`) needs `cl_paint::wire`.
+cl-paint = { workspace = true, features = ["serde"] }
+
 [lints]
 workspace = true

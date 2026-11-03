@@ -15,8 +15,9 @@ name = "cl_paint"
 # target) — forwards to `cl-layout/arbitrary` for the geometry/text types those enums embed.
 arbitrary = ["dep:arbitrary", "cl-layout/arbitrary"]
 # Off by default; forwards to `cl-layout/serde`, same reasoning as `arbitrary` above (the
-# display list crosses the renderer -> gpu process IPC boundary from M1b onward).
-serde = ["dep:serde", "cl-layout/serde"]
+# display list crosses the renderer -> gpu process IPC boundary from M1b onward), and turns on
+# `wire` (postcard encoding with an in-decode limit check, M1b Task 6).
+serde = ["dep:serde", "dep:postcard", "cl-layout/serde"]
 
 [dependencies]
 arbitrary = { workspace = true, optional = true }
@@ -29,6 +30,7 @@ arbitrary = { workspace = true, optional = true }
 cl-dom.workspace = true
 cl-fonts.workspace = true
 cl-layout.workspace = true
+postcard = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
 
@@ -37,6 +39,10 @@ cl-html.workspace = true
 cl-net.workspace = true
 cl-style.workspace = true
 insta.workspace = true
+# Turns this crate's own `serde` feature on for its tests (`tests/wire.rs`), and lets them
+# build wire buffers with the derived encoding directly.
+cl-paint = { path = ".", features = ["serde"] }
+postcard.workspace = true
 
 [lints]
 workspace = true

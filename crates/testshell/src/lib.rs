@@ -13,7 +13,10 @@ use std::path::Path;
 use tiny_skia::Pixmap;
 
 pub use dump::{Stage, select};
-pub use pipeline::{RenderOptions, RenderOutput, StageDumps, Stages, render_bytes, render_file};
+pub use pipeline::{
+    RenderOptions, RenderOutput, StageDumps, Stages, display_list_for_bytes, render_bytes,
+    render_file,
+};
 
 /// Testshell failure.
 #[derive(Debug, thiserror::Error)]

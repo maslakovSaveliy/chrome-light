@@ -32,7 +32,7 @@ Internet ──TLS──► network process ──validated IPC──► browser
 |---|---|---|
 | renderer → browser | browser trusts nothing | `cl-ipc::validate` on every message; origin/site from `SiteInstance`, not from the payload |
 | renderer → network | network trusts only a `FetchHandle` from browser | the handle carries site, credentials mode, CSP snapshot |
-| renderer → gpu | gpu validates the display list (bounds, resource ids, sizes) | size limits, ids from the table of allocated ones; in `cl-paint` this is `cl_paint::validate` (item/glyph/clip-depth limits, bounds ± 4096px) with the fuzz target `display_list_validate` (Task 20) |
+| renderer → gpu | gpu validates the display list (bounds, resource ids, sizes) | size limits, ids from the table of allocated ones; in `cl-paint` this is `cl_paint::wire::decode_display_list` (input ≤ 16 MiB checked before decoding; items, glyphs per run and total glyphs counted *during* decoding, so a hostile list fails before its memory is reserved — M1b Task 6) followed by `cl_paint::validate` (item/glyph/clip-depth limits, bounds ± 4096px), with the fuzz targets `display_list_decode` and `display_list_validate` (Task 20) |
 | browser → OS | browser is privileged | minimize code: no parsers, no JS in browser process (until ADR-0008 revisit) |
 | extension → browser | per manifest permissions | `chrome.*` host in browser process, every call checks the grant |
 | sync client → server | server does not read the data | E2E: passphrase-derived key; server stores blobs |
