@@ -39,6 +39,7 @@ Updated at the end of every working session. Short facts, links to documents. Se
 | 0013 | Product name ChromeLight; Google trademark risk accepted by the owner; disclaimer "not affiliated with Google" | Accepted |
 | 0014 | License of our own code: Apache-2.0 OR MIT; deps checked via cargo-deny | Accepted |
 | 0015 | stylo integration: `cl-style` on the unsafe list (in fact zero `unsafe` blocks), Python 3 at build time, pinned versions, Option B fallback (not activated) | Accepted (3 amendments) |
+| 0016 | M1b: the GPU process is a CPU raster service in M1–M3, the browser presents (softbuffer); shm with copy-then-validate; channel ends only browser → child; a bad renderer message kills the renderer | Accepted |
 
 ## Open questions for the owner
 
@@ -86,7 +87,7 @@ Deferred to M1+; do not block the public beta:
 9. **stylo build on CI** ~40–70 s cold; the local 18 min were an artifact of parallel agents (`docs/history/build-times.md`).
 10. **Platform cfg:** `tools/check-platform-cfg.sh` forbids `#[cfg(target_os|windows|unix)]` outside `crates/{platform,process,gfx}` — write tests platform-independently (`std::env::temp_dir()`).
 11. **Process:** `git add` explicit paths only, never `-A`; the gate chained with `&&` before a commit, and never commit on a red gate (a nudge to "finish" is not permission). Wall-clock tests are listed by exact name in `.config/nextest.toml` (`threads-required = "num-cpus"`).
-12. **`ipc-channel` 0.23 (0.23.1 since 2026-11-03, GHSA-fj85-w6rj-rxrc in 0.23.0; not in RustSec, `cargo deny` misses it):** deserialising an `IpcSender`/`IpcReceiver` with a bad index PANICS (`src/ipc.rs:1025/1054`), and release is `panic = "abort"` → channel ends travel only browser → child (bootstrap excepted). The sender's shm mapping stays writable → always copy-then-validate.
+12. **`ipc-channel` (≥ 0.23.1 since 2026-11-03; GHSA-fj85-w6rj-rxrc in 0.23.0, a repository advisory that `cargo deny` and Dependabot do not see):** the receive path is not robust against a hostile peer — Linux short-datagram `set_len` underflow / `pop().unwrap()` / peer-sized `reserve_exact` (servo/ipc-channel#457), Windows `expect`/`unwrap`, attached channel ends dropped behind `debug_assert!` (panic in debug/`release-dev`, leak in release). Known gap for every child → browser channel, latent until children are sandboxed (M1c); must be closed before Gate S1 (ADR-0016 fact 3, SECURITY.md "Known gaps"). Deserialising an `IpcSender`/`IpcReceiver` with a bad index PANICS (`src/ipc.rs:1025/1054`), and release is `panic = "abort"` → channel ends travel only browser → child (bootstrap excepted). The sender's shm mapping stays writable → always copy-then-validate.
 13. **`cl_net::load_file`** does not check for a regular file (a FIFO hangs, `/dev/zero` reads 32 MiB) — the M1b subresource policy closes it.
 14. **Upstream debts, no local patches:** html5ever quadratic on deep nesting in release (`close_p_element_in_button_scope`), `selectors` on `.x ~ p`.
 

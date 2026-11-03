@@ -38,6 +38,15 @@ Internet ──TLS──► network process ──validated IPC──► browser
 | sync client → server | server does not read the data | E2E: passphrase-derived key; server stores blobs |
 | updater → binary | only signed packages | ed25519 (our key) + OS code signing; rollback protection by version |
 
+### Known gaps
+
+Boundaries the table above claims but the code does not yet hold. Each one blocks the gate named.
+
+| Gap | Where | Effect | Blocks | Tracking |
+|---|---|---|---|---|
+| The `ipc-channel` receive path panics or allocates on hostile input: Linux short-datagram `set_len` underflow, `pop().unwrap()`, peer-sized `reserve_exact` (servo/ipc-channel#457); Windows `expect`/`unwrap` on peer data and peer-named `PROCESS_DUP_HANDLE`; channel ends attached to a byte message dropped behind `debug_assert!` | every child → browser channel (M0 renderer → browser today; renderer/gpu → browser in M1b) | a compromised child crashes (panic = abort) or corrupts the browser | Gate S1; must be closed before any child is sandboxed against untrusted content | ADR-0016 Context fact 3, `docs/DEPENDENCIES.md` (`ipc-channel` row) |
+| Unsealed memfd shm on Linux | gpu → browser frames (M1b) | a sender that shrinks the memfd during the copy causes SIGBUS in the receiver | Gate S1 | ADR-0016 Context fact 3 |
+
 ## 4. Defense matrix
 
 | Threat | Entry surface | Protected asset | Control | Enforcement point | Residual risk |

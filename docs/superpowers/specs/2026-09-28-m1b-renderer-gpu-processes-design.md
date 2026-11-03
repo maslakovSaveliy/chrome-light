@@ -55,17 +55,17 @@ Policy: ADR-0016 §9 (kill on a bad message, no strike counter, benign races dro
 
 | Event | Reaction | Check |
 |---|---|---|
-| A renderer message fails decoding or `Validate` | the browser kills the renderer, logs the `BadMessageReason`, error fill + title "ChromeLight — renderer killed"; headless exit 5 | a test per `--renderer-test-mode` (`garbage`, `oversized`, `out-of-bounds`, `bad-font`, `popclip-flood`, `bad-up-message`) |
-| The gpu reports `BadDisplayList` (oversize shm, undecodable, invalid, unknown `FontKey`, limits exceeded) | the browser kills the renderer as above; the gpu stays alive and answers `Ping` | same tests, plus a gpu liveness check |
+| A renderer message to the browser fails decoding or `Validate` | the browser kills the renderer, logs the `BadMessageReason`, error fill + title "ChromeLight — renderer killed"; headless exit 5 | `--renderer-test-mode=bad-up-message` |
+| The gpu reports `BadDisplayList` (oversize shm, undecodable, invalid, unknown `FontKey`, limits exceeded) | the browser kills the renderer as above; the gpu stays alive and answers `Ping` | a test per `--renderer-test-mode` (`garbage`, `oversized`, `out-of-bounds`, `bad-font`, `popclip-flood`), plus a gpu liveness check |
 | A display list with a stale `seq` | `Stale`, dropped silently; the correct frame still arrives | `--renderer-test-mode=wrong-seq` |
 | A flood of future-`seq` display lists | the gpu keeps only the latest pending list; its RSS stays bounded; the renderer is not killed | `--renderer-test-mode=future-seq-flood` |
 | The gpu crashed or closed its channel | the browser spawns a new gpu (≤ 3 per 60 s) with a new generation, relays the new display-list sender, `SetSurface`, `Redraw{seq}` → renderer; after the budget — error fill and exit 4 | `--crash-gpu-after-frames=N`, `--crash-gpu-always` |
 | A frame of the wrong size or length, or undecodable gpu traffic | the browser kills and restarts the gpu (same budget) | `--gpu-test-mode=<wrong-size|short-pixels|future-seq|flood>` |
 | Any event from an older gpu generation | ignored | unit test of the core state machine |
 | The renderer crashed | the browser lives, error fill + title "ChromeLight — renderer crashed"; restarting the tab is M2; headless exit 3; all children reaped | `--crash-renderer-after-load` |
-| A child is silent | timeouts on the handshake (M0), on subresources (5 s), on `Ping` (5 s), on the first frame (watchdog, exit 4) | unit tests of the state machines |
+| A child is silent | timeouts on the handshake (M0), on subresources (5 s), on `Ping` (5 s), on the first frame (`FIRST_FRAME_TIMEOUT` = 30 s, exit 4) | unit tests of the state machines |
 
-All test flags exist only under `cfg(debug_assertions)`, like `--no-sandbox`; the release CLI rejects them.
+All test flags exist only under `cfg(debug_assertions)`; the release CLI rejects them (exit 2). `--no-sandbox` is accepted in release but inert.
 
 ## 6. Code and crates
 
@@ -89,7 +89,7 @@ All test flags exist only under `cfg(debug_assertions)`, like `--no-sandbox`; th
 
 1. `chromelight --no-sandbox file:///page.html` shows the page in a window through the renderer + GPU processes; resize re-lays out the page (owner, macOS) and `--exit-after-first-present` is green on three OSes in CI.
 2. Parity 44/44 reftest pages (and the resize case) with `cl-testshell` on three OSes in CI.
-3. The display list goes over shm; the gpu does copy-then-validate; every hostile mode follows §5, the gpu stays alive.
+3. The display list goes over shm; the gpu does copy-then-validate; every hostile mode follows §5 (the gpu stays alive in every renderer mode).
 4. Gpu crash → restart and a frame; renderer crash → the browser lives, error in the window.
 5. Fuzz `ipc_decode` (v2) and `display_list_decode` 60 s each without crashes; the CI loop updated.
 6. Per-process RSS recorded in `docs/history/`.

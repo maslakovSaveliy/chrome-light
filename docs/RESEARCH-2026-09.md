@@ -106,7 +106,7 @@ Re-verified for M1b (fact-check: `.superpowers/m1b-drafts/m1b-facts-2026-09-28.m
 | html5ever | 0.39.0 | 0.40.1 (2026-09-14) | CHANGED |
 | accesskit / rustls / quinn | 0.25.0 / 0.23.43 / 0.11.11 | 0.25.1 / 0.23.45 / 0.11.12 | CHANGED (patch) |
 | winit | 0.30.13 | 0.30.13 stable (0.31 beta) | UNCHANGED |
-| softbuffer / wgpu / egui | — / 30.0.1 / — | 0.4.8 / 30.0.1 / 0.36.2, mutually compatible through `raw-window-handle` 0.6 | UNCHANGED |
+| softbuffer / egui | — | 0.4.8 / 0.36.2, compatible with wgpu 30.0.1 and winit 0.30.13 through `raw-window-handle` 0.6 | NEW |
 | accesskit_winit | — | requires accesskit ^0.24 — conflicts with accesskit 0.25 (an M1d problem) | NEW |
 | taffy, parley, vello, v8, hyper, rusqlite, ipc-channel, prost, tokio, url, image, h3 | as in §5 | identical | UNCHANGED |
 | Servo | 0.5.0 | 0.6.0 (2026-09-25) | CHANGED |
