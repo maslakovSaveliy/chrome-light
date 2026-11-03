@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  Reference rendering for text-basic.html: the same 20x20 black square, drawn with a plain
+  block box instead of an Ahem glyph. `display: inline-block` does not exist in M1a
+  (crates/layout's Display enum has no such value yet) and layout has no positioning beyond
+  static/relative, so a single block div at the flow's natural origin is the simplest box that
+  reproduces the same picture — the text page's div also starts at (0,0) (body and div margins
+  are both zeroed in both files), and a single glyph needs no second box to line up beside.
+-->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  div { margin: 0; width: 20px; height: 20px; background: #000; }
+</style>
+</head>
+<body>
+<div></div>
+</body>
+</html>

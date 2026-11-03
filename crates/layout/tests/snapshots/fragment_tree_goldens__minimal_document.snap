@@ -1,0 +1,11 @@
+---
+source: crates/layout/tests/fragment_tree_goldens.rs
+expression: "dump(include_str!(\"../../style/tests/golden/minimal.html\"))"
+---
+#fragments
+| Block <html> border=(0.00, 0.00, 800.00, 51.20) content=(0.00, 0.00, 800.00, 51.20)
+|   Block <body> border=(8.00, 16.00, 784.00, 19.20) content=(8.00, 16.00, 784.00, 19.20)
+|     Block <p> border=(8.00, 16.00, 784.00, 19.20) content=(8.00, 16.00, 784.00, 19.20)
+|       Line border=(8.00, 16.00, 784.00, 19.20) content=(8.00, 16.00, 784.00, 19.20)
+|         Text runs=1 border=(8.00, 16.00, 14.02, 19.20) content=(8.00, 16.00, 14.02, 19.20)
+|           Run font=Noto Sans size=16.00 origin=(8.00, 33.10) glyphs=2 advance=14.02

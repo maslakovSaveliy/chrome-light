@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- Reference for white-space-pre.html: Ahem's space glyph is a *blank* em square, not a
+     black one (only a letter glyph like "x"/"a"/"b" paints), so line 1's "a  b" is black,
+     blank, blank, black - two 20px squares on the same row, 60px apart, not one continuous
+     80px bar. Line 2's "cd" has no space in it, so it stays one contiguous 40px bar. #b uses
+     a negative margin-top to sit beside #a rather than below it (block boxes always stack
+     vertically - M1a has no floats/inline-block to place two boxes side by side), pulled
+     back up by exactly its own 20px flow height via the same max-positive/min-negative
+     margin rule the other geometry-pair refs use (crates/layout/src/block.rs). -->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  div { width: 20px; height: 20px; background: #000; }
+  #b { margin-left: 60px; margin-top: -20px; }
+  #c { width: 40px; }
+</style>
+</head>
+<body>
+<div id="a"></div><div id="b"></div><div id="c"></div>
+</body>
+</html>

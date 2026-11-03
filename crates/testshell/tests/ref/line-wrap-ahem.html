@@ -1,0 +1,21 @@
+<!doctype html>
+<!-- expects: a solid 100x60 black rectangle at (0,0) - three contiguous 100x20 line bars.
+     "xxxxx xxxxx xxxxx" is three 100px words (5 Ahem glyphs x 20px) separated by
+     collapsible spaces, in a 100px-wide container: each word takes its own line (the
+     trailing collapsible space on each line hangs and is never painted, CSS Text 3 SS4.1.1),
+     giving three 100px-wide, 20px-tall lines stacked with no gap. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div {
+    font-family: Ahem; font-size: 20px; line-height: 20px;
+    width: 100px;
+  }
+</style>
+</head>
+<body>
+<div>xxxxx xxxxx xxxxx</div>
+</body>
+</html>

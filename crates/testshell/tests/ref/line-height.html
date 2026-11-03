@@ -1,0 +1,19 @@
+<!doctype html>
+<!-- expects: two 20x20 black squares, at (0,10) and (0,50). line-height:40px sets each line
+     box to 40px tall, independent of the 20px font size (crates/layout/src/inline.rs);
+     Ahem's glyph fills the full font-size em with its ascent/descent split summing to
+     exactly the font size, so the extra (40-20)=20px of leading splits evenly above and
+     below: a 10px ink offset from each line box's own top. Line 1's box is y=0..40 (glyph
+     y=10..30); line 2's box is y=40..80 (glyph y=50..70). -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { font-family: Ahem; font-size: 20px; line-height: 40px; }
+</style>
+</head>
+<body>
+<div>x<br>x</div>
+</body>
+</html>

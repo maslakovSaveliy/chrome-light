@@ -1,0 +1,134 @@
+---
+source: crates/style/tests/computed_style_goldens.rs
+expression: "dump(include_str!(\"golden/cascade-conflict.html\"))"
+---
+#document
+| <html>
+|   display: block
+|   position: static
+|   width: auto
+|   height: auto
+|   margin-top: 0px
+|   margin-right: 0px
+|   margin-bottom: 0px
+|   margin-left: 0px
+|   padding-top: 0px
+|   padding-right: 0px
+|   padding-bottom: 0px
+|   padding-left: 0px
+|   border-top-width: 3px
+|   border-right-width: 3px
+|   border-bottom-width: 3px
+|   border-left-width: 3px
+|   color: rgb(0, 0, 0)
+|   background-color: rgba(0, 0, 0, 0)
+|   font-size: 16px
+|   font-weight: 400
+|   line-height: normal
+|   text-align: start
+|   white-space-collapse: collapse
+|   text-wrap-mode: wrap
+|   <head>
+|     display: none
+|     position: static
+|     width: auto
+|     height: auto
+|     margin-top: 0px
+|     margin-right: 0px
+|     margin-bottom: 0px
+|     margin-left: 0px
+|     padding-top: 0px
+|     padding-right: 0px
+|     padding-bottom: 0px
+|     padding-left: 0px
+|     border-top-width: 3px
+|     border-right-width: 3px
+|     border-bottom-width: 3px
+|     border-left-width: 3px
+|     color: rgb(0, 0, 0)
+|     background-color: rgba(0, 0, 0, 0)
+|     font-size: 16px
+|     font-weight: 400
+|     line-height: normal
+|     text-align: start
+|     white-space-collapse: collapse
+|     text-wrap-mode: wrap
+|     <style>
+|       (no computed style)
+|     <style>
+|       (no computed style)
+|   <body>
+|     display: block
+|     position: static
+|     width: auto
+|     height: auto
+|     margin-top: 8px
+|     margin-right: 8px
+|     margin-bottom: 8px
+|     margin-left: 8px
+|     padding-top: 0px
+|     padding-right: 0px
+|     padding-bottom: 0px
+|     padding-left: 0px
+|     border-top-width: 3px
+|     border-right-width: 3px
+|     border-bottom-width: 3px
+|     border-left-width: 3px
+|     color: rgb(0, 0, 0)
+|     background-color: rgba(0, 0, 0, 0)
+|     font-size: 16px
+|     font-weight: 400
+|     line-height: normal
+|     text-align: start
+|     white-space-collapse: collapse
+|     text-wrap-mode: wrap
+|     <p>
+|       display: block
+|       position: static
+|       width: auto
+|       height: auto
+|       margin-top: 16px
+|       margin-right: 0px
+|       margin-bottom: 16px
+|       margin-left: 0px
+|       padding-top: 0px
+|       padding-right: 0px
+|       padding-bottom: 0px
+|       padding-left: 0px
+|       border-top-width: 3px
+|       border-right-width: 3px
+|       border-bottom-width: 3px
+|       border-left-width: 3px
+|       color: rgb(0, 0, 255)
+|       background-color: rgba(0, 0, 0, 0)
+|       font-size: 16px
+|       font-weight: 400
+|       line-height: normal
+|       text-align: start
+|       white-space-collapse: collapse
+|       text-wrap-mode: wrap
+|     <p>
+|       display: block
+|       position: static
+|       width: auto
+|       height: auto
+|       margin-top: 22px
+|       margin-right: 0px
+|       margin-bottom: 22px
+|       margin-left: 0px
+|       padding-top: 0px
+|       padding-right: 0px
+|       padding-bottom: 0px
+|       padding-left: 0px
+|       border-top-width: 3px
+|       border-right-width: 3px
+|       border-bottom-width: 3px
+|       border-left-width: 3px
+|       color: rgb(0, 128, 0)
+|       background-color: rgba(0, 0, 0, 0)
+|       font-size: 22px
+|       font-weight: 400
+|       line-height: normal
+|       text-align: center
+|       white-space-collapse: collapse
+|       text-wrap-mode: wrap

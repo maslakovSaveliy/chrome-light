@@ -6,16 +6,17 @@ Statuses: **planned(Mx)** — in milestone x; **later** — after v1; **non-goal
 
 | Area | Feature | Status |
 |---|---|---|
-| URL/encoding | WHATWG URL, Encoding (UTF-8, legacy sniffing) | M1 |
-| HTML | tokenizer/tree builder (html5ever), parser-script reentrancy, `document.write` | M1 / M3 |
-| DOM | Node tree, events (capture/bubble), MutationObserver, Range/Selection, Shadow DOM, custom elements | M1 / M3 |
-| CSS | stylo: cascade, layers, custom properties, media/container queries, nesting | M1 |
-| Layout | block, inline, positioned, floats | M1 |
+| URL/encoding | WHATWG URL, Encoding (UTF-8, legacy sniffing) | M1a: done (URL 828/893 WPT = 92.7%, the ceiling of the `url` crate; encoding — BOM/transport/`<meta>` prescan, UTF-8 default) / M1 |
+| HTML | tokenizer/tree builder (html5ever), parser-script reentrancy, `document.write` | M1a: done (tree construction 1307/1313 = 99.5% over the **36 vendored `.dat` files** of the Task 9 list; `svg.dat`/`math.dat`/`plain-text-unsafe.dat`/`scriptdata01.dat` and others are not vendored, so SVG/MathML are not covered by conformance — see `docs/SPEC_REGISTRY.md`) / M3 (reentrancy, `document.write`) |
+| DOM | Node tree, events (capture/bubble), MutationObserver, Range/Selection, Shadow DOM, custom elements | M1a: done (static Node tree, no events) / M1 / M3 |
+| CSS | stylo: cascade, layers, custom properties, media/container queries, nesting | M1a: partial (the cascade works; `cl-layout` reads only the M1a subset of 22 longhands) / M1 |
+| Layout | block, inline, positioned, floats | M1a: partial (block + inline + `position:relative` implemented and covered by 22/22 reftest pairs; no floats, no absolute/fixed) / M1 |
 | Layout | flex, grid (taffy math), tables | M3 |
 | Layout | multicol, fragmentation, writing modes vertical | later |
-| Text | shaping, bidi, line breaking, font fallback, variable fonts, emoji | M1 basic / M3 full |
-| Paint/compositor | display lists, stacking, clips, transforms, opacity, filters; async scroll; transform/opacity animations on the compositor | M1 / M4 |
-| GPU | vello+wgpu; CPU fallback | M1 |
+| Text | shaping, bidi, line breaking, font fallback, variable fonts, emoji | M1a: partial (Ahem/Noto Sans via parley/swash, LTR only, no per-inline line-height/vertical-align) / M1 basic / M3 full |
+| Paint/compositor | display lists, stacking, clips, transforms, opacity, filters; async scroll; transform/opacity animations on the compositor | M1a: partial (display list + solid borders + backgrounds + text + `overflow:hidden` clip, CPU raster) / M1 / M4 |
+| GPU | vello+wgpu; CPU fallback | M1a: done (CPU fallback — tiny-skia + swash, deterministic) / M1 (vello+wgpu) |
+| Test infra | `cl-testshell`: render/dump/compare/reftest CLI, 22 reftest pairs (`crates/testshell/tests/ref`), 5-stage golden dumps, 6 fuzz targets | M1a: done |
 | Images | PNG, JPEG, GIF, WebP, AVIF (utility process) | M1 / M3 (AVIF) |
 | SVG | inline SVG rendering (usvg/resvg approach) | M3 |
 | JS | V8, ES2025, modules, Wasm | M2 |

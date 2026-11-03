@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- expects: two 800x10 black bars, at (0,0) and (0,30) - identical picture to
+     margin-collapse-siblings.html, but written the way a real page actually looks: ordinary
+     markup indentation (newlines) between the two <div>s, not two tags jammed together.
+     Regression coverage for the box-generation fix in crates/layout/src/box_tree.rs (CSS 2.1
+     SS9.2.2.1): a whitespace-only text node between block siblings must generate no box at
+     all, so it must not be able to turn this pair's max(20,10)=20 collapse into a
+     sum(20,10)=30 one (which would move the second bar to y=40, not y=30). Before that fix,
+     this exact page failed; margin-collapse-siblings.html was written without the
+     whitespace specifically to route around the (then-undiscovered) bug - now that it is
+     fixed, both pages render identically. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div { font-family: Ahem; font-size: 20px; line-height: 20px; height: 10px; background: #000; }
+  #first { margin-bottom: 20px; }
+  #second { margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="first"></div>
+<div id="second"></div>
+</body>
+</html>

@@ -6,13 +6,22 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 
 ## Engine
 
+`parley` and `fontique` are pulled in as `default-features = false, features = ["std"]`: this turns off `system` (fontconfig/DirectWrite/CoreText) — the engine renders only its own bundled fonts (reftest determinism, ADR-0009) — and `complex-scripts` (dictionary line breaking for CJK/Thai/Khmer; a Task 18 decision, to be revisited together with support for those scripts).
+
 | Crate | Role | Why this one | Alternatives | Risk |
 |---|---|---|---|---|
 | `html5ever`, `markup5ever` | HTML tokenizer/tree builder | spec-conformant, Servo, WPT-verified, `Atom` | own parser | medium — API changes |
 | `cssparser` | CSS tokenizer | required by stylo | — | low |
-| `stylo` (+`stylo_atoms`, `stylo_dom`, `selectors`, `servo_arc`) | CSS cascade/computed style | Firefox-grade, parallel, huge coverage | own cascade (years) | medium — heavy integration of the `TElement`/`TNode` traits, breaking releases |
+| `stylo_traits`, `stylo_dom`, `stylo_atoms`, `stylo_static_prefs` | part of stylo | the same version | — | low |
+| `selectors` | CSS selectors | required by stylo | — | low |
+| `stylo` (+`stylo_atoms`, `stylo_dom`, `selectors`, `servo_arc`) | CSS cascade/computed style | Firefox-grade, parallel, huge coverage | own cascade (years) | high — Python 3 at build time, API without stability guarantees (pre-1.0, ADR-0015). On `unsafe`: there is **none** in `cl-style` — the ADR-0015 amendments removed the original assumption, and `tools/check-unsafe-scope.sh` keeps `#![forbid(unsafe_code)]` in every M1a crate |
+| `euclid` 0.22 | typed 2D geometry (`Size2D`, `Scale`) for `style::device::Device::new` (viewport/device-pixel-ratio) | the version `stylo` 0.20 itself uses internally (`style_traits`/`app_units`); not re-exported from `style::`, so it is a direct dependency of `cl-style` (found in the task-2 build spike) | — | low |
 | `taffy` | flex/grid/block math | CSS-correct, used by Blitz/Bevy | own | low |
-| `parley`, `swash`, `fontdb`, `skrifa` | text layout, shaping, fonts | Linebender stack, pure Rust | harfbuzz-rs (C), cosmic-text | medium — pre-1.0 |
+| `parley` 0.11 (Apache-2.0 OR MIT) | shaping + line breaking + `text-align` inside `cl-layout` (Task 18: inline formatting context); pulls in `harfrust` (shaper), `skrifa`, `parley_data`, `icu_segmenter` | Linebender stack, pure Rust, the same `fontique` as `cl-fonts` | harfbuzz-rs (C), cosmic-text | medium — pre-1.0 |
+| `swash` 0.2 (Apache-2.0 OR MIT) | rasterising glyphs into 8-bit alpha masks inside `cl-gfx` (Task 21: CPU backend) — `ScaleContext`/`Render::new(&[Source::Outline])`/`Format::Alpha`, hinting off for determinism; pulls in `zeno` (scan conversion) and `yazi` (`woff2` table decompression) | Linebender stack, pure Rust, the same `skrifa` as `parley`; `tiny-skia` cannot rasterise glyphs itself | harfbuzz-rs + FreeType (C), `vello_cpu` | medium — pre-1.0 |
+| `fontique` | font discovery | Linebender stack | system fontconfig | low |
+| `skrifa` (two in `Cargo.lock`: 0.46.2 as a direct dev-dependency of `cl-fonts`, 0.44.0 transitively via `parley` 0.11.1 and `swash` 0.2.10) | font-table parsing (glyph metrics/outlines) | found by Task 23 (`cargo tree -d`): `parley`/`swash` have not moved to 0.46 yet | update `parley`/`swash` once they release on `skrifa` 0.46 | low — the two versions' types never meet in our code (`cl-fonts` and `parley`/`swash` never pass `skrifa::Tag`/`FontRef` values to each other), but it bloats the binary; track on `parley`/`swash` updates |
+| `tendril` | web strings (rope/small-string for text nodes) | Servo | — | low — **not a direct dependency**: it comes through `markup5ever` and is used as `markup5ever::tendril` (markup5ever 0.39 has tendril 0.5; a separate 0.4 pin would give two incompatible `StrTendril`s) |
 | `vello`, `wgpu`, `peniko`, `kurbo` | 2D GPU raster, GPU abstraction | pure Rust, Metal/DX12/Vulkan | skia-safe (C++), tiny-skia only | medium — wgpu breaking every release |
 | `tiny-skia` | CPU raster fallback, reftests | determinism | vello_cpu | low |
 | `winit` | windows, input | standard | tao | low |
@@ -63,7 +72,15 @@ Allowed licenses (`deny.toml`): MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception,
 | `tracing`, `tracing-subscriber`, `tracing-chrome` | observability | low |
 | `thiserror`, `anyhow` | errors | low |
 | `clap` | CLI flags | low |
-| `insta`, `proptest`, `arbitrary`, `libfuzzer-sys`, `criterion` | tests | low |
+| `insta`, `proptest`, `arbitrary`, `libfuzzer-sys`, `criterion` | tests | low — `arbitrary` (MIT OR Apache-2.0) is optional, behind the `arbitrary` feature in `cl-fonts`/`cl-layout`/`cl-paint`: it provides `derive(Arbitrary)` for the types the `display_list_validate`/`display_list_rasterize` fuzzers generate structurally, plus `FontKey::from_raw` (doc-hidden, tests/fuzzing only). Off in the normal engine build |
+| `serde_json` | parsing WPT/html5lib JSON/test fixtures in the conformance harnesses (dev-dependency) | low |
+
+## Bundled assets
+
+| Asset | License | Note |
+|---|---|---|
+| `Ahem.ttf` | CC0-1.0 | WPT fonts/Ahem.ttf |
+| `NotoSans-Regular.ttf` | OFL-1.1 | unmodified (the Reserved Font Name clause does not apply) |
 
 ## Forbidden
 

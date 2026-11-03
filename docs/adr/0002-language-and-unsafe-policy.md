@@ -1,6 +1,6 @@
 # ADR-0002: Rust stable, edition 2024, `unsafe` policy
 
-**Status:** Accepted
+**Status:** Accepted (amended by ADR-0015: cl-style added to the unsafe list)
 **Date:** 2026-09-07
 **Deciders:** project owner
 
@@ -11,7 +11,7 @@
 ## Decision
 
 - Rust **stable**, version pinned in `rust-toolchain.toml` (1.95 at start), edition 2024. Nightly — only for `cargo fuzz`/`miri`/`careful` in CI, never for building the product.
-- `#![forbid(unsafe_code)]` in all crates except: `cl-platform`, `cl-process`, `cl-gfx` (backend modules), `cl-js` (V8 FFI), `cl-bindings/runtime`. There — `deny` on the crate + `allow` on the module, `unsafe_op_in_unsafe_fn = deny`, `undocumented_unsafe_blocks = deny`.
+- `#![forbid(unsafe_code)]` in all crates except: `cl-platform`, `cl-process`, `cl-gfx` (backend modules), `cl-js` (V8 FFI), `cl-bindings/runtime`, `cl-style` (modules `store.rs`, `handle.rs`, `stylo_dom.rs`). There — `deny` on the crate + `allow` on the module, `unsafe_op_in_unsafe_fn = deny`, `undocumented_unsafe_blocks = deny`.
 - External crates with `unsafe` are acceptable given: an active maintainer, `cargo vet`/audit, or wide usage (wgpu, v8, rusqlite).
 - `panic = "abort"` in release for child processes. No panics on untrusted input (see CODING_STANDARDS §2).
 

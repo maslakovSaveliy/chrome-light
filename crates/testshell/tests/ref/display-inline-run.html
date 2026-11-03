@@ -1,0 +1,18 @@
+<!doctype html>
+<!-- expects: a black bar at (0,0) 60x20 - three Ahem glyphs. The <span>'s background/border
+     paint nothing of their own (M1a decision: an inline box generates no fragment, only its
+     text does - crates/layout/src/inline.rs "What an Inline box contributes"), so only the
+     "xxx" text renders, as one 3-glyph run. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  p { font-family: Ahem; font-size: 20px; line-height: 20px; margin: 0; }
+  span { background: #f00; border: 3px solid #00f; }
+</style>
+</head>
+<body>
+<p><span>xxx</span></p>
+</body>
+</html>

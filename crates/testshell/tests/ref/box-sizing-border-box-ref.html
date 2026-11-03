@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Reference for box-sizing-border-box.html: background always paints under the whole
+     border box and the border paints over its outer ring afterwards (crates/paint/src/build.rs),
+     so the visible picture is fully reproduced by a content-box div whose *content* size
+     (290x90) is the border-box size (300x100) minus the 5px border ring - padding plays no
+     separate visible role once the numbers are folded in this way. -->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  div { width: 290px; height: 90px; border: 5px solid #000; background: #00f; }
+</style>
+</head>
+<body>
+<div></div>
+</body>
+</html>

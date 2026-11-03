@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- expects: three 20x20 black squares at (0,0), (0,40), (0,80). <div>x<p>x</p>x</div>
+     wraps each loose "x" text node in its own anonymous block box (CSS 2.1 SS9.2.1.1,
+     crates/layout/src/box_tree.rs), giving three sibling block boxes: anon("x"), <p>x</p>,
+     anon("x"). Anonymous blocks have zero margin; <p>'s own UA margin is 1em = 20px top and
+     bottom (font-size is 20px here). Each box is one 20px-tall Ahem line, so: box1 at
+     y=0..20; box1's margin-bottom(0) collapses with <p>'s margin-top(20) to 20, so <p> starts
+     at 20+20=40, occupies 40..60; <p>'s margin-bottom(20) collapses with box3's margin-top(0)
+     to 20, so box3 starts at 60+20=80. -->
+<html>
+<head>
+<link rel="stylesheet" href="fonts.css">
+<style>
+  body { margin: 0; }
+  div, p { font-family: Ahem; font-size: 20px; line-height: 20px; }
+  div { margin: 0; }
+</style>
+</head>
+<body>
+<div>x<p>x</p>x</div>
+</body>
+</html>

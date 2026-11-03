@@ -1,0 +1,13 @@
+/* Bundled fonts (`cl_fonts::FontDb::bundled`) resolve purely by family name — the engine
+   never reads a font file off disk or off the host system, so `src` is beside the point for
+   how the glyph is actually chosen. `src: local(Ahem)` is here only because a real page would
+   spell an `@font-face` this way: `stylo` parses the `src` descriptor like any other browser
+   engine would, but `cl-fonts`/`cl-layout` never evaluate it — they look the family name
+   (`Ahem`) up directly in the bundled database. Deleting this file and using
+   `font-family: Ahem` straight from the UA-default sans-serif stack would render identically;
+   it exists so `text-basic.html` exercises a real `<link rel=stylesheet>` load, which is what
+   Task 22's determinism test needs. */
+@font-face {
+  font-family: Ahem;
+  src: local(Ahem);
+}

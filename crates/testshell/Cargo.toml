@@ -16,6 +16,15 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+cl-dom.workspace = true
+cl-fonts.workspace = true
+cl-gfx.workspace = true
+cl-html.workspace = true
+cl-layout.workspace = true
+cl-net.workspace = true
+cl-paint.workspace = true
+cl-style.workspace = true
+thiserror.workspace = true
 tiny-skia.workspace = true
 
 [lints]

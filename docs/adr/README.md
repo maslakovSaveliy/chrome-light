@@ -18,3 +18,4 @@ Format — `template.md`. Once an ADR is Accepted it is not edited in substance;
 | [0012](0012-memory-budget.md) | Memory as a first-class requirement | Accepted |
 | [0013](0013-naming-and-trademark.md) | ChromeLight name and trademark (risk accepted) | Accepted |
 | [0014](0014-licensing.md) | Apache-2.0 OR MIT license | Accepted |
+| [0015](0015-stylo-integration.md) | stylo integration: unsafe in cl-style, Python 3, pinned version, Option B fallback | Accepted |

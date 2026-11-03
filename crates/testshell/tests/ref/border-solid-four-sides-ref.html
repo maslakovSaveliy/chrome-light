@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- Reference for border-solid-four-sides.html: the four strips as plain stacked divs, in
+     the M1a border painter's own geometry (full-width top/bottom strips, left/right filling
+     the band between them - crates/gfx/src/cpu/mod.rs). #right uses a negative margin-top to
+     sit beside #left rather than below it (M1a has no floats/inline-block to place two boxes
+     side by side); CSS 2.1's max-positive/min-negative collapsing rule
+     (crates/layout/src/block.rs) folds #left's 0 margin-bottom against #right's -60px
+     margin-top to exactly -60px, pulling #right's top back up from 65px (directly under
+     #left) to 5px (level with #left's own top) - after which #bottom's flow position (65px)
+     comes out identical whether measured from #left's or #right's bottom, since both end at
+     the same y. -->
+<html>
+<head>
+<style>
+  body { margin: 0; }
+  #top { width: 110px; height: 5px; background: #f00; }
+  #left { width: 5px; height: 60px; background: #fa0; }
+  #right { width: 5px; height: 60px; background: #00f; margin-left: 105px; margin-top: -60px; }
+  #bottom { width: 110px; height: 5px; background: #0f0; }
+</style>
+</head>
+<body>
+<div id="top"></div>
+<div id="left"></div>
+<div id="right"></div>
+<div id="bottom"></div>
+</body>
+</html>

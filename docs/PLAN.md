@@ -12,6 +12,8 @@ Estimates — **order of magnitude in "agent-weeks"** (one week of the owner's w
 4. Vertical slice first (one page end-to-end), then breadth (feature matrix).
 5. Chrome interop (import, sync, extensions, DevTools) — after a stable core, but the API boundaries for it (StorageKey, capability handles, isolated worlds) are laid down earlier.
 
+Python 3 is a build dependency from M1a on (stylo).
+
 ## 1. Milestone map
 
 ```
@@ -57,25 +59,25 @@ Detailed plan: `docs/superpowers/plans/2026-09-07-m0-foundation.md`.
 
 **Goal:** `chromelight file:///page.html` renders a static page with CSS through the real pipeline in three processes; reftests and the WPT subset are live.
 
-Scope per crate:
-- `cl-net` (minimum): `file://` and `http://localhost` (hyper client without TLS) — tests only; URL via `url`; encoding sniffing (`encoding_rs`).
-- `cl-html`: html5ever `TreeSink` → `cl-dom` arena.
-- `cl-dom`: `NodeId` arena, Document/Element/Text/Comment, attributes (atoms), tree traversal, `querySelector` without JS (for tests).
-- `cl-style`: stylo `TElement/TNode` impl, stylesheet loading (`<style>`, `<link>` via cl-net), cascade, computed style; basic `@media`.
-- `cl-layout`: box tree, block formatting context, inline formatting (parley), replaced elements (`<img>` via utility decode), positioned (`relative/absolute`), basic floats, static overflow/scroll containers, `Au` units, fragment tree.
-- `cl-paint`: display list (background, border, text runs, images, clips, transforms 2D), hit-test structure.
-- `cl-compositor` (minimum): one layer, no tiles needed; `cl-gfx`: CPU raster (tiny-skia) in the GPU process; vello/wgpu path behind a flag.
-- `cl-shell-ui`: egui window, address bar, one tab, displaying the frame from the GPU process (shm → texture).
-- `cl-process`: sandbox **macOS seatbelt** and **Linux namespaces+seccomp** for the renderer; Windows — a stub with an explicit refusal.
-- `cl-testshell`: real render to PNG; reftest runner; WPT product adapter (`tools/wpt/`), directories `url`, `encoding`, `html/syntax`, `dom/nodes` (no scripts — only parser tests via testshell dump), `css/CSS2` reftests subset.
-- Fuzz: `html_tokenizer`, `css_stylesheet`, `url_parse`, `display_list_validate`.
+Scope: split into five sequential sub-plans (M1a–M1e), each tied to one critical system.
 
-Exit criteria:
-- [ ] 20 reftests (`tests/ref/`) green on 3 OSes with bundled fonts.
-- [ ] WPT: `url` ≥ 95%, `encoding` ≥ 90%, `html/syntax/parsing` ≥ 90% (tree dump), `css/CSS2/normal-flow` ≥ 60% — numbers are recorded in the dashboard, expected-fail with bug ID.
-- [ ] Renderer sandbox is applied on macOS and Linux; `tests/security/sandbox_fs.rs` (renderer cannot open `/etc/passwd`) is green.
-- [ ] Budget: empty browser + empty tab ≤ 120 MB RSS total (measurement; on failure — revisit ADR-0012 with honest numbers).
-- [ ] Chrome baseline on the corpus recorded (`docs/history/bench-2026-10.md`).
+| Sub-plan | What it does | Detailed plan |
+|---|---|---|
+| **M1a** | Single-process static pipeline: encoding sniff → html5ever → arena DOM → stylo cascade → block/inline layout (parley) → display list → CPU raster (tiny-skia). JS-free conformance (html5lib-tests, WPT `urltestdata.json`), 22 reftest pairs, 6 fuzz targets, golden dumps. | `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md` |
+| **M1b** | Renderer + GPU processes: display list over shm, validation on receipt, frame in a window. | written after M1a |
+| **M1c** | Sandbox: macOS seatbelt, Linux Landlock + seccomp + `no_new_privs`; `--probe` tests. | written after M1b |
+| **M1d** | egui shell: one tab, address bar, `file://` and `http://localhost` via `cl-net`. | written after M1c |
+| **M1e** | Bench corpus, Chrome baseline, closing the M1 exit gates. | written after M1d |
+
+M1 exit criteria (union of M1a–M1e):
+- [x] M1a: single-process pipeline; html5lib tree-construction 1307/1313 = 99.5% over 36 vendored `.dat` files (0 panics, threshold was ≥ 90%; the SVG/MathML files are not vendored — see SPEC_REGISTRY), WPT `urltestdata.json` 828/893 = 92.7% (threshold ≥ 92%, the ceiling of the `url` crate, see SPEC_REGISTRY), 22/22 reftests (`cargo run -p cl-testshell -- reftest`; the 20 from the brief plus a regression pair for the whitespace anonymous-block bug fixed in Task 23 and `max-width-auto-margins` for the min/max clamp under `width:auto`, CSS 2.1 §10.4 — M1a final review), 6 fuzz targets (the plan named 4 M1a targets — `html_parse`, `css_stylesheet`, `url_parse`, `display_list_validate` — plus `ipc_decode` from M0 and `display_list_rasterize`, added by the final review; no crash in 60 s each), 5-stage golden dumps (dom/style/box-tree/fragments/display-list) — detailed criteria in `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`.
+  - [x] Peak RSS on the 1 MB smoke page < 300 MB: median 73 424 896 bytes after debt D1 (was 342–347 MB at Task 22; `docs/history/perf-m1a-2026-09.md`, "Memory after the final review and D1").
+  - [ ] Not met: tests in the release profile (`cargo test --release`) were never run locally — the stylo LTO rebuild (`lto = "thin"`, `codegen-units = 1`) is too slow on the owner's machine — do not tick, debt in MEMORY.md.
+- [ ] M1b: `chromelight file:///page.html` renders through renderer + GPU processes (display list over shm).
+- [ ] M1c: the renderer sandbox is applied on macOS and Linux; `--probe` tests (open /etc/passwd, socket) → EPERM.
+- [ ] M1d: egui shell with one tab, `file://` and `http://localhost`.
+- [ ] M1e: budget ≤ 120 MB RSS (empty browser + empty tab), Chrome baseline on the corpus recorded.
+- The wptrunner product adapter moved to M2 (testharness.js needs JS; the current wptrunner expects WebDriver classic from the product).
 
 ### M2 — Secure + JS
 
@@ -159,7 +161,7 @@ Exit criteria:
 
 | Risk | Signal | Action |
 |---|---|---|
-| stylo integration with the arena-DOM is not working out | M1 spike > 2 weeks without cascade | fallback: own selector matching + simplified cascade for M1, stylo in M3 |
+| stylo integration with the arena-DOM is not working out | M1 spike > 2 weeks without cascade | fallback = ADR-0015 Option B |
 | V8 does not fit the memory budget | M2: idle renderer > 80 MB | `--jitless`/snapshot/lazy; ADR-0004 revisit earlier |
 | Windows sandbox | M2 > 3 weeks | Windows moves to the nightly matrix until M3, Windows release is blocked |
 | vello on weak GPUs | M4 fps < 30 | CPU tiles + GPU composite |
