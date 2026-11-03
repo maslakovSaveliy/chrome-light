@@ -6,7 +6,7 @@ Updated at the end of every working session. Short facts, links to documents. Se
 
 **Phase:** M1a Static Pipeline — **all 23 plan tasks done** on branch `m1a-static-pipeline` (PR #2, draft, https://github.com/maslakovSaveliy/chrome-light/pull/2), final whole-branch review done (three opus reviewers + one fix wave + scoped re-review, 2026-09-16). Plan: `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`. Execution log (SDD ledger, only on the owner's machine, in `.gitignore`): `.superpowers/sdd/2026-09-07-m1a-static-pipeline/progress.md` — the main source of state. `main` (PR #3: docs translated to English) was merged into the branch on 2026-11-03.
 
-**Before the merge of PR #2 (owner decision 2026-09-28):** close two debts — **both closed**. **D2** (super-linear style/inline paths): done and reviewed (`69df088`, `e798a28`, `53460f4`, `4b6a01f`); the `nextest list --filterset` evidence is in the ledger (exactly the 5 tests). **D1** (1 MB smoke page memory): `752e792` made the testshell stage dumps opt-in; median max RSS 73 424 896 bytes (criterion < 300 MB), reviewed and approved (2026-11-03). Left: the debug smoke-test time budget (owner decision, see open question 3), CI 5/5, owner decides merge + tag `m1a` → M1b (drafts in `.superpowers/m1b-drafts/`, gitignored).
+**Before the merge of PR #2 (owner decision 2026-09-28):** close two debts — **both closed**. **D2** (super-linear style/inline paths): done and reviewed (`69df088`, `e798a28`, `53460f4`, `4b6a01f`); the `nextest list --filterset` evidence is in the ledger (exactly the 5 tests). **D1** (1 MB smoke page memory): `752e792` made the testshell stage dumps opt-in; median max RSS 73 424 896 bytes (criterion < 300 MB), reviewed and approved (2026-11-03). Debug smoke-test budget: **stays 5 s locally** (owner, 2026-11-03) — 3.3–3.6 s on a quiet machine after D1, 5.3–12 s under external load 5–19; a gate that goes red under load is re-run on a quiet machine, never committed red (CI keeps 15 s via `CL_SMOKE_SLOW=1`). Left: CI 5/5, owner decides merge + tag `m1a` → M1b (drafts in `.superpowers/m1b-drafts/`, gitignored).
 
 **M1a, tasks:** 1–23 — all done and reviewed (1–15 in sessions 3–4; 16–23 in session 6, then the final branch review).
 
@@ -44,7 +44,6 @@ Updated at the end of every working session. Short facts, links to documents. Se
 
 1. Chrome 153 baseline in `docs/history/bench-2026-09.md` — measure manually on the owner's machine.
 2. ADR-0015 carries three in-place amendments, while CLAUDE.md §6 says Accepted ADRs are immutable (final review C) — keep, or supersede with a new ADR.
-3. The debug 1 MB smoke test vs its local 5 s budget (CI uses 15 s via `CL_SMOKE_SLOW=1`): after D1 it runs 3.3–3.6 s on a quiet machine (load ≤ 5), but 5.3–12 s under external load 5–19 (2026-11-03) — keep 5 s, or move the local budget.
 
 ## Known debts after M0
 
