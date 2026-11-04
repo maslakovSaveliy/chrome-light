@@ -209,7 +209,8 @@ impl RendererState {
                 }
             }
             RendererInput::Ping(n) => out.push(RendererOutput::Up(FromRenderer::Pong(n))),
-            RendererInput::Shutdown => out.push(RendererOutput::Exit),
+            // Nothing after Exit: not even a layout the deadline would start.
+            RendererInput::Shutdown => return vec![RendererOutput::Exit],
             // The deadline is checked below, after every input.
             RendererInput::Tick => {}
         }
@@ -305,7 +306,10 @@ impl RendererState {
         for url in requested {
             map.insert_err(
                 url.clone(),
-                "the browser did not answer within 5 s".to_owned(),
+                format!(
+                    "the browser did not answer within {} s",
+                    SUBRESOURCE_TIMEOUT.as_secs()
+                ),
             );
         }
         self.attach(map, out);
@@ -591,6 +595,16 @@ mod tests {
         let (mut s, t0) = connected();
         let _ = s.on(load(LINKED, vp(800, 600), 1), t0);
         assert_eq!(s.on(RendererInput::Shutdown, t0), [RendererOutput::Exit]);
+    }
+
+    #[test]
+    fn shutdown_past_the_deadline_exits_without_rendering() {
+        let (mut s, t0) = connected();
+        let _ = s.on(load(LINKED, vp(800, 600), 1), t0);
+        assert_eq!(
+            s.on(RendererInput::Shutdown, t0 + SUBRESOURCE_TIMEOUT),
+            [RendererOutput::Exit]
+        );
     }
 
     #[test]
