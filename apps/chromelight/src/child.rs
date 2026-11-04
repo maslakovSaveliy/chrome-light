@@ -29,8 +29,9 @@ use crate::{
     renderer::{RendererInput, RendererOutput, RendererState},
 };
 
-/// Display lists (and browser messages) the gpu queues before its readers block.
-const GPU_QUEUE: usize = 4;
+/// Display lists the gpu queues before its list reader blocks (browser messages are not
+/// counted).
+const GPU_LIST_PERMITS: usize = 4;
 
 /// How often the renderer loop wakes without a message (the subresource deadline is checked
 /// on these ticks).
@@ -207,17 +208,21 @@ fn serve_gpu(
     info!(role = %ProcessType::Gpu, policy = sandbox.policy_name(), "child ready");
 
     let (up, down) = ep.split();
-    // Bounded: a renderer flooding display lists must not grow this queue (each entry holds a
-    // shared-memory mapping until the state checks it). A full queue blocks the list reader,
-    // so the backpressure reaches the renderer's sends; the browser's few messages wait at
-    // most this many lists.
-    let (events, inbox) = mpsc::sync_channel(GPU_QUEUE);
+    // The browser's messages are never held back; display lists are. The list reader takes a
+    // permit before queueing a list and the loop returns it once the list is handled, so at
+    // most GPU_LIST_PERMITS lists (each holding a shared-memory mapping) wait at a time and a
+    // renderer flood blocks the renderer's own sends — not the browser's pings behind it.
+    let (events, inbox) = mpsc::channel();
+    let (permit_returns, permits) = mpsc::sync_channel::<()>(GPU_LIST_PERMITS);
+    for _ in 0..GPU_LIST_PERMITS {
+        permit_returns.send(())?;
+    }
     let down_events = events.clone();
     pump::spawn_reader("gpu-down", down, move |event| {
         down_events.send(GpuEvent::Down(event)).is_ok()
     })?;
     pump::spawn_reader("gpu-lists", lists_rx, move |event| {
-        events.send(GpuEvent::List(event)).is_ok()
+        permits.recv().is_ok() && events.send(GpuEvent::List(event)).is_ok()
     })?;
     let mut state = GpuState::new()?;
     let mut frames: Option<IpcSender<FrameMsg>> = None;
@@ -233,12 +238,17 @@ fn serve_gpu(
             Ok(GpuEvent::Down(PumpEvent::Error(bad))) => {
                 anyhow::bail!("undecodable browser message: {bad:?}")
             }
-            Ok(GpuEvent::List(PumpEvent::Message(msg))) => GpuInput::DisplayList(msg),
+            Ok(GpuEvent::List(PumpEvent::Message(msg))) => {
+                // The list leaves the queue here; its permit goes back for the next one.
+                let _ = permit_returns.try_send(());
+                GpuInput::DisplayList(msg)
+            }
             // No renderer holds the display-list sender any more: keep serving the browser.
             Ok(GpuEvent::List(PumpEvent::Closed)) => continue,
             // A message on the renderer's channel that is not a DisplayListMsg: the renderer's
             // fault, reported; the browser kills it.
             Ok(GpuEvent::List(PumpEvent::Error(bad))) => {
+                let _ = permit_returns.try_send(());
                 info!(?bad, "undecodable display-list message");
                 up.send(&FromGpu::BadDisplayList {
                     seq: 0,
