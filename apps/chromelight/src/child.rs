@@ -11,7 +11,7 @@ use cl_ipc::{
     handshake,
     proto::{
         gpu::{FromGpu, GpuProtocol, ToGpu},
-        renderer::{RendererProtocol, ToRenderer},
+        renderer::{FromRenderer, RendererProtocol, ToRenderer},
     },
     pump::{self, PumpEvent},
     transfer::{DisplayListMsg, FrameMsg},
@@ -107,8 +107,19 @@ fn serve_renderer(
 
     let (up, down) = ep.split();
     let (events, inbox) = mpsc::channel();
-    pump::spawn_reader("renderer-down", down, move |event| {
-        events.send(event).is_ok()
+    // Pings are answered here, on the reader thread: they tell the browser the process is
+    // alive and reading, not that a long layout has finished (a silent child is killed after
+    // CHILD_PING_TIMEOUT; Task 10 review: a slow page must not read as a hung one).
+    let pongs = up.clone();
+    pump::spawn_reader("renderer-down", down, move |event| match event {
+        // A failed Pong means the browser is gone: tell the loop, like a closed channel.
+        PumpEvent::Message(ToRenderer::Ping(n)) => {
+            pongs.send(&FromRenderer::Pong(n)).is_ok() || {
+                let _ = events.send(PumpEvent::Closed);
+                false
+            }
+        }
+        event => events.send(event).is_ok(),
     })?;
     let mut state = RendererState::new(MAX_DISPLAY_LIST_BYTES)?;
     let mut display_lists: Option<(u64, IpcSender<DisplayListMsg>)> = None;
@@ -218,8 +229,17 @@ fn serve_gpu(
         permit_returns.send(())?;
     }
     let down_events = events.clone();
-    pump::spawn_reader("gpu-down", down, move |event| {
-        down_events.send(GpuEvent::Down(event)).is_ok()
+    // Pings are answered on the reader thread, not behind a long raster (see serve_renderer).
+    let pongs = up.clone();
+    pump::spawn_reader("gpu-down", down, move |event| match event {
+        // A failed Pong means the browser is gone: tell the loop, like a closed channel.
+        PumpEvent::Message(ToGpu::Ping(n)) => {
+            pongs.send(&FromGpu::Pong(n)).is_ok() || {
+                let _ = down_events.send(GpuEvent::Down(PumpEvent::Closed));
+                false
+            }
+        }
+        event => down_events.send(GpuEvent::Down(event)).is_ok(),
     })?;
     pump::spawn_reader("gpu-lists", lists_rx, move |event| {
         permits.recv().is_ok() && events.send(GpuEvent::List(event)).is_ok()

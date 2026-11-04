@@ -163,7 +163,7 @@ tools/
 docs/
 ```
 
-**Status as of 2026-09-07 (M0):** existing: `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `apps/chromelight` binary, `tools/fuzz`, `tools/bench`; the remaining crates — per plan, M1+. M1a added `cl-net`, `cl-dom`, `cl-html`, `cl-style`, `cl-fonts`, `cl-layout`, `cl-paint`, `cl-gfx`; M1b Task 5 added `cl-renderer`.
+**Status as of 2026-09-07 (M0):** existing: `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `apps/chromelight` binary, `tools/fuzz`, `tools/bench`; the remaining crates — per plan, M1+. M1a added `cl-net`, `cl-dom`, `cl-html`, `cl-style`, `cl-fonts`, `cl-layout`, `cl-paint`, `cl-gfx`; M1b Task 5 added `cl-renderer`; M1b Task 10 made `chromelight --headless` render through the renderer and gpu processes (pixel-equal to `cl-testshell`).
 
 Inter-crate dependency rule (checked by `cargo deny` bans + `tools/check-deps.sh`): `cl-dom` does not depend on `cl-layout`; `cl-layout` does not depend on `cl-js`; nothing in the renderer depends on `cl-browser`; `cl-platform` — a leaf.
 

@@ -1,20 +1,17 @@
-//! Browser process main (M0: spawn one renderer, ping, optionally idle, shut down).
+//! Browser process main.
 //!
-//! M1b: the decisions the browser makes — frame, restart and subresource policy — live in
-//! the pure modules below ([`core`] and its helpers); the IO layer that executes their actions
-//! (spawning, pumps, writer threads, the window) arrives with Task 10.
+//! The decisions the browser makes — frame, restart and subresource policy — live in the pure
+//! modules ([`core`] and its helpers); [`children`] is the IO layer that carries them out, and
+//! [`headless`] drives both for `--headless` (M1b Task 10). Without a document the browser runs
+//! the M0 handshake path: spawn one renderer, ping it, optionally idle, shut it down.
 
-// The IO layer that drives these modules arrives in M1b Task 10; until then only their tests
-// use them, and the commands only it sends (`Ping`, `Shutdown`) are not built anywhere.
-#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
+pub mod children;
 pub mod core;
-#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
 pub mod frames;
-#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
+pub mod headless;
+#[allow(dead_code, reason = "blit is the window's (M1b Task 13)")]
 pub mod present;
-#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
 pub mod restart;
-#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
 pub mod subresources;
 
 use std::time::Duration;
@@ -35,6 +32,26 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Runs the browser process and returns its exit code. `Err` is an unexpected failure (exit 1).
 pub fn run(args: &Args) -> anyhow::Result<i32> {
+    if args.headless {
+        let (Some(document), Some(png)) = (args.document.as_deref(), args.png.as_deref()) else {
+            anyhow::bail!("--headless needs --png <out> and a document");
+        };
+        let opts = headless::HeadlessOptions {
+            document,
+            png,
+            viewport: args.viewport,
+            resize_to: args.resize_to,
+        };
+        return headless::run(args, &opts);
+    }
+    if args.document.is_some() {
+        anyhow::bail!("no window yet (M1b Task 13): use --headless --png <out> <document>");
+    }
+    handshake_only(args)
+}
+
+/// The M0 path: spawn one renderer, ping it, optionally idle, shut it down.
+fn handshake_only(args: &Args) -> anyhow::Result<i32> {
     let exe = std::env::current_exe()?;
     let opts = SpawnOptions {
         extra_args: renderer_args(args),
@@ -96,13 +113,19 @@ pub fn run(args: &Args) -> anyhow::Result<i32> {
 
 /// Arguments the browser passes on to the renderer it spawns.
 fn renderer_args(args: &Args) -> Vec<String> {
-    let mut extra = Vec::new();
-    if args.no_sandbox {
-        extra.push("--no-sandbox".to_owned());
-    }
+    let mut extra = gpu_args(args);
     #[cfg(debug_assertions)]
     if args.renderer_ignore_shutdown {
         extra.push("--ignore-shutdown".to_owned());
+    }
+    extra
+}
+
+/// Arguments the browser passes on to every gpu it spawns.
+fn gpu_args(args: &Args) -> Vec<String> {
+    let mut extra = Vec::new();
+    if args.no_sandbox {
+        extra.push("--no-sandbox".to_owned());
     }
     extra
 }

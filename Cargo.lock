@@ -209,6 +209,7 @@ dependencies = [
  "cl-platform",
  "cl-process",
  "cl-renderer",
+ "cl-testshell",
  "clap",
  "ipc-channel",
  "postcard",

@@ -91,6 +91,21 @@ jobs:
           # The renderer logs "sandbox unavailable" itself; this line can only come from the browser.
           grep -q "renderer exited during bootstrap" gate-s0.err
           test $((end - start)) -le 3
+          # The same refusal on the headless path, which loads a document: exit 78 within 3 s,
+          # no PNG written.
+          rm -f gate-s0.png
+          set +e
+          start=$(date +%s)
+          ./target/release/chromelight --no-sandbox --headless --png gate-s0.png \
+            crates/testshell/tests/ref/line-height.html 2> gate-s0-headless.err
+          code=$?
+          end=$(date +%s)
+          set -e
+          cat gate-s0-headless.err
+          test "$code" -eq 78
+          grep -q "renderer exited during bootstrap" gate-s0-headless.err
+          test $((end - start)) -le 3
+          test ! -e gate-s0.png
           # Debug-only test flags must not exist in release (clap rejects an unknown flag with 2).
           for flag in --browser-fail-after-handshake --renderer-ignore-shutdown --ignore-shutdown; do
             set +e

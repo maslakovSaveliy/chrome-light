@@ -28,6 +28,14 @@ pub struct ChildProcess<P: ChildProtocol> {
     pub endpoint: BrowserEndpoint<P>,
     /// The validated hello.
     pub hello: Hello,
+    child: ChildHandle,
+}
+
+/// The OS process of a child, without its channel: what is left after
+/// [`ChildProcess::into_parts`] hands the endpoint out. Keeps the kill-on-drop guarantee.
+#[derive(Debug)]
+pub struct ChildHandle {
+    process_type: ProcessType,
     child: Child,
 }
 
@@ -116,7 +124,10 @@ pub fn spawn<P: ChildProtocol>(
         process_type,
         endpoint,
         hello,
-        child,
+        child: ChildHandle {
+            process_type,
+            child,
+        },
     })
 }
 
@@ -212,7 +223,7 @@ fn kill_and_reap(child: &mut Child) {
     let _ = child.wait();
 }
 
-impl<P: ChildProtocol> Drop for ChildProcess<P> {
+impl Drop for ChildHandle {
     /// A child that is still running when its handle is dropped is killed and reaped. The
     /// browser owns every child's lifetime; nothing may outlive its handle (docs/SECURITY.md §3).
     fn drop(&mut self) {
@@ -230,7 +241,7 @@ impl<P: ChildProtocol> Drop for ChildProcess<P> {
     }
 }
 
-impl<P: ChildProtocol> ChildProcess<P> {
+impl ChildHandle {
     /// OS pid.
     #[must_use]
     pub fn pid(&self) -> u32 {
@@ -262,6 +273,43 @@ impl<P: ChildProtocol> ChildProcess<P> {
         self.child.kill().map_err(ProcessError::Child)?;
         self.child.wait().map_err(ProcessError::Child)?;
         Ok(())
+    }
+}
+
+impl<P: ChildProtocol> ChildProcess<P> {
+    /// OS pid.
+    #[must_use]
+    pub fn pid(&self) -> u32 {
+        self.child.pid()
+    }
+
+    /// What the browser knows about this child independently of its messages: the role it was
+    /// spawned as and its pid. Validate every upward message against it.
+    #[must_use]
+    pub fn receiver_ctx(&self) -> ReceiverCtx {
+        self.child.receiver_ctx()
+    }
+
+    /// The child's exit status if it has exited, without blocking.
+    pub fn try_wait(&mut self) -> Result<Option<ExitStatus>, ProcessError> {
+        self.child.try_wait()
+    }
+
+    /// Wait up to `timeout` for exit, then kill; always reaps. See [`wait_timeout`].
+    pub fn wait_timeout(&mut self, timeout: Duration) -> Result<WaitOutcome, ProcessError> {
+        self.child.wait_timeout(timeout)
+    }
+
+    /// Kill and reap.
+    pub fn kill(&mut self) -> Result<(), ProcessError> {
+        self.child.kill()
+    }
+
+    /// The endpoint, to split between a writer and a reader thread, and the process handle,
+    /// which still kills the child when dropped.
+    #[must_use]
+    pub fn into_parts(self) -> (BrowserEndpoint<P>, ChildHandle) {
+        (self.endpoint, self.child)
     }
 }
 

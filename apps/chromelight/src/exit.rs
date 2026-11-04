@@ -6,17 +6,14 @@
 pub const EXIT_OK: i32 = 0;
 
 /// The renderer crashed (exited without being killed by the browser).
-#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
 pub const EXIT_RENDERER_CRASHED: i32 = 3;
 
 /// No frame: the gpu restart budget is exhausted, the render failed, or no frame arrived within
 /// the first-frame timeout.
-#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
 pub const EXIT_NO_FRAME: i32 = 4;
 
 /// The browser killed the renderer for a bad message (its own, or a display list the gpu
 /// rejected).
-#[allow(dead_code, reason = "driven by the IO layer of M1b Task 10")]
 pub const EXIT_RENDERER_KILLED_BAD_MESSAGE: i32 = 5;
 
 /// `EX_CONFIG` from sysexits.h: the environment cannot run this role safely. A child exits with

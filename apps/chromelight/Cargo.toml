@@ -32,6 +32,8 @@ tracing-subscriber.workspace = true
 cl-layout.workspace = true
 # Builds a FontKey the bundled database does not know (gpu tests): it is a u32 on the wire.
 postcard.workspace = true
+# The single-process reference renderer the three-process parity tests compare against.
+cl-testshell.workspace = true
 
 [lints]
 workspace = true

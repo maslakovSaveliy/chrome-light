@@ -119,7 +119,7 @@ pub enum Event {
 }
 
 /// Browser → renderer, as plain data; the IO layer builds the wire message (and the shared
-/// memory for document and subresource bytes).
+/// memory for document and subresource bytes). Pings and `Shutdown` are the IO layer's own.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToRendererCmd {
     /// Load the document (the IO layer attaches its bytes and base URL).
@@ -150,13 +150,9 @@ pub enum ToRendererCmd {
         /// The frame number.
         seq: u64,
     },
-    /// Liveness probe.
-    Ping(u64),
-    /// Orderly exit.
-    Shutdown,
 }
 
-/// Browser → gpu, as plain data.
+/// Browser → gpu, as plain data. Pings and `Shutdown` are the IO layer's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToGpuCmd {
     /// The size to raster at and the frame number to expect next.
@@ -166,10 +162,6 @@ pub enum ToGpuCmd {
         /// The frame number.
         seq: u64,
     },
-    /// Liveness probe.
-    Ping(u64),
-    /// Orderly exit.
-    Shutdown,
 }
 
 /// A checked frame to put in the window.
@@ -601,6 +593,15 @@ fn escape_controls(text: &str) -> String {
             }
         })
         .collect()
+}
+
+/// The CSS size of the surface the browser asks for at `physical` pixels and `scale` (each edge
+/// clamped to [`MAX_SURFACE_DIMENSION`]): the size its frames have.
+///
+/// # Errors
+/// [`InvalidViewport`] for a zero edge.
+pub fn surface_viewport(physical: (u32, u32), scale: f64) -> Result<Viewport, InvalidViewport> {
+    Ok(surface(physical, scale)?.viewport)
 }
 
 /// The surface for a window: [`surface_for`], each edge clamped to

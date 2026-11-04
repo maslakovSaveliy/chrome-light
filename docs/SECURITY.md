@@ -30,7 +30,7 @@ Internet ──TLS──► network process ──validated IPC──► browser
 
 | Boundary | Who trusts whom | Enforcement |
 |---|---|---|
-| renderer → browser | browser trusts nothing | `cl-ipc::validate` on every message; origin/site from `SiteInstance`, not from the payload |
+| renderer → browser | browser trusts nothing | `cl-ipc::validate` on every message; origin/site from `SiteInstance`, not from the payload. The browser never blocks on a child (`apps/chromelight/src/browser/children.rs`, M1b Task 10): reader threads into one bounded queue, bounded writer queues (full → kill), a 5 s ping watchdog, frames refused unread above the largest surface the browser asked for |
 | renderer → network | network trusts only a `FetchHandle` from browser | the handle carries site, credentials mode, CSP snapshot |
 | renderer → gpu | gpu validates the display list (bounds, resource ids, sizes) | size limits, ids from the table of allocated ones; in `cl-paint` this is `cl_paint::wire::decode_display_list` (input ≤ 16 MiB checked before decoding; items, glyphs per run and total glyphs counted *during* decoding, so a hostile list fails before its memory is reserved — M1b Task 6) followed by `cl_paint::validate` (item/glyph/clip-depth limits, bounds ± 4096px), with the fuzz targets `display_list_decode` and `display_list_validate` (Task 20) |
 | browser → OS | browser is privileged | minimize code: no parsers, no JS in browser process (until ADR-0008 revisit) |
