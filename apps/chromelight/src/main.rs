@@ -8,6 +8,7 @@ mod args;
 mod browser;
 mod child;
 mod exit;
+mod renderer;
 mod telemetry;
 
 use cl_platform::ProcessType;

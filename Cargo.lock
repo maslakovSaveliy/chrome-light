@@ -200,11 +200,16 @@ name = "chromelight"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "cl-fonts",
  "cl-ipc",
+ "cl-layout",
  "cl-net",
+ "cl-paint",
  "cl-platform",
  "cl-process",
+ "cl-renderer",
  "clap",
+ "ipc-channel",
  "tracing",
  "tracing-chrome",
  "tracing-subscriber",
