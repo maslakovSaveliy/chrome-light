@@ -1,12 +1,12 @@
-//! The M1a single-process render pipeline: `cl-html` → `cl-dom` → `cl-style` → `cl-layout` →
-//! `cl-paint` → `cl-gfx`, wired together the same way `crates/gfx/tests/pipeline.rs` chains
-//! them, now behind [`render_file`]/[`render_bytes`] for `cl-testshell`'s `render`/`dump`
-//! commands and (Task 23) the reftest harness.
+//! The single-process render pipeline behind [`render_file`]/[`render_bytes`] for
+//! `cl-testshell`'s `render`/`dump` commands and the reftest harness: the document pipeline
+//! itself is [`cl_renderer`] (parse → subresources → render to a display list, M1b Task 5),
+//! the same code the renderer process runs, followed by [`cl_gfx::cpu::rasterize`] — so the
+//! three-process render and this one can be compared pixel for pixel.
 //!
-//! `// M1a-ONLY`: every stage below runs synchronously in this one process and thread. From
-//! M1b each stage moves into its own sandboxed process talking typed, validated IPC
-//! (`docs/ARCHITECTURE.md`); [`render_file`]/[`render_bytes`]'s signatures are not expected to
-//! change when that happens, only what runs behind them.
+//! Where the renderer process asks the browser for its subresources over IPC, this shell
+//! loads each one itself with [`cl_net::load_file`], synchronously, in this one process and
+//! thread.
 //!
 //! Deterministic by construction, matching every other guarantee `docs/TESTING.md` §2 lists
 //! for this shell: device pixel ratio is always `1.0` (not configurable — [`RenderOptions`]
@@ -18,15 +18,12 @@
 
 use std::path::Path;
 
-use cl_dom::serialize::dom_dump;
 use cl_fonts::FontDb;
-use cl_layout::dump::{box_tree_dump, fragment_tree_dump};
-use cl_layout::{Viewport, box_tree};
-use cl_net::{NetError, Url};
-use cl_paint::dump::display_list_dump;
-use cl_style::dump::computed_style_dump;
-use cl_style::{SheetWarning, StyleEngine};
+use cl_net::Url;
+use cl_renderer::{ParsedDocument, SubresourceMap};
 use tiny_skia::Pixmap;
+
+pub use cl_renderer::{StageDumps, Stages};
 
 use crate::ShellError;
 
@@ -53,42 +50,6 @@ impl Default for RenderOptions {
             stage_dumps: StageDumps::None,
         }
     }
-}
-
-/// Whether [`render_bytes`] builds the textual stage dumps ([`Stages`]) next to the pixels.
-///
-/// Opt-in because the dumps are large on a large document: on the 1 MB smoke page
-/// (`tests/smoke.rs`, ~55 000 DOM nodes) building them roughly triples the render's peak
-/// memory (measurements: `docs/history/perf-m1a-2026-09.md`, debt D1). Only `dump --stage`
-/// and tests that inspect a stage ask for them; `render`, the reftest harness and the smoke
-/// tests do not.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum StageDumps {
-    /// Build none: [`RenderOutput::stages`] is `None`. The default.
-    #[default]
-    None,
-    /// Build all five: [`RenderOutput::stages`] is `Some`.
-    All,
-}
-
-/// One textual dump per pipeline stage, in pipeline order — exactly what `dump --stage`
-/// prints (see [`crate::dump::Stage`]).
-///
-/// Built by [`render_bytes`] only when [`RenderOptions::stage_dumps`] is
-/// [`StageDumps::All`] — see [`StageDumps`] for why that is opt-in. [`Default`] is five
-/// empty strings, the state [`render_bytes`] fills in stage by stage.
-#[derive(Debug, Clone, Default)]
-pub struct Stages {
-    /// [`cl_dom::serialize::dom_dump`] of the parsed document, before styling.
-    pub dom: String,
-    /// [`cl_style::dump::computed_style_dump`] of the resolved cascade.
-    pub style: String,
-    /// [`cl_layout::dump::box_tree_dump`] of the box tree built from the styled document.
-    pub box_tree: String,
-    /// [`cl_layout::dump::fragment_tree_dump`] of the positioned fragment tree.
-    pub fragments: String,
-    /// [`cl_paint::dump::display_list_dump`] of the paint-order display list.
-    pub display_list: String,
 }
 
 /// The result of rendering one document: the rasterised pixels, the intermediate stages'
@@ -135,23 +96,19 @@ pub fn render_file(path: &Path, opts: &RenderOptions) -> Result<RenderOutput, Sh
 
 /// Renders `bytes` — a document's raw bytes, resolved against `base` — with `opts`.
 ///
-/// Runs the whole M1a static pipeline in this process, in order:
+/// Runs, in this process and thread:
 ///
-/// 1. [`cl_html::parse_document`] decodes and parses `bytes` into a [`cl_dom::Document`].
-///    `transport_label` is always `None`: `cl-testshell` never speaks HTTP, so there is no
-///    `Content-Type` charset to hand the sniffer.
-/// 2. [`cl_style::StyleEngine`]: the bundled UA sheet
-///    ([`cl_style::StyleEngine::add_ua_sheet`]), then every `<style>` and
-///    `<link rel~=stylesheet href>` the document itself carries
-///    ([`cl_style::StyleEngine::collect_document_sheets`]), loaded through a closure over
-///    [`cl_net::load_file`] — so a relative `href` resolves against `base` and a `file:` link
-///    naming a remote host is refused exactly like the top-level document would be. A sheet
-///    that fails to resolve or load becomes a [`cl_style::SheetWarning`], collected into
+/// 1. [`cl_renderer::ParsedDocument::parse`] — `cl-html` decodes and parses `bytes` against
+///    `base` (`transport_label` is always `None`: `cl-testshell` never speaks HTTP) and lists
+///    the `<link rel~=stylesheet href>` sheets the document needs.
+/// 2. Each of them is loaded with [`cl_net::load_file`], so a relative `href` resolves against
+///    `base` and a `file:` link naming a remote host is refused exactly like the top-level
+///    document would be. A sheet that fails to load becomes a warning in
 ///    [`RenderOutput::warnings`] instead of aborting the render (see that field's docs).
-/// 3. [`cl_layout::layout`] over the resolved [`cl_style::StyledDocument`] and a fresh
-///    [`cl_fonts::FontDb::bundled`].
-/// 4. [`cl_paint::build()`] into a [`cl_paint::DisplayList`].
-/// 5. [`cl_gfx::cpu::rasterize`] into [`RenderOutput::pixmap`].
+/// 3. [`cl_renderer::LoadedDocument::render`] — the bundled UA sheet, the document's own
+///    `<style>`/`<link>` sheets, the cascade (`cl-style`), [`cl_layout::layout`] with a fresh
+///    [`cl_fonts::FontDb::bundled`], and [`cl_paint::build()`] into a display list.
+/// 4. [`cl_gfx::cpu::rasterize`] into [`RenderOutput::pixmap`].
 ///
 /// With [`StageDumps::All`], [`RenderOutput::stages`] captures a dump of the tree at each
 /// step (see [`Stages`]); with the default [`StageDumps::None`] no dump is built, and neither
@@ -174,65 +131,62 @@ pub fn render_bytes(
     opts: &RenderOptions,
 ) -> Result<RenderOutput, ShellError> {
     let (width, height) = opts.viewport;
-    #[allow(
-        clippy::cast_precision_loss,
-        reason = "viewport dimensions are well under f32's 24-bit exact integer range"
-    )]
-    let (width_px, height_px) = (width as f32, height as f32);
-
-    let mut stages = (opts.stage_dumps == StageDumps::All).then(Stages::default);
-
-    let parsed = cl_html::parse_document(bytes, base, None)?;
-    if let Some(stages) = stages.as_mut() {
-        stages.dom = dom_dump(&parsed.document);
-    }
-
-    let mut engine = StyleEngine::new((width_px, height_px), 1.0)?;
-    engine.add_ua_sheet()?;
-    let sheet_warnings = engine.collect_document_sheets(&parsed.document, &load_sheet)?;
-    let warnings = sheet_warnings.iter().map(format_warning).collect();
-
-    let styled = engine.resolve(parsed.document)?;
-    if let Some(stages) = stages.as_mut() {
-        stages.style = computed_style_dump(&styled);
-        // Built only for its dump and dropped right after it: `cl_layout::layout` below
-        // builds (and drops) its own.
-        stages.box_tree = box_tree_dump(&box_tree::build(&styled));
-    }
-
-    let mut fonts = FontDb::bundled()?;
-    let viewport = Viewport::new(width_px, height_px);
-    let fragment_tree = cl_layout::layout(&styled, viewport, &mut fonts)?;
-    if let Some(stages) = stages.as_mut() {
-        stages.fragments = fragment_tree_dump(&fragment_tree, styled.document(), &fonts);
-    }
-
-    let display_list = cl_paint::build(&fragment_tree, styled.document());
-    if let Some(stages) = stages.as_mut() {
-        stages.display_list = display_list_dump(&display_list);
-    }
-
-    let pixmap = cl_gfx::cpu::rasterize(&display_list, width, height, &fonts)?;
-
+    let painted = paint(bytes, base, opts)?;
+    let pixmap = cl_gfx::cpu::rasterize(&painted.display_list, width, height, &painted.fonts)?;
     Ok(RenderOutput {
         pixmap,
-        stages,
-        warnings,
+        stages: painted.stages,
+        warnings: painted.warnings,
     })
 }
 
-/// The `load` callback [`cl_style::StyleEngine::collect_document_sheets`] uses to fetch a
-/// `<link rel=stylesheet>`'s resolved URL: exactly [`cl_net::load_file`], so an external
-/// sheet is size-capped the same way the top-level document is, and a `file:` URL naming a
-/// remote host is refused rather than silently treated as "no such file".
-fn load_sheet(url: &Url) -> Result<Vec<u8>, NetError> {
-    cl_net::load_file(url)
+/// The display list [`render_bytes`] would rasterise for `bytes` — the pipeline up to and
+/// including [`cl_paint::build()`], no raster. Stage dumps are never built here.
+///
+/// # Errors
+/// As [`render_bytes`], minus the rasterisation errors.
+pub fn display_list_for_bytes(
+    bytes: &[u8],
+    base: &Url,
+    opts: &RenderOptions,
+) -> Result<cl_paint::DisplayList, ShellError> {
+    let opts = RenderOptions {
+        stage_dumps: StageDumps::None,
+        ..*opts
+    };
+    Ok(paint(bytes, base, &opts)?.display_list)
 }
 
-/// Renders one [`SheetWarning`] as a single human-readable line for
-/// [`RenderOutput::warnings`].
-fn format_warning(warning: &SheetWarning) -> String {
-    format!("{}: {}", warning.url_or_href, warning.cause)
+/// Everything [`render_bytes`] needs before rasterising.
+struct Painted {
+    display_list: cl_paint::DisplayList,
+    fonts: FontDb,
+    stages: Option<Stages>,
+    warnings: Vec<String>,
+}
+
+/// [`cl_renderer`]'s pipeline with every subresource loaded from disk, with the stage dumps
+/// when `opts` asks for them.
+fn paint(bytes: &[u8], base: &Url, opts: &RenderOptions) -> Result<Painted, ShellError> {
+    let parsed = ParsedDocument::parse(bytes, base)?;
+    let mut subresources = SubresourceMap::new();
+    for url in parsed.subresource_requests() {
+        match cl_net::load_file(url) {
+            Ok(bytes) => subresources.insert_ok(url.clone(), bytes),
+            Err(e) => subresources.insert_err(url.clone(), e.to_string()),
+        }
+    }
+    let mut fonts = FontDb::bundled()?;
+    let rendered =
+        parsed
+            .attach(subresources)
+            .render(opts.viewport, &mut fonts, opts.stage_dumps)?;
+    Ok(Painted {
+        display_list: rendered.display_list,
+        fonts,
+        stages: rendered.stages,
+        warnings: rendered.warnings,
+    })
 }
 
 #[cfg(test)]

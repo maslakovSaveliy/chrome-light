@@ -1,6 +1,7 @@
 # ADR-0008: Shell UI — egui now, privileged web UI on our own engine later
 
 **Status:** Accepted (revisit at M5)
+**Amended by:** ADR-0016 (2026-09-28)
 **Date:** 2026-09-07
 **Deciders:** project owner
 

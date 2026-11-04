@@ -10,6 +10,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+postcard = { version = "1", features = ["use-std"] }
 cl-dom = { path = "../../crates/dom" }
 cl-fonts = { path = "../../crates/fonts", features = ["arbitrary"] }
 cl-gfx = { path = "../../crates/gfx" }
@@ -17,7 +18,7 @@ cl-html = { path = "../../crates/html" }
 cl-ipc = { path = "../../crates/ipc" }
 cl-layout = { path = "../../crates/layout" }
 cl-net = { path = "../../crates/net" }
-cl-paint = { path = "../../crates/paint", features = ["arbitrary"] }
+cl-paint = { path = "../../crates/paint", features = ["arbitrary", "serde"] }
 cl-style = { path = "../../crates/style" }
 
 [[bin]]
@@ -62,4 +63,15 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "display_list_decode"
+path = "fuzz_targets/display_list_decode.rs"
+test = false
+doc = false
+bench = false
+
 [workspace]
+
+[patch.crates-io]
+# Same vendored, patched ipc-channel as the root workspace (third_party/ipc-channel/CHROMELIGHT-PATCH.md).
+ipc-channel = { path = "../../third_party/ipc-channel" }

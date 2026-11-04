@@ -25,7 +25,7 @@
 //! # What it does judge
 //!
 //! One linear pass over [`DisplayList::items`] (no recursion, no allocation beyond a `usize`
-//! clip-depth counter), checking:
+//! clip-depth counter and a `usize` glyph total), checking:
 //!
 //! * `bounds` itself is a valid, non-empty rect ([`DisplayListError::InvalidBounds`]).
 //! * The list holds at most [`MAX_ITEMS`] items ([`DisplayListError::TooManyItems`]).
@@ -42,7 +42,9 @@
 //!   [`DisplayListError::InvalidRect`], since an oversized or negative stroke width is the
 //!   same "this rect's geometry cannot be rasterised as given" failure as a malformed rect.
 //! * A [`DisplayItem::Text`] run holds at most [`MAX_GLYPHS_PER_RUN`] glyphs
-//!   ([`DisplayListError::TooManyGlyphs`]), its `origin` lies within the inflated bounds
+//!   ([`DisplayListError::TooManyGlyphs`]), all runs together at most [`MAX_TOTAL_GLYPHS`]
+//!   ([`DisplayListError::TooManyTotalGlyphs`], reported at the run that crosses the limit),
+//!   its `origin` lies within the inflated bounds
 //!   ([`DisplayListError::OutOfBounds`]), and every glyph's offset added to that origin does
 //!   not overflow `i32` — reusing [`DisplayListError::InvalidRect`] rather than a dedicated
 //!   variant, documented here: a glyph offset that overflows against its run's origin is the
@@ -64,15 +66,32 @@ use cl_layout::{Au, GlyphRun, Point, Rect, Sides};
 
 use crate::list::{DisplayItem, DisplayList};
 
-/// The largest number of [`DisplayItem`]s a [`DisplayList`] may hold.
+/// The largest number of [`DisplayItem`]s a [`DisplayList`] may hold: 2^18 = 262 144.
 ///
-/// A generous ceiling (real pages produce thousands, not millions, of items): it exists so a
+/// A generous ceiling — the 1 MB smoke page paints 133 items, because [`mod@crate::build`]
+/// culls everything outside the viewport widened by [`OFFSCREEN_MARGIN_PX`]. It exists so a
 /// hostile renderer cannot make the gpu process allocate an unbounded amount of per-item
-/// rasteriser state from a single IPC message.
-pub const MAX_ITEMS: usize = 1_000_000;
+/// state from a single IPC message: at ≈ 56 bytes per in-memory item this is ≈ 14 MiB, and
+/// [`mod@crate::wire`]'s decoder enforces it *while* decoding (a `PopClip` is one byte on the
+/// wire). Lowered from 1 000 000 in M1b Task 6 (owner decision 2026-11-04) so that this
+/// worst case stays small next to the gpu's other buffers.
+pub const MAX_ITEMS: usize = 1 << 18;
 
 /// The largest number of glyphs a single [`DisplayItem::Text`] run may hold.
 pub const MAX_GLYPHS_PER_RUN: usize = 65_536;
+
+/// The largest number of glyphs all [`DisplayItem::Text`] runs of one [`DisplayList`] may
+/// hold together: 2^20 = 1 048 576.
+///
+/// Set in M1b Task 6 from a measurement (owner decision 2026-11-04): the 1 MB smoke page's
+/// list holds 7 182 glyphs and the largest reftest page 15, so this is ≈ 146× the smoke page.
+/// The culled area a list can cover is (800 + 2 × 4096) × (600 + 2 × 4096) CSS px at the
+/// default viewport — about 600 000 glyphs of solid, wrapped 16 px text — so a page of
+/// wrapped text stays under it. Culling is per item, so an unwrapped run (`white-space:
+/// pre`/`nowrap`) that crosses the culled area keeps all of its glyphs and counts in full.
+/// At 16 bytes per in-memory glyph the limit bounds glyph storage to 16 MiB;
+/// [`MAX_GLYPHS_PER_RUN`] alone would allow [`MAX_ITEMS`] × 65 536 of them.
+pub const MAX_TOTAL_GLYPHS: usize = 1 << 20;
 
 /// The largest [`DisplayItem::PushClip`] nesting depth a [`DisplayList`] may reach.
 ///
@@ -100,7 +119,7 @@ pub const OFFSCREEN_MARGIN_PX: f32 = 4096.0;
 ///
 /// The first six variants are named in Task 20's brief; [`DisplayListError::TooDeepClip`] and
 /// [`DisplayListError::InvalidBounds`] are added beyond it — see the module docs for why
-/// each is needed.
+/// each is needed — and [`DisplayListError::TooManyTotalGlyphs`] by M1b Task 6.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum DisplayListError {
     /// The list holds more than [`MAX_ITEMS`] items.
@@ -130,6 +149,15 @@ pub enum DisplayListError {
     OutOfBounds {
         /// The offending item's index into [`DisplayList::items`].
         index: usize,
+    },
+    /// Item `index`'s glyph run takes the list's total glyph count past
+    /// [`MAX_TOTAL_GLYPHS`].
+    #[error("item {index}: the list's glyphs exceed the total limit of {max}")]
+    TooManyTotalGlyphs {
+        /// The offending item's index into [`DisplayList::items`].
+        index: usize,
+        /// [`MAX_TOTAL_GLYPHS`].
+        max: usize,
     },
     /// Item `index` is a [`DisplayItem::PopClip`] with no open [`DisplayItem::PushClip`].
     #[error("item {index}: PopClip with no matching PushClip")]
@@ -310,8 +338,9 @@ fn check_text_run(
 /// Validates `dl` against `bounds` — see the module docs for the full rule set.
 ///
 /// One linear pass over `dl.items`, no recursion, no allocation beyond a `usize` clip-depth
-/// counter, no `unwrap`/`expect`/indexing: every arithmetic step that could overflow uses
-/// `checked_add`, and `dl.items` is walked with `enumerate()`.
+/// counter and glyph total, no `unwrap`/`expect`/indexing: every arithmetic step that could
+/// overflow uses `checked_add` (the glyph total `saturating_add`), and `dl.items` is walked
+/// with `enumerate()`.
 ///
 /// # Errors
 /// See [`DisplayListError`] for every way `dl` (or `bounds` itself) can fail validation.
@@ -330,6 +359,7 @@ pub fn validate(dl: &DisplayList, bounds: Rect) -> Result<(), DisplayListError> 
 
     let inflated = inflate(bounds);
     let mut depth: usize = 0;
+    let mut total_glyphs: usize = 0;
 
     for (index, item) in dl.items.iter().enumerate() {
         match item {
@@ -340,7 +370,16 @@ pub fn validate(dl: &DisplayList, bounds: Rect) -> Result<(), DisplayListError> 
                     return Err(DisplayListError::InvalidRect { index });
                 }
             }
-            DisplayItem::Text { run } => check_text_run(run, index, &inflated)?,
+            DisplayItem::Text { run } => {
+                check_text_run(run, index, &inflated)?;
+                total_glyphs = total_glyphs.saturating_add(run.glyphs.len());
+                if total_glyphs > MAX_TOTAL_GLYPHS {
+                    return Err(DisplayListError::TooManyTotalGlyphs {
+                        index,
+                        max: MAX_TOTAL_GLYPHS,
+                    });
+                }
+            }
             DisplayItem::PushClip { rect } => {
                 check_rect(*rect, index, &inflated)?;
                 depth += 1;

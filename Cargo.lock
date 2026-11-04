@@ -200,10 +200,18 @@ name = "chromelight"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "cl-fonts",
+ "cl-gfx",
  "cl-ipc",
+ "cl-layout",
+ "cl-net",
+ "cl-paint",
  "cl-platform",
  "cl-process",
+ "cl-renderer",
  "clap",
+ "ipc-channel",
+ "postcard",
  "tracing",
  "tracing-chrome",
  "tracing-subscriber",
@@ -310,8 +318,10 @@ dependencies = [
  "cl-html",
  "cl-layout",
  "cl-net",
+ "cl-paint",
  "cl-style",
  "insta",
+ "postcard",
  "serde",
  "thiserror",
 ]
@@ -334,6 +344,20 @@ dependencies = [
  "cl-platform",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "cl-renderer"
+version = "0.0.1"
+dependencies = [
+ "cl-dom",
+ "cl-fonts",
+ "cl-html",
+ "cl-layout",
+ "cl-net",
+ "cl-paint",
+ "cl-style",
+ "thiserror",
 ]
 
 [[package]]
@@ -369,6 +393,7 @@ dependencies = [
  "cl-layout",
  "cl-net",
  "cl-paint",
+ "cl-renderer",
  "cl-style",
  "clap",
  "thiserror",
@@ -1092,9 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "ipc-channel"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25c2117f45662580ea93b6fb2bc665c52667ea0370c23fab9bb9485acec8bd24"
+version = "0.23.1"
 dependencies = [
  "crossbeam-channel",
  "libc",
@@ -2239,7 +2262,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys",

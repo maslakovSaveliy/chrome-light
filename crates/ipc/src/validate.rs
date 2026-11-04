@@ -3,7 +3,10 @@
 
 use cl_platform::ProcessType;
 
-use crate::message::{Hello, PROTOCOL_VERSION, ToBrowser, ToChild};
+use crate::{
+    bad_message::BadMessageReason,
+    message::{Hello, PROTOCOL_VERSION},
+};
 
 /// What the receiving side knows independently of the message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +45,22 @@ pub enum IpcViolation {
         /// Spawned.
         expected: u32,
     },
+    /// A role message broke a limit or an invariant (ADR-0016 §9: the sender is killed).
+    #[error("bad message: {0}")]
+    Bad(BadMessageReason),
+}
+
+impl IpcViolation {
+    /// The bad-message reason, for a violation of a role message (not of the handshake).
+    #[must_use]
+    pub fn bad_message_reason(&self) -> Option<BadMessageReason> {
+        match self {
+            Self::Bad(reason) => Some(*reason),
+            Self::VersionMismatch { .. }
+            | Self::ProcessTypeMismatch { .. }
+            | Self::PidMismatch { .. } => None,
+        }
+    }
 }
 
 /// Implemented by every message type crossing a process boundary.
@@ -73,23 +92,6 @@ impl Validate for Hello {
             });
         }
         Ok(())
-    }
-}
-
-impl Validate for ToBrowser {
-    fn validate(&self, ctx: &ReceiverCtx) -> Result<(), IpcViolation> {
-        match self {
-            Self::Hello(h) => h.validate(ctx),
-            Self::Pong(_) => Ok(()),
-        }
-    }
-}
-
-impl Validate for ToChild {
-    fn validate(&self, _ctx: &ReceiverCtx) -> Result<(), IpcViolation> {
-        match self {
-            Self::HelloAck { .. } | Self::Ping(_) | Self::Shutdown => Ok(()),
-        }
     }
 }
 
@@ -176,14 +178,17 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::expect_used)]
-    fn pong_and_to_child_messages_should_always_pass() {
-        assert_eq!(ToBrowser::Pong(1).validate(&ctx()), Ok(()));
-        assert_eq!(ToChild::Ping(1).validate(&ctx()), Ok(()));
-        assert_eq!(ToChild::Shutdown.validate(&ctx()), Ok(()));
+    fn v1_hello_rejected() {
+        let h = Hello {
+            protocol_version: 1,
+            ..hello()
+        };
         assert_eq!(
-            ToChild::HelloAck { accepted: true }.validate(&ctx()),
-            Ok(())
+            h.validate(&ctx()),
+            Err(IpcViolation::VersionMismatch {
+                got: 1,
+                expected: PROTOCOL_VERSION
+            })
         );
     }
 }

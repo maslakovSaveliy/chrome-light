@@ -13,7 +13,7 @@
 
 use cl_fonts::FontDb;
 use cl_layout::{FragmentTree, Viewport};
-use cl_net::{NetError, Url};
+use cl_net::Url;
 use cl_style::{StyleEngine, StyledDocument};
 
 /// The base URL every fixture is parsed and resolved against.
@@ -40,10 +40,8 @@ pub fn styled_document(html: &str) -> StyledDocument {
     let mut engine = StyleEngine::new(VIEWPORT, 1.0).expect("engine");
     engine.add_ua_sheet().expect("ua sheet");
     let warnings = engine
-        .collect_document_sheets(&doc, &|_url: &Url| -> Result<Vec<u8>, NetError> {
-            Err(NetError::UnsupportedScheme(
-                "paint test fixtures load no external sheets".into(),
-            ))
+        .collect_document_sheets(&doc, &|_url: &Url| -> Result<Vec<u8>, String> {
+            Err("paint test fixtures load no external sheets".to_owned())
         })
         .expect("collect sheets");
     assert!(

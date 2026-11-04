@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*"]
-exclude = ["tools/fuzz"]
+exclude = ["tools/fuzz", "third_party/ipc-channel"]
 
 [workspace.package]
 version = "0.0.1"
@@ -23,6 +23,7 @@ cl-fonts = { path = "crates/fonts", version = "0.0.1" }
 cl-layout = { path = "crates/layout", version = "0.0.1" }
 cl-paint = { path = "crates/paint", version = "0.0.1" }
 cl-gfx = { path = "crates/gfx", version = "0.0.1" }
+cl-renderer = { path = "crates/renderer", version = "0.0.1" }
 
 anyhow = "1"
 # `derive` for `#[derive(arbitrary::Arbitrary)]` on the geometry/display-list types the
@@ -42,7 +43,7 @@ euclid = "0.22"
 fontique = { version = "0.11", default-features = false, features = ["std"] }
 html5ever = "0.39"
 insta = { version = "1.48", features = ["yaml"] }
-ipc-channel = "0.23"
+ipc-channel = "0.23.1"   # minimum: 0.23.0 has GHSA-fj85-w6rj-rxrc (macOS), see docs/DEPENDENCIES.md
 markup5ever = "0.39"
 # Same reasoning as fontique: parley/system re-enables fontique/system transitively.
 # `complex-scripts` (dictionary line breaking for CJK/Thai/Khmer/Lao/Myanmar) is a Task 18 decision.
@@ -101,3 +102,8 @@ lto = "thin"
 [profile.release-dev]
 inherits = "release"
 debug-assertions = true
+
+# Vendored, patched ipc-channel 0.23.1 (Windows handle leak per received shm/channel end).
+# See third_party/ipc-channel/CHROMELIGHT-PATCH.md; remove when upstream ships the fix.
+[patch.crates-io]
+ipc-channel = { path = "third_party/ipc-channel" }

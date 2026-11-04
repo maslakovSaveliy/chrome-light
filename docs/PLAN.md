@@ -64,7 +64,7 @@ Scope: split into five sequential sub-plans (M1a–M1e), each tied to one critic
 | Sub-plan | What it does | Detailed plan |
 |---|---|---|
 | **M1a** | Single-process static pipeline: encoding sniff → html5ever → arena DOM → stylo cascade → block/inline layout (parley) → display list → CPU raster (tiny-skia). JS-free conformance (html5lib-tests, WPT `urltestdata.json`), 22 reftest pairs, 6 fuzz targets, golden dumps. | `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md` |
-| **M1b** | Renderer + GPU processes: display list over shm, validation on receipt, frame in a window. | written after M1a |
+| **M1b** | Renderer + GPU processes: display list over shm, validation on receipt, frame in a window. | `docs/superpowers/plans/2026-09-28-m1b-renderer-gpu-processes.md` (ADR-0016, spec `docs/superpowers/specs/2026-09-28-m1b-renderer-gpu-processes-design.md`) |
 | **M1c** | Sandbox: macOS seatbelt, Linux Landlock + seccomp + `no_new_privs`; `--probe` tests. | written after M1b |
 | **M1d** | egui shell: one tab, address bar, `file://` and `http://localhost` via `cl-net`. | written after M1c |
 | **M1e** | Bench corpus, Chrome baseline, closing the M1 exit gates. | written after M1d |
@@ -87,6 +87,7 @@ Scope: `cl-net` full network process (rustls + platform verifier, hyper h1/h2, F
 
 Exit criteria:
 - [ ] Gate S0 met on 3 OSes; `--no-sandbox` does not exist in release.
+- [ ] The `ipc-channel` receive-path gaps (`docs/SECURITY.md` "Known gaps", ADR-0016 Context fact 3) are closed before Gate S0 — upstream fix, patched transport or our own upward transport, chosen in a separate ADR (owner decision 2026-11-03).
 - [ ] Open and render without first-level JS errors: example.com, wikipedia.org (article), news.ycombinator.com, mdn (a doc page), github.com README page — curated corpus v0 (5 sites) with a checklist.
 - [ ] WPT: `fetch/api` ≥ 60%, `xhr` ≥ 60%, `dom/events` ≥ 70%, `html/webappapis/scripting` ≥ 60%.
 - [ ] Test262 qualification set 100% (V8) — harness works.

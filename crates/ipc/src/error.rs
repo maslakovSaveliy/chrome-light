@@ -8,9 +8,12 @@ pub enum IpcError {
     /// OS-level transport failure (pipe closed, mach port dead, ...).
     #[error("ipc transport: {0}")]
     Transport(#[from] std::io::Error),
-    /// `ipc-channel` reported an error (peer disconnected, deserialization of bootstrap).
+    /// `ipc-channel` reported an error (deserialization of bootstrap, OS failure).
     #[error("ipc channel: {0}")]
     Channel(String),
+    /// Every sender of the channel is gone: the peer exited or closed it.
+    #[error("ipc channel closed by peer")]
+    Disconnected,
     /// Our own wire codec failed.
     #[error("ipc codec: {0}")]
     Codec(#[from] crate::codec::CodecError),
@@ -27,6 +30,9 @@ pub enum IpcError {
 
 impl From<ipc_channel::IpcError> for IpcError {
     fn from(e: ipc_channel::IpcError) -> Self {
-        Self::Channel(e.to_string())
+        match e {
+            ipc_channel::IpcError::Disconnected => Self::Disconnected,
+            other => Self::Channel(other.to_string()),
+        }
     }
 }

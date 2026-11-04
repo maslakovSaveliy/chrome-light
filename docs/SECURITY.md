@@ -32,11 +32,24 @@ Internet ──TLS──► network process ──validated IPC──► browser
 |---|---|---|
 | renderer → browser | browser trusts nothing | `cl-ipc::validate` on every message; origin/site from `SiteInstance`, not from the payload |
 | renderer → network | network trusts only a `FetchHandle` from browser | the handle carries site, credentials mode, CSP snapshot |
-| renderer → gpu | gpu validates the display list (bounds, resource ids, sizes) | size limits, ids from the table of allocated ones; in `cl-paint` this is `cl_paint::validate` (item/glyph/clip-depth limits, bounds ± 4096px) with the fuzz target `display_list_validate` (Task 20) |
+| renderer → gpu | gpu validates the display list (bounds, resource ids, sizes) | size limits, ids from the table of allocated ones; in `cl-paint` this is `cl_paint::wire::decode_display_list` (input ≤ 16 MiB checked before decoding; items, glyphs per run and total glyphs counted *during* decoding, so a hostile list fails before its memory is reserved — M1b Task 6) followed by `cl_paint::validate` (item/glyph/clip-depth limits, bounds ± 4096px), with the fuzz targets `display_list_decode` and `display_list_validate` (Task 20) |
 | browser → OS | browser is privileged | minimize code: no parsers, no JS in browser process (until ADR-0008 revisit) |
 | extension → browser | per manifest permissions | `chrome.*` host in browser process, every call checks the grant |
 | sync client → server | server does not read the data | E2E: passphrase-derived key; server stores blobs |
 | updater → binary | only signed packages | ed25519 (our key) + OS code signing; rollback protection by version |
+
+### Known gaps
+
+Boundaries the table above claims but the code does not yet hold. Each one blocks the gate named.
+
+| Gap | Where | Effect | Blocks | Tracking |
+|---|---|---|---|---|
+| The `ipc-channel` receive path panics or allocates on hostile input: Linux short-datagram `set_len` underflow, `pop().unwrap()`, peer-sized `reserve_exact` (servo/ipc-channel#457); Linux non-socket fds mapped with a release `assert!` on `mmap`; Windows `expect`/`unwrap` on peer data, peer-named `PROCESS_DUP_HANDLE`, and handle values taken from the wire (with the vendored leak patch, a forged out-of-band block naming the receiver's own pid makes it adopt and close arbitrary values of its own handle table); channel ends attached to a message whose type does not consume them dropped behind `debug_assert!` (byte messages and the typed `FrameMsg`/`DisplayListMsg`) | every channel from a less trusted process: child → browser (M0 renderer → browser today; renderer/gpu → browser and the frame channel in M1b) and renderer → gpu (the display-list channel; the gpu is the victim) | a compromised child crashes (panic = abort) or corrupts the receiver; leaks a port/fd per message in release | Gate S0 (M2) — before the first untrusted content (owner, 2026-11-03) | ADR-0016 Context fact 3, `docs/DEPENDENCIES.md` (`ipc-channel` row) |
+| Unsealed memfd shm on Linux | gpu → browser frames (M1b) | a sender that shrinks the memfd during the copy causes SIGBUS in the receiver | Gate S0 (M2) | ADR-0016 Context fact 3 |
+| No receive-size cap before allocation (macOS copies a peer-sized out-of-line payload; Linux `reserve_exact`, Windows `reserve` on a peer-chosen size) | every child → browser channel | a child forces large allocations in the browser; allocation failure aborts | Gate S0 (M2) | ADR-0016 Context fact 3 |
+| A forged `MACH_NOTIFY_NO_SENDERS` message id (macOS) | every child → browser channel | a child fakes its own disconnect and leaks the message's ports/memory | Gate S0 (M2) | ADR-0016 Context fact 3 |
+| Sending shm or ports on Windows needs `PROCESS_DUP_HANDLE` on the receiver | gpu → browser frames once Windows children are sandboxed | the sandbox would have to grant a handle-duplication right on the browser (a sandbox-escape primitive) | the Windows sandbox | ADR-0016 Context fact 3 |
+| The bootstrap is not authenticated: the one-shot server name travels in argv and the pid in `Hello` is self-reported | spawning any child, incl. a gpu restart while a renderer is alive (M1b Task 11) | a compromised child that learns another child's bootstrap name could connect first and hand the browser hostile channel ends (an out-of-range index panics) | M1c — the sandbox profiles must make other children's bootstrap names unreachable (macOS mach-lookup scoped to the child's own name; the Linux socket directory) | `crates/ipc/src/bootstrap.rs` |
 
 ## 4. Defense matrix
 

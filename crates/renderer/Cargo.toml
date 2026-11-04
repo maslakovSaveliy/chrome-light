@@ -1,0 +1,23 @@
+[package]
+name = "cl-renderer"
+description = "ChromeLight renderer document pipeline: parse, list subresources, render to a display list at any viewport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cl_renderer"
+
+[dependencies]
+cl-dom.workspace = true
+cl-fonts.workspace = true
+cl-html.workspace = true
+cl-layout.workspace = true
+cl-net.workspace = true
+cl-paint.workspace = true
+cl-style.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

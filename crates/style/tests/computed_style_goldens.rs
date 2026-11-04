@@ -12,7 +12,7 @@
 
 use std::fmt::Write as _;
 
-use cl_net::{NetError, Url};
+use cl_net::Url;
 use cl_style::StyleEngine;
 use cl_style::dump::computed_style_dump;
 
@@ -38,10 +38,8 @@ fn dump(html: &str) -> String {
     let mut engine = StyleEngine::new(VIEWPORT, 1.0).expect("engine");
     engine.add_ua_sheet().expect("ua sheet");
     let warnings = engine
-        .collect_document_sheets(&doc, &|_url: &Url| -> Result<Vec<u8>, NetError> {
-            Err(NetError::UnsupportedScheme(
-                "golden fixtures load no external sheets".into(),
-            ))
+        .collect_document_sheets(&doc, &|_url: &Url| -> Result<Vec<u8>, String> {
+            Err("golden fixtures load no external sheets".to_owned())
         })
         .expect("collect sheets");
     assert!(

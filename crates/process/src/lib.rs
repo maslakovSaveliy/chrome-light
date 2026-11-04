@@ -9,4 +9,4 @@ pub mod spawn;
 
 pub use error::ProcessError;
 pub use sandbox::{Applied, NotImplementedPolicy, Sandbox, SandboxError, SandboxPolicy, Unapplied};
-pub use spawn::{ChildProcess, spawn};
+pub use spawn::{ChildProcess, SpawnOptions, WaitOutcome, spawn, wait_timeout};

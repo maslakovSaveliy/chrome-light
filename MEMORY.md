@@ -2,15 +2,15 @@
 
 Updated at the end of every working session. Short facts, links to documents. Session history older than ~a month moves to `docs/history/`.
 
-## State as of 2026-11-03
+## State as of 2026-11-04
 
-**Phase:** M1a Static Pipeline — **all 23 plan tasks done** on branch `m1a-static-pipeline` (PR #2, draft, https://github.com/maslakovSaveliy/chrome-light/pull/2), final whole-branch review done (three opus reviewers + one fix wave + scoped re-review, 2026-09-16). Plan: `docs/superpowers/plans/2026-09-07-m1a-static-pipeline.md`. Execution log (SDD ledger, only on the owner's machine, in `.gitignore`): `.superpowers/sdd/2026-09-07-m1a-static-pipeline/progress.md` — the main source of state. `main` (PR #3: docs translated to English) was merged into the branch on 2026-11-03.
+**Phase:** M1b Renderer + GPU processes — started 2026-11-03 on branch `m1b-renderer-gpu` (from `main` `a1c3ea2`), draft PR #4. Done: Task 0 (ipc-channel 0.23.1), T1 (ADR-0016, spec), T2 (lifecycle, real Gate S0), T3 (transport), T4 (protocol v2), T6 (display-list wire format), T5 (`cl-renderer`), T7 (browser core), T8 (renderer process), T9 (gpu process); next T10 (headless browser, parity — the first end-to-end), then T11–T14. Plan: `docs/superpowers/plans/2026-09-28-m1b-renderer-gpu-processes.md` (14 tasks, order T1 T2 T3 T4 T6 T5 T7 … T14; Task 0 = `ipc-channel` 0.23.1); ADR-0016 (Accepted), spec `docs/superpowers/specs/2026-09-28-m1b-renderer-gpu-processes-design.md`. Owner decisions 2026-11-03: one PR for the whole of M1b, risk accepted once for the plan, the main agent writes all code, fresh opus reviewers per task. Execution log (gitignored): `.superpowers/sdd/2026-11-03-m1b-renderer-gpu/progress.md`.
 
-**Before the merge of PR #2 (owner decision 2026-09-28):** close two debts — **both closed**. **D2** (super-linear style/inline paths): done and reviewed (`69df088`, `e798a28`, `53460f4`, `4b6a01f`); the `nextest list --filterset` evidence is in the ledger (exactly the 5 tests). **D1** (1 MB smoke page memory): `752e792` made the testshell stage dumps opt-in; median max RSS 73 424 896 bytes (criterion < 300 MB), reviewed and approved (2026-11-03). Debug smoke-test budget: **stays 5 s locally** (owner, 2026-11-03) — 3.3–3.6 s on a quiet machine after D1, 5.3–12 s under external load 5–19; a gate that goes red under load is re-run on a quiet machine, never committed red (CI keeps 15 s via `CL_SMOKE_SLOW=1`). Left: CI 5/5, owner decides merge + tag `m1a` → M1b (drafts in `.superpowers/m1b-drafts/`, gitignored).
+**M1a: closed.** PR #2 merged into `main` (merge `a1c3ea2`, 2026-11-03), tag `m1a` → `a1c3ea2`, CI on `main` 5/5. Both pre-merge debts closed: **D2** (super-linear style/inline paths; `nextest list` evidence in the M1a ledger) and **D1** (1 MB smoke page: median max RSS 73 424 896 bytes, criterion < 300 MB). Debug smoke-test budget **stays 5 s locally** (owner, 2026-11-03) — 3.3–3.6 s on a quiet machine, 5.3–12 s under external load 5–19; a gate that goes red under load is re-run on a quiet machine, never committed red (CI keeps 15 s via `CL_SMOKE_SLOW=1`). M1a ledger: `.superpowers/sdd/2026-09-07-m1a-static-pipeline/progress.md`.
 
 **M1a, tasks:** 1–23 — all done and reviewed (1–15 in sessions 3–4; 16–23 in session 6, then the final branch review).
 
-**In the workspace:** `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `cl-net`, `cl-dom`, `cl-html`, `cl-style`, `cl-fonts`, `cl-layout`, `cl-paint`, `cl-gfx`, `chromelight`. Fuzz targets (6): `ipc_decode` (M0), `url_parse`, `html_parse`, `css_stylesheet`, `display_list_validate`, `display_list_rasterize` (M1a; the last one added by the final review — `cl_gfx::cpu::rasterize` behind the validator).
+**In the workspace:** `cl-platform`, `cl-ipc`, `cl-process`, `cl-testshell`, `cl-net`, `cl-dom`, `cl-html`, `cl-style`, `cl-fonts`, `cl-layout`, `cl-paint`, `cl-gfx`, `cl-renderer` (M1b T5), `chromelight`. Fuzz targets (7): `ipc_decode` (M0; v2 messages since M1b T4), `url_parse`, `html_parse`, `css_stylesheet`, `display_list_validate`, `display_list_rasterize` (M1a; the last one added by the final review — `cl_gfx::cpu::rasterize` behind the validator), `display_list_decode` (M1b T6).
 
 **Conformance (gates are measurements, not targets):** WPT `urltestdata.json` 828/893 (92.7%), gate 0.92 = the ceiling of crate `url` 2.5.8 (Servo records the same failures). html5lib tree-construction 1307/1313 (99.5%), 0 panics, gate 0.90; the 6 failures are html5ever 0.39 gaps (see `docs/SPEC_REGISTRY.md`). **The denominator is the 36 vendored `.dat` files** of the Task 9 list, not the whole upstream corpus: `svg.dat`, `math.dat`, `plain-text-unsafe.dat`, `scriptdata01.dat`, `foreign-fragment.dat` and others are not vendored, so the SVG/MathML branches of tree construction are not covered by conformance at all. Reftests: **22/22 PASS** (`cargo run -p cl-testshell -- reftest`, `crates/testshell/tests/reftests.rs`; the 20 from the brief plus `margin-collapse-siblings-whitespace`, a regression for the bug in debt 9 below, and `max-width-auto-margins`, a regression for B1 of the final review). Golden dumps — 5 stages (dom/style/box-tree/fragments/display-list). Smoke: 1 MB page 1.51 s (release) / ~4.7 s (debug, measured 2026-09-16; 5.9–6.4 s alone on 2026-09-28), peak RSS ~330 MiB before D1 — **above** the "< 300 MB" criterion (`docs/history/perf-m1a-2026-09.md`).
 
@@ -39,6 +39,7 @@ Updated at the end of every working session. Short facts, links to documents. Se
 | 0013 | Product name ChromeLight; Google trademark risk accepted by the owner; disclaimer "not affiliated with Google" | Accepted |
 | 0014 | License of our own code: Apache-2.0 OR MIT; deps checked via cargo-deny | Accepted |
 | 0015 | stylo integration: `cl-style` on the unsafe list (in fact zero `unsafe` blocks), Python 3 at build time, pinned versions, Option B fallback (not activated) | Accepted (3 amendments) |
+| 0016 | M1b: the GPU process is a CPU raster service in M1–M3, the browser presents (softbuffer); shm with copy-then-validate; channel ends only browser → child; a bad renderer message kills the renderer | Accepted |
 
 ## Open questions for the owner
 
@@ -50,13 +51,13 @@ Updated at the end of every working session. Short facts, links to documents. Se
 Deferred to M1+; do not block the public beta:
 
 1. `BootstrapServer::accept_with_timeout` starts one blocked accept-thread per call; the leak is bounded by one `spawn()` (not by the browser process lifetime) — revisit the handshake in M1.
-2. Release sandbox-refusal path takes ~15 s (browser waits for the bootstrap timeout instead of polling `try_wait`); worst case `spawn` = 2×timeout (accept + handshake) — M1 optimization. The CI Gate S0 step currently passes by this timeout, not by the refusal — M1b Task 2 fixes it.
+2. ~~Release sandbox-refusal path takes ~15 s~~ — **closed by M1b Task 2**: `spawn` polls the child while waiting for bootstrap and returns `ExitedDuringBootstrap`; the browser exits 78 in < 1 s, and CI Gate S0 asserts `== 78`, the message, ≤ 3 s, and exit 2 for every debug-only flag in release. Still: worst case `spawn` = 2×timeout (accept + handshake) for a child that connects and then stalls.
 3. `browser_side` masks `Violation` if the reject-ack send fails — log-and-ignore.
-4. `BrowserEndpoint`/`ChildEndpoint` are structurally identical — generic helper as the API grows.
+4. ~~`BrowserEndpoint`/`ChildEndpoint` are structurally identical~~ — **closed by M1b Task 3**: both are generic over `ChildProtocol` (typed downward channel, postcard upward).
 5. Fuzz job in CI without rust-cache.
 6. Test temp-dir boilerplate is duplicated (testshell, chromelight tests) — helper.
 7. Browser-side `recv_timeout` — M0-ONLY poll via `park_timeout(1 ms)`; `park_timeout` is not in disallowed-methods; blocking `BrowserEndpoint::recv` remains pub (used by tests). M1: `IpcReceiverSet`/multiplexed wait, type-level ban on unbounded recv on the browser side.
-8. `browser.rs`: `renderer.wait()` after `Shutdown` — unbounded wait on the process; M1: `try_wait` poll with a deadline + kill (same class as ADR-0005 §4).
+8. ~~`browser.rs`: `renderer.wait()` after `Shutdown` — unbounded wait~~ — **closed by M1b Task 2**: `ChildProcess::wait_timeout` (2 s after `Shutdown`, then kill + reap).
 9. CI: fmt/clippy — in the 3-OS matrix; `deny`/`doc`/scripts — ubuntu only (platform-independent).
 
 ## M1a debts (open as of 2026-11-03)
@@ -73,6 +74,12 @@ Deferred to M1+; do not block the public beta:
 10. **`cl-layout` memory/perf profiling (two known suspects)** — both found by the final review: (a) ~~`span_item` scans spans linearly per cluster~~ — **closed by D2.b (2026-09-28)**: binary search (`partition_point`), a `<p>` of 40 000 `<span>a</span>` — 2 665 → 311 ms (debug), 371 → 27 ms (release), test `many_inline_spans_should_lay_out_in_linear_time`; (b) `LayoutStyle` (with a `Vec<String>` `font_family` inside) is cloned once per fragment, per `Line` and per `Text` — a direct contributor to the peak RSS of debt 2 (D1 suspect 2).
 11. **17+ minor review findings (deferred)** — live in the SDD ledger as `minor (deferred)` lines; triaged by the final review, not listed here by name.
 
+## M1b debts (open as of 2026-11-04)
+
+1. **No cap on `<link>`/`<style>` elements in the renderer** (Task 5 review): `subresource_requests` deduplicates URLs, but the style pass adds one sheet per element, so 100 000 `<link href=big.css>` clone and parse `big.css` 100 000 times per render (linear, same as the M1a testshell). The IPC limit caps the URL list, not the element count. Resource limits for the renderer (element count, sheet bytes) before Gate S0 — with the M1a tree-depth cap (debt 1).
+2. **`<link>` matched on the local name only** (`cl_style::sheets`): an SVG-namespace `<link rel=stylesheet>` counts as a stylesheet and, since Task 5, becomes a subresource request. Pre-existing; compat note, fix with the namespace check when SVG lands.
+3. **The subresource policy is as wide as the document's directory** (Task 7 review): a document opened from `~` or `/` lets a compromised renderer read every regular file under it. Harmless in M1b (no egress, no untrusted content before Gate S0); narrow it (an allow-list by extension or a per-document grant) before M2.
+
 ## M1a discoveries not to rediscover
 
 1. **stylo, storage.** The `Box<[UnsafeCell<Option<ElementData>>]>` from ADR-0015 is impossible: `ElementDataMut`/`ElementDataRef` are created only through `ElementDataWrapper`. Production code in `cl-style` has zero `unsafe` blocks; `allow(unsafe_code)` only in `stylo_dom.rs` (implementing the trait's `unsafe fn`s).
@@ -86,7 +93,7 @@ Deferred to M1+; do not block the public beta:
 9. **stylo build on CI** ~40–70 s cold; the local 18 min were an artifact of parallel agents (`docs/history/build-times.md`).
 10. **Platform cfg:** `tools/check-platform-cfg.sh` forbids `#[cfg(target_os|windows|unix)]` outside `crates/{platform,process,gfx}` — write tests platform-independently (`std::env::temp_dir()`).
 11. **Process:** `git add` explicit paths only, never `-A`; the gate chained with `&&` before a commit, and never commit on a red gate (a nudge to "finish" is not permission). Wall-clock tests are listed by exact name in `.config/nextest.toml` (`threads-required = "num-cpus"`).
-12. **`ipc-channel` 0.23:** deserialising an `IpcSender`/`IpcReceiver` with a bad index PANICS (`src/ipc.rs:1025/1054`), and release is `panic = "abort"` → channel ends travel only browser → child (bootstrap excepted). The sender's shm mapping stays writable → always copy-then-validate.
+12. **`ipc-channel` (vendored 0.23.1 + a Windows handle-leak patch in `third_party/ipc-channel`, see its CHROMELIGHT-PATCH.md; ≥ 0.23.1 since 2026-11-03; GHSA-fj85-w6rj-rxrc in 0.23.0, a repository advisory that `cargo deny` and Dependabot do not see):** the receive path is not robust against a hostile peer — Linux short-datagram `set_len` underflow / `pop().unwrap()` / peer-sized `reserve_exact` (servo/ipc-channel#457), Windows `expect`/`unwrap`, attached channel ends dropped behind `debug_assert!` (panic in debug/`release-dev`, leak in release). Known gap for every child → browser channel, latent until children are sandboxed (M1c); must be closed before **Gate S0 (M2)** by a separate task + ADR (owner decision 2026-11-03; ADR-0016 fact 3, SECURITY.md "Known gaps"). M1b keeps ipc-channel. Deserialising an `IpcSender`/`IpcReceiver` with a bad index PANICS (`src/ipc.rs:1025/1054`), and release is `panic = "abort"` → channel ends travel only browser → child (bootstrap excepted). The sender's shm mapping stays writable → always copy-then-validate.
 13. **`cl_net::load_file`** does not check for a regular file (a FIFO hangs, `/dev/zero` reads 32 MiB) — the M1b subresource policy closes it.
 14. **Upstream debts, no local patches:** html5ever quadratic on deep nesting in release (`close_p_element_in_button_scope`), `selectors` on `.x ~ p`.
 
@@ -102,6 +109,36 @@ Deferred to M1+; do not block the public beta:
 - Re-checked 2026-09-28 (M1b fact-check, `.superpowers/m1b-drafts/m1b-facts-2026-09-28.md`): CHANGED — stylo 0.21, cssparser 0.38, html5ever 0.40.1, Servo 0.6.0, Chrome 154 (2026-09-22). A stylo-family bump is a separate whole-family PR (ADR-0015 §4), not part of M1b.
 
 ## Session log
+
+### 2026-11-04 — session 11b: M1b Task 9
+- `apps/chromelight/src/gpu.rs`: `GpuState` — length check before any copy, stale before copy, one held future list (highest seq), each seq rastered once, decode with in-decode limits, `cl_gfx::cpu::rasterize` at the browser's surface, `BadDisplayList` with the reason (the gpu stays up). `child::serve_gpu` creates the display-list channel and sends its sender up in the bootstrap, merges both receivers into one queue. `tests/gpu_process.rs` drives the real binary as a gpu child.
+
+### 2026-11-04 — session 11: M1b Task 8
+- `apps/chromelight/src/renderer.rs`: `RendererState` (pure) over `cl-renderer` — one `NeedSubresources` per document within the protocol limits, 5 s subresource timeout, every `Resize`/`Redraw` seq answered with a list for the latest viewport or `RenderFailed`, a list kept and resent to a newer gpu generation after a failed send; `child::serve_renderer` is its IO shell (pump → mpsc, 100 ms tick, shm copies, `DisplayListMsg`). The renderer binary now links the whole engine pipeline.
+
+### 2026-11-04 — session 10d: M1b Task 7
+- `apps/chromelight/src/browser/{core,frames,present,subresources,restart}.rs`: the browser's frame, gpu-restart and subresource policy as a pure state machine (`BrowserCore::on_event -> Vec<Action>`), plus `check_frame`, `surface_for`/`blit`, `RestartPolicy` (3 per 60 s), `resolve_subresource`/`load_subresources` (canonical path under the document directory, regular file checked before open, 64 URLs / 64 MiB). Exit codes 3/4/5 in `exit.rs`. Nothing drives it until the IO layer of T10 (`allow(dead_code)` with that reason).
+- Checked for the owner: crates.io lists 56 dependents of ipc-channel (Servo, procspawn, …; no major browser); Servo `main` has no Windows sandbox and multiprocess/sandbox off by default. Design for the Gate S0 transport: children never push handles into the browser — the browser pulls them out of the child (process handle from spawn, `DUPLICATE_CLOSE_SOURCE`), child → child shm relayed by the browser; own upward transport, ipc-channel kept downward (to write up as the ADR).
+
+### 2026-11-04 — session 10c: M1b Task 5
+- New crate `cl-renderer`: `ParsedDocument::parse` → `subresource_requests` (document order, deduplicated) → `attach(SubresourceMap)` → `LoadedDocument::render(viewport, fonts, dumps)`, re-rendering from the stored DOM (`M1-ONLY: full re-style on resize`; `StyleEngine::resolve` takes the document and `into_document` gives it back). `StageDumps`/`Stages` moved there; the testshell runs on it (public API and warning text unchanged, 22/22, goldens unchanged).
+- `cl_style::stylesheet_requests` lists the `<link>` sheets without loading them, through the same `resolve_link` helper as `collect_document_sheets`; `collect_document_sheets`' `load` now returns `Result<Vec<u8>, String>` (the browser's refusal text becomes the warning cause).
+
+### 2026-11-04 — session 10b: M1b Task 6
+- `cl_paint::wire` (feature `serde`): `encode_display_list` / `decode_display_list(bytes, max)`; the decoder is a `DeserializeSeed` chain that counts items, glyphs per run and total glyphs while decoding and fails with `LimitsExceeded` before reserving memory for the excess (a postcard `PopClip` is 1 byte on the wire, ≈ 56 in memory). Owner-set limits (2026-11-04): `MAX_DISPLAY_LIST_BYTES` 16 MiB, `MAX_TOTAL_GLYPHS` 2^20 (also in `validate()`, new `DisplayListError::TooManyTotalGlyphs`), `MAX_ITEMS` 1 000 000 → 2^18. Smoke page measured: 49 749 bytes, 133 items, 7 182 glyphs. 44-page + smoke round-trip in `crates/testshell/tests/wire_roundtrip.rs`; fuzz `display_list_decode` in the CI loop.
+- Commits from now on carry no AI attribution (owner); the plan's Global Constraints line that asked for the trailer is fixed; the 17 pushed M1b commits keep theirs (not rewritten).
+
+### 2026-11-03 — session 10: M1b Tasks 2–4, the Windows handle leak
+- T2 (`066b806`, `cfea21d`): `spawn` polls the child during bootstrap (`ExitedDuringBootstrap`), `try_wait`/`wait_timeout`, per-role traces, `exit.rs`; CI Gate S0 asserts exit 78, the message, and exit 2 for every debug-only flag in release.
+- T3 (`379ae58`, `0c1f1ee`, `4291f44`): `ChildProtocol`, generic bootstrap with a typed downward channel, `DisplayListMsg`/`FrameMsg` (shm + ints only), `copy_bounded`, reader pumps; 3-process `xproc` tests. The handle-count leak test found a Windows leak in ipc-channel (+1 handle per received shm): owner chose a vendored one-line patch (`third_party/ipc-channel`, CHROMELIGHT-PATCH.md) and an upstream report — servo/ipc-channel#461 and PR #462, both filed with the owner's OK; owner: nothing more there (no comments, no updates).
+- The ipc-channel receive path is not robust against a hostile peer (ADR-0016 fact 3, SECURITY Known gaps): owner decision — close before Gate S0 (M2) in a separate task + ADR; M1b stays on ipc-channel.
+- T4 (`83dedf4`, `a5e5455`, `aa92f3c`): protocol v2 (`ToRenderer`/`FromRenderer`, `ToGpu`/`FromGpu`, `Viewport`), every upward limit validated at the receiver, `BadMessageReason` with stable u16 codes on the wire, `decode_bounded`, the upward pump hands out only validated messages; fuzz `ipc_decode` covers v2.
+- Each task: an opus review and a scoped re-review, one fix round each. Details: the ledger `.superpowers/sdd/2026-11-03-m1b-renderer-gpu/progress.md`.
+
+### 2026-11-03 — session 9: M1a merged, M1b started
+- Owner: merge PR #2 + tag `m1a` (done, CI on `main` 5/5). Branch `m1b-renderer-gpu` from `main`.
+- Found `GHSA-fj85-w6rj-rxrc` (ipc-channel 0.23.0, macOS receive path, high) — Task 0 bumps to 0.23.1; RustSec has no entry, so `cargo deny` did not flag it.
+- Task 1: ADR-0016 and the M1b spec translated to English and accepted (bad-message policy with an evidence table, channel ownership, subresource policy, OS-layer facts re-checked on 0.23.1); the plan moved into `docs/` with the main-agent execution rules.
 
 ### 2026-11-03 — session 8: `main` merged into the M1a branch
 - Merged `origin/main` (13ddeab, PR #3 — docs translated to English) into `m1a-static-pipeline`. 13 conflicts, all in docs. CLAUDE.md/AGENTS.md: the branch version (built on top of main's in `c3b1fd2`). Every other conflicted file: main's English text plus the branch's M1a changes, translated (ARCHITECTURE, CODING_STANDARDS, DEPENDENCIES, DEVELOPMENT, FEATURE_MATRIX, PLAN, SECURITY, TESTING, ADR-0002, ADR index, this file). No code changed.

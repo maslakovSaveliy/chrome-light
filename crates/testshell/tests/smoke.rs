@@ -13,20 +13,10 @@ use std::time::{Duration, Instant};
 use cl_net::Url;
 use cl_testshell::{RenderOptions, render_bytes, render_file};
 
-/// One flat repeating unit — never nested — so N copies make a *wide* document, not a deep
-/// one; a deep one would test the DOM/box/fragment tree's iterative-walk guarantees (already
-/// covered by their own crates' fuzz targets) rather than this crate's raw throughput.
-const UNIT: &str = "<div><p>lorem ipsum dolor sit amet consectetur adipiscing elit</p></div>\n";
+#[path = "common/mod.rs"]
+mod common;
 
-/// Builds a `<!doctype html><body>` document of repeated [`UNIT`]s at least `1_000_000` bytes
-/// long.
-fn generate_1mb_html() -> String {
-    let mut html = String::from("<!doctype html><body>\n");
-    while html.len() < 1_000_000 {
-        html.push_str(UNIT);
-    }
-    html
-}
+use common::generate_1mb_html;
 
 /// A unique path under the system temp dir (flat, per the task brief — not nested under a
 /// per-test subdirectory), following `crates/net/src/file.rs`'s pid-plus-tag convention.
@@ -71,7 +61,7 @@ fn render_should_finish_a_1mb_document_within_the_time_budget() {
     let elapsed = start.elapsed();
     let _ = std::fs::remove_file(&path);
 
-    // `UNIT` repeated ~14000 times to cross 1MB is several hundred thousand CSS pixels tall
+    // `common::UNIT` repeated ~14000 times to cross 1MB is several hundred thousand CSS pixels tall
     // (each `<p>` contributes its own line plus the UA sheet's `1em` top/bottom margin) — far
     // past the viewport. `cl_paint::build` culls any item that does not intersect the
     // viewport widened by `cl_paint::OFFSCREEN_MARGIN_PX` (controller ruling, Task 22 review:

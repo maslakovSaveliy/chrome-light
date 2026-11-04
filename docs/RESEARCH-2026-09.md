@@ -94,3 +94,25 @@ egui — fastest to a window, immediate mode, wgpu backend; iced — Elm style; 
 - Supporters of Chromium-Based Browsers: https://blog.chromium.org/2025/01/announcing-supporters-of-chromium-based.html
 - Crate versions: crates.io API, 2026-09-07.
 - Normative specs and architectural references: see `docs/SPEC_REGISTRY.md` and skill `browser-engine-research/references/*` (33 + 45 + 23 + 37 sources).
+
+## Re-check 2026-09-28
+
+Re-verified for M1b (fact-check: `.superpowers/m1b-drafts/m1b-facts-2026-09-28.md`, crates.io API and the sources named there).
+
+| Fact | 2026-09-07 | 2026-09-28 | Status |
+|---|---|---|---|
+| stylo | 0.20.0 | 0.21.0 (2026-09-08) | CHANGED |
+| cssparser | 0.37.0 | 0.38.0 (2026-09-07) | CHANGED |
+| html5ever | 0.39.0 | 0.40.1 (2026-09-14) | CHANGED |
+| accesskit / rustls / quinn | 0.25.0 / 0.23.43 / 0.11.11 | 0.25.1 / 0.23.45 / 0.11.12 | CHANGED (patch) |
+| winit | 0.30.13 | 0.30.13 stable (0.31 beta) | UNCHANGED |
+| softbuffer / egui | — | 0.4.8 / 0.36.2, compatible with wgpu 30.0.1 and winit 0.30.13 through `raw-window-handle` 0.6 | NEW |
+| accesskit_winit | — | requires accesskit ^0.24 — conflicts with accesskit 0.25 (an M1d problem) | NEW |
+| taffy, parley, vello, v8, hyper, rusqlite, ipc-channel, prost, tokio, url, image, h3 | as in §5 | identical | UNCHANGED |
+| Servo | 0.5.0 | 0.6.0 (2026-09-25) | CHANGED |
+| Chrome | 153 (2026-09-08) | 154 (2026-09-22) — the two-week cadence is now observed | CHANGED |
+| Ladybird, Blitz, MV2 purge, Chrome Sync closure, App-Bound Encryption | as above | no change | UNCHANGED |
+
+The stylo-family bump (stylo + cssparser + selectors + html5ever/markup5ever) is a separate whole-family PR (ADR-0015 §4), not part of M1b.
+
+2026-11-03: `ipc-channel` 0.23.1 (2026-10-24) fixes GHSA-fj85-w6rj-rxrc (high, macOS receive path) — the workspace requires ≥ 0.23.1 (not in RustSec at the time of writing, so `cargo deny` does not flag 0.23.0); stylo is at 0.23.0; winit 0.31 is still in beta (0.31.0-beta.4), 0.30.13 stays the stable line; softbuffer 0.4.8 unchanged.

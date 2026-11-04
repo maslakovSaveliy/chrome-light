@@ -13,7 +13,7 @@ use cl_fonts::FontDb;
 use cl_layout::{Au, Glyph, GlyphRun, Point, Rect, Rgba8, Sides, Size};
 use cl_paint::{
     DisplayItem, DisplayList, DisplayListError, MAX_CLIP_DEPTH, MAX_GLYPHS_PER_RUN, MAX_ITEMS,
-    build, validate,
+    MAX_TOTAL_GLYPHS, build, validate,
 };
 
 /// The bounds every test validates against, matching the fuzz target's own viewport.
@@ -377,4 +377,44 @@ fn built_lists_should_validate() {
         let dl = build(&tree, styled.document());
         assert_eq!(validate(&dl, dl.bounds), Ok(()));
     }
+}
+
+#[test]
+fn too_many_glyphs_in_total_should_fail_at_the_run_that_crosses_the_limit() {
+    // Every run is within MAX_GLYPHS_PER_RUN; the run that takes the total past
+    // MAX_TOTAL_GLYPHS is the one reported.
+    let run = || DisplayItem::Text {
+        run: text_run(
+            Point::default(),
+            vec![
+                Glyph {
+                    id: 1,
+                    x: Au::ZERO,
+                    y: Au::ZERO,
+                    advance: Au::from_px(1.0),
+                };
+                MAX_GLYPHS_PER_RUN
+            ],
+        ),
+    };
+    let runs = MAX_TOTAL_GLYPHS / MAX_GLYPHS_PER_RUN;
+    let mut items: Vec<DisplayItem> = (0..runs).map(|_| run()).collect();
+    let at_limit = DisplayList {
+        items: items.clone(),
+        bounds: bounds(),
+    };
+    assert_eq!(validate(&at_limit, bounds()), Ok(()));
+
+    items.push(run());
+    let over = DisplayList {
+        items,
+        bounds: bounds(),
+    };
+    assert_eq!(
+        validate(&over, bounds()),
+        Err(DisplayListError::TooManyTotalGlyphs {
+            index: runs,
+            max: MAX_TOTAL_GLYPHS,
+        })
+    );
 }

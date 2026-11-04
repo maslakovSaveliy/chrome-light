@@ -13,7 +13,10 @@ use std::path::Path;
 use tiny_skia::Pixmap;
 
 pub use dump::{Stage, select};
-pub use pipeline::{RenderOptions, RenderOutput, StageDumps, Stages, render_bytes, render_file};
+pub use pipeline::{
+    RenderOptions, RenderOutput, StageDumps, Stages, display_list_for_bytes, render_bytes,
+    render_file,
+};
 
 /// Testshell failure.
 #[derive(Debug, thiserror::Error)]
@@ -50,8 +53,9 @@ pub enum ShellError {
     /// I/O (reading a PNG to compare, or resolving/canonicalising an input path).
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    /// `cl-net` failed to resolve a URL or load a resource (the document itself, or a
-    /// `<link rel=stylesheet>` — see [`pipeline::render_bytes`]).
+    /// `cl-net` failed to resolve a URL or load the document itself. A
+    /// `<link rel=stylesheet>` that fails to load is a warning, not this error — see
+    /// [`pipeline::render_bytes`].
     #[error("net: {0}")]
     Net(#[from] cl_net::NetError),
     /// `cl-html` failed to parse the document. Uninhabited today — see
@@ -75,6 +79,23 @@ pub enum ShellError {
     /// `cl-gfx` failed to rasterise the display list.
     #[error("gfx: {0}")]
     Gfx(#[from] cl_gfx::GfxError),
+    /// A [`cl_renderer::RenderError`] with no variant of its own here (a lost document —
+    /// unreachable for the testshell, which renders each document once).
+    #[error("render: {0}")]
+    Render(cl_renderer::RenderError),
+}
+
+impl From<cl_renderer::RenderError> for ShellError {
+    /// Keeps the testshell's error variants as they were before the pipeline moved into
+    /// `cl-renderer` (M1b Task 5).
+    fn from(error: cl_renderer::RenderError) -> Self {
+        match error {
+            cl_renderer::RenderError::Html(e) => ShellError::Html(e),
+            cl_renderer::RenderError::Style(e) => ShellError::Style(e),
+            cl_renderer::RenderError::Layout(e) => ShellError::Layout(e),
+            other @ cl_renderer::RenderError::DocumentLost => ShellError::Render(other),
+        }
+    }
 }
 
 /// Result of comparing two PNGs.
