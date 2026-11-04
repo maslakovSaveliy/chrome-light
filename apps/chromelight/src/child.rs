@@ -106,7 +106,7 @@ fn serve_renderer(
         events.send(event).is_ok()
     })?;
     let mut state = RendererState::new(MAX_DISPLAY_LIST_BYTES)?;
-    let mut display_lists: Option<IpcSender<DisplayListMsg>> = None;
+    let mut display_lists: Option<(u64, IpcSender<DisplayListMsg>)> = None;
 
     loop {
         let input = match inbox.recv_timeout(RENDERER_TICK) {
@@ -129,7 +129,7 @@ fn serve_renderer(
                         };
                         let sent = display_lists
                             .as_ref()
-                            .is_some_and(|tx| tx.send(msg).is_ok());
+                            .is_some_and(|(_, tx)| tx.send(msg).is_ok());
                         if !sent {
                             queue.push_back(RendererInput::DisplayListSendFailed);
                         }
@@ -146,10 +146,11 @@ fn serve_renderer(
 }
 
 /// A downward message as [`RendererInput`]: shared memory copied out (the browser keeps a
-/// writable mapping), the display-list sender kept here, the state told its generation.
+/// writable mapping), the display-list sender kept here — only a newer generation's replaces
+/// the one held, exactly as [`RendererState`] counts them — and the state told its generation.
 fn renderer_input(
     msg: ToRenderer,
-    display_lists: &mut Option<IpcSender<DisplayListMsg>>,
+    display_lists: &mut Option<(u64, IpcSender<DisplayListMsg>)>,
 ) -> anyhow::Result<RendererInput> {
     Ok(match msg {
         ToRenderer::HelloAck { .. } => anyhow::bail!("duplicate HelloAck"),
@@ -176,7 +177,12 @@ fn renderer_input(
         ToRenderer::Resize { viewport, seq } => RendererInput::Resize { viewport, seq },
         ToRenderer::Redraw { seq } => RendererInput::Redraw { seq },
         ToRenderer::DisplayListSender { generation, sender } => {
-            *display_lists = Some(sender);
+            if display_lists
+                .as_ref()
+                .is_none_or(|(held, _)| generation > *held)
+            {
+                *display_lists = Some((generation, sender));
+            }
             RendererInput::DisplayListSender { generation }
         }
         ToRenderer::Ping(n) => RendererInput::Ping(n),
@@ -203,6 +209,36 @@ fn serve_gpu(
             }
             ToGpu::HelloAck { .. } => anyhow::bail!("duplicate HelloAck"),
             other => anyhow::bail!("gpu cannot serve {other:?} yet"),
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    reason = "a failed setup step should abort the test, loudly"
+)]
+mod tests {
+    use cl_ipc::proto::renderer::ToRenderer;
+    use cl_ipc::transfer::DisplayListMsg;
+    use ipc_channel::ipc::{IpcSender, channel};
+
+    use super::renderer_input;
+
+    fn sender() -> IpcSender<DisplayListMsg> {
+        channel::<DisplayListMsg>().expect("channel").0
+    }
+
+    #[test]
+    fn only_a_newer_generation_replaces_the_display_list_sender() {
+        let mut held = None;
+        for (generation, expect_held) in [(2, 2), (1, 2), (2, 2), (3, 3)] {
+            let msg = ToRenderer::DisplayListSender {
+                generation,
+                sender: sender(),
+            };
+            let _ = renderer_input(msg, &mut held).expect("input");
+            assert_eq!(held.as_ref().map(|(g, _)| *g), Some(expect_held));
         }
     }
 }

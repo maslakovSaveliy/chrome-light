@@ -110,7 +110,7 @@ Deferred to M1+; do not block the public beta:
 
 ## Session log
 
-### 2026-11-05 — session 11: M1b Task 8
+### 2026-11-04 — session 11: M1b Task 8
 - `apps/chromelight/src/renderer.rs`: `RendererState` (pure) over `cl-renderer` — one `NeedSubresources` per document within the protocol limits, 5 s subresource timeout, every `Resize`/`Redraw` seq answered with a list for the latest viewport or `RenderFailed`, a list kept and resent to a newer gpu generation after a failed send; `child::serve_renderer` is its IO shell (pump → mpsc, 100 ms tick, shm copies, `DisplayListMsg`). The renderer binary now links the whole engine pipeline.
 
 ### 2026-11-04 — session 10d: M1b Task 7

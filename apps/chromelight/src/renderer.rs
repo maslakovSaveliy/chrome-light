@@ -15,6 +15,9 @@
 //! * Warnings are cut to [`MAX_WARNINGS`] × [`MAX_WARNING_BYTES`].
 //! * A failed display-list send means the gpu is gone: the list is kept and sent again when a
 //!   `DisplayListSender` of a newer generation arrives (the browser also asks for a `Redraw`).
+//!   Every newer generation gets the last list, even one a dying gpu accepted.
+//! * `DocumentReady` goes out when the list is made; the list itself may still be waiting for
+//!   a sender (none yet, or the current one failed).
 
 use std::time::{Duration, Instant};
 
@@ -190,6 +193,12 @@ impl RendererState {
                 if generation > self.newest_generation {
                     self.newest_generation = generation;
                     self.sender = Some(generation);
+                    // A new gpu has never seen the list: the last send may have succeeded into
+                    // a gpu the browser was already killing. At worst the new gpu gets one
+                    // stale list, which it reports as Stale.
+                    if let Some(last) = self.last.as_mut() {
+                        last.delivered = false;
+                    }
                     self.deliver(&mut out);
                 }
             }
@@ -201,11 +210,13 @@ impl RendererState {
             }
             RendererInput::Ping(n) => out.push(RendererOutput::Up(FromRenderer::Pong(n))),
             RendererInput::Shutdown => out.push(RendererOutput::Exit),
-            RendererInput::Tick => {
-                if matches!(&self.doc, Doc::Awaiting { deadline, .. } if now >= *deadline) {
-                    self.attach_unanswered(&mut out);
-                }
-            }
+            // The deadline is checked below, after every input.
+            RendererInput::Tick => {}
+        }
+        // On every input, not only on ticks: steady browser traffic must not keep the
+        // renderer waiting past the deadline.
+        if matches!(&self.doc, Doc::Awaiting { deadline, .. } if now >= *deadline) {
+            self.attach_unanswered(&mut out);
         }
         out
     }
@@ -434,7 +445,7 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use cl_ipc::proto::renderer::{FromRenderer, RenderFailureKind, SubresourceRefusal};
-    use cl_ipc::proto::{MAX_SUBRESOURCES_PER_DOCUMENT, MAX_WARNING_BYTES, Viewport};
+    use cl_ipc::proto::{MAX_SUBRESOURCES_PER_DOCUMENT, MAX_WARNING_BYTES, MAX_WARNINGS, Viewport};
     use cl_paint::wire::{MAX_DISPLAY_LIST_BYTES, decode_display_list, encode_display_list};
 
     use super::{RendererInput, RendererOutput, RendererState, SUBRESOURCE_TIMEOUT};
@@ -720,11 +731,47 @@ mod tests {
         let resent = s.on(RendererInput::DisplayListSender { generation: 2 }, t0);
         assert_eq!(shape(&resent), [('L', 1)]);
         assert_eq!(list_bytes(&resent), list_bytes(&first));
-        // Delivered now: another sender does not resend it.
+        // A generation that is not newer is not a new gpu.
         assert_eq!(
-            s.on(RendererInput::DisplayListSender { generation: 3 }, t0),
+            s.on(RendererInput::DisplayListSender { generation: 2 }, t0),
             []
         );
+    }
+
+    #[test]
+    fn a_list_sent_to_a_dying_gpu_reaches_the_next_one() {
+        // The browser kills gpu 1 and asks for a Redraw before gpu 2's sender arrives: the
+        // send to gpu 1 can still succeed and the list die with it. A new generation has never
+        // seen the list, so it gets it.
+        let (mut s, t0) = connected();
+        let _ = s.on(load(PLAIN, vp(800, 600), 1), t0);
+        assert_eq!(
+            shape(&s.on(RendererInput::Redraw { seq: 2 }, t0)),
+            [('L', 2), ('R', 2)]
+        );
+        assert_eq!(
+            shape(&s.on(RendererInput::DisplayListSender { generation: 2 }, t0)),
+            [('L', 2)]
+        );
+    }
+
+    #[test]
+    fn the_subresource_deadline_holds_under_steady_traffic() {
+        // Pings arriving faster than the shell's tick must not keep the renderer waiting.
+        let (mut s, t0) = connected();
+        let _ = s.on(load(LINKED, vp(800, 600), 1), t0);
+        let out = s.on(RendererInput::Ping(9), t0 + SUBRESOURCE_TIMEOUT);
+        assert_eq!(shape(&out), [('P', 9), ('L', 1), ('R', 1)]);
+    }
+
+    #[test]
+    fn warnings_are_cut_at_a_char_boundary_and_in_number() {
+        // 'é' is two bytes: one straddles byte MAX_WARNING_BYTES.
+        let straddling = format!("{}é", "x".repeat(MAX_WARNING_BYTES - 1));
+        let cut = super::bounded_warnings(&[straddling]);
+        assert_eq!(cut, ["x".repeat(MAX_WARNING_BYTES - 1)]);
+        let many = vec!["w".to_owned(); MAX_WARNINGS + 5];
+        assert_eq!(super::bounded_warnings(&many).len(), MAX_WARNINGS);
     }
 
     #[test]
@@ -755,7 +802,10 @@ mod tests {
         else {
             unreachable!("expected one NeedSubresources, got {out:?}")
         };
-        assert_eq!(urls.len(), MAX_SUBRESOURCES_PER_DOCUMENT);
+        let expected: Vec<String> = (0..MAX_SUBRESOURCES_PER_DOCUMENT)
+            .map(|i| format!("file:///doc/s{i}.css"))
+            .collect();
+        assert_eq!(urls, &expected, "the first 64, in document order");
         let answers = vec![Ok(Vec::new()); MAX_SUBRESOURCES_PER_DOCUMENT];
         let out = s.on(replies(answers), t0);
         let warnings = warnings(&out);

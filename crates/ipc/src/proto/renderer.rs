@@ -115,7 +115,8 @@ pub enum FromRenderer {
         /// At most [`MAX_SUBRESOURCES_PER_DOCUMENT`], each at most [`MAX_URL_BYTES`].
         urls: Vec<String>,
     },
-    /// The display list for `seq` was sent to the gpu.
+    /// The display list for `seq` was made: sent to the gpu, or held for the next display-list
+    /// sender if there is none (yet, or since a send failed). Carries the document's warnings.
     DocumentReady {
         /// The frame number.
         seq: u64,
