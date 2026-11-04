@@ -8,6 +8,7 @@ mod args;
 mod browser;
 mod child;
 mod exit;
+mod gpu;
 mod renderer;
 mod telemetry;
 

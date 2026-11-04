@@ -1,12 +1,12 @@
 //! Main for every non-browser role: apply the sandbox, connect, handshake, then serve the role's
-//! protocol. The renderer runs [`RendererState`] (M1b Task 8); until the gpu process loop lands
-//! (Task 9) the gpu only answers pings and exits on Shutdown.
+//! protocol: the renderer runs [`RendererState`] (M1b Task 8), the gpu [`GpuState`] (Task 9).
 
 use std::collections::VecDeque;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use cl_ipc::{
+    bad_message::BadMessageReason,
     bootstrap::connect_child,
     handshake,
     proto::{
@@ -14,17 +14,18 @@ use cl_ipc::{
         renderer::{RendererProtocol, ToRenderer},
     },
     pump::{self, PumpEvent},
-    transfer::DisplayListMsg,
+    transfer::{DisplayListMsg, FrameMsg},
 };
 use cl_paint::wire::MAX_DISPLAY_LIST_BYTES;
 use cl_platform::ProcessType;
 use cl_process::{Sandbox, SandboxPolicy};
-use ipc_channel::ipc::{IpcSender, IpcSharedMemory};
+use ipc_channel::ipc::{self, IpcSender, IpcSharedMemory};
 use tracing::{error, info};
 
 use crate::{
     args::Args,
     exit::EXIT_SANDBOX_UNAVAILABLE,
+    gpu::{GpuInput, GpuOutput, GpuState},
     renderer::{RendererInput, RendererOutput, RendererState},
 };
 
@@ -195,22 +196,112 @@ fn serve_gpu(
     name: &str,
     sandbox: &Sandbox<cl_process::Applied>,
 ) -> anyhow::Result<()> {
-    // M1b Task 9 creates the display-list channel here and sends its sender up.
-    let ep = connect_child::<GpuProtocol>(name, None)?;
+    // The gpu receives shm on the display-list channel, so it creates it (ADR-0016 §5) and
+    // sends its sender up in the bootstrap — the one upward transfer of a channel end.
+    let (lists_tx, lists_rx) = ipc::channel::<DisplayListMsg>()?;
+    let ep = connect_child::<GpuProtocol>(name, Some(lists_tx))?;
     handshake::child_side(&ep, ProcessType::Gpu, std::process::id())?;
     info!(role = %ProcessType::Gpu, policy = sandbox.policy_name(), "child ready");
+
+    let (up, down) = ep.split();
+    let (events, inbox) = mpsc::channel();
+    let down_events = events.clone();
+    pump::spawn_reader("gpu-down", down, move |event| {
+        down_events.send(GpuEvent::Down(event)).is_ok()
+    })?;
+    pump::spawn_reader("gpu-lists", lists_rx, move |event| {
+        events.send(GpuEvent::List(event)).is_ok()
+    })?;
+    let mut state = GpuState::new()?;
+    let mut frames: Option<IpcSender<FrameMsg>> = None;
+
     loop {
-        match ep.recv()? {
-            ToGpu::Ping(n) => ep.send(&FromGpu::Pong(n))?,
-            ToGpu::Shutdown => {
-                if honour_shutdown(args) {
-                    return Ok(());
-                }
+        let input = match inbox.recv() {
+            Ok(GpuEvent::Down(PumpEvent::Message(msg))) => gpu_input(msg, &mut frames)?,
+            // The browser is gone: nothing left to serve.
+            Ok(GpuEvent::Down(PumpEvent::Closed)) | Err(mpsc::RecvError) => return Ok(()),
+            Ok(GpuEvent::Down(PumpEvent::Failed(e))) => {
+                anyhow::bail!("downward channel failed: {e}")
             }
-            ToGpu::HelloAck { .. } => anyhow::bail!("duplicate HelloAck"),
-            other => anyhow::bail!("gpu cannot serve {other:?} yet"),
+            Ok(GpuEvent::Down(PumpEvent::Error(bad))) => {
+                anyhow::bail!("undecodable browser message: {bad:?}")
+            }
+            Ok(GpuEvent::List(PumpEvent::Message(msg))) => GpuInput::DisplayList(msg),
+            // No renderer holds the display-list sender any more: keep serving the browser.
+            Ok(GpuEvent::List(PumpEvent::Closed)) => continue,
+            // A message on the renderer's channel that is not a DisplayListMsg: the renderer's
+            // fault, reported; the browser kills it.
+            Ok(GpuEvent::List(PumpEvent::Error(bad))) => {
+                info!(?bad, "undecodable display-list message");
+                up.send(&FromGpu::BadDisplayList {
+                    seq: 0,
+                    reason: BadMessageReason::DisplayListUndecodable,
+                })?;
+                continue;
+            }
+            // A transport-level failure leaves the channel unusable (cl_ipc::pump): report it
+            // against the renderer, then exit so the browser starts a fresh gpu.
+            Ok(GpuEvent::List(PumpEvent::Failed(e))) => {
+                let _ = up.send(&FromGpu::BadDisplayList {
+                    seq: 0,
+                    reason: BadMessageReason::DisplayListUndecodable,
+                });
+                anyhow::bail!("display-list channel failed: {e}");
+            }
+        };
+        for output in state.on(input) {
+            match output {
+                GpuOutput::Up(msg) => up.send(&msg)?,
+                GpuOutput::Frame {
+                    seq,
+                    width,
+                    height,
+                    pixels,
+                } => {
+                    let msg = FrameMsg {
+                        seq,
+                        width,
+                        height,
+                        pixels: IpcSharedMemory::from_bytes(&pixels),
+                    };
+                    // `GpuState` makes frames only once it was told of a sender.
+                    let Some(tx) = frames.as_ref() else {
+                        continue;
+                    };
+                    // A browser that stopped reading frames is gone.
+                    if tx.send(msg).is_err() {
+                        return Ok(());
+                    }
+                }
+                GpuOutput::Exit => {
+                    if honour_shutdown(args) {
+                        return Ok(());
+                    }
+                }
+                GpuOutput::Fail(reason) => anyhow::bail!(reason),
+            }
         }
     }
+}
+
+/// The two channels the gpu reads, merged into one queue.
+enum GpuEvent {
+    Down(PumpEvent<ToGpu>),
+    List(PumpEvent<DisplayListMsg>),
+}
+
+/// A downward message as [`GpuInput`]: the frame sender kept here, the state told it exists.
+fn gpu_input(msg: ToGpu, frames: &mut Option<IpcSender<FrameMsg>>) -> anyhow::Result<GpuInput> {
+    Ok(match msg {
+        ToGpu::HelloAck { .. } => anyhow::bail!("duplicate HelloAck"),
+        ToGpu::SetSurface { viewport, seq } => GpuInput::SetSurface { viewport, seq },
+        ToGpu::FrameSender { sender } => {
+            *frames = Some(sender);
+            GpuInput::FrameSender
+        }
+        ToGpu::Ping(n) => GpuInput::Ping(n),
+        ToGpu::Shutdown => GpuInput::Shutdown,
+    })
 }
 
 #[cfg(test)]

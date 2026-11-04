@@ -16,6 +16,7 @@ clap.workspace = true
 cl-ipc.workspace = true
 cl-net.workspace = true
 cl-fonts.workspace = true
+cl-gfx.workspace = true
 cl-paint = { workspace = true, features = ["serde"] }
 cl-renderer.workspace = true
 # IpcSender / IpcSharedMemory for the display-list channel (already the transport of cl-ipc).
@@ -29,6 +30,8 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 # `Rect` for asserting a display list's bounds in the renderer tests.
 cl-layout.workspace = true
+# Builds a FontKey the bundled database does not know (gpu tests): it is a u32 on the wire.
+postcard.workspace = true
 
 [lints]
 workspace = true

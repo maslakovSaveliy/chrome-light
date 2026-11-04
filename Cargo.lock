@@ -201,6 +201,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "cl-fonts",
+ "cl-gfx",
  "cl-ipc",
  "cl-layout",
  "cl-net",
@@ -210,6 +211,7 @@ dependencies = [
  "cl-renderer",
  "clap",
  "ipc-channel",
+ "postcard",
  "tracing",
  "tracing-chrome",
  "tracing-subscriber",
