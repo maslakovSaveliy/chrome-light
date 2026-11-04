@@ -29,6 +29,9 @@ use crate::{
     renderer::{RendererInput, RendererOutput, RendererState},
 };
 
+/// Display lists (and browser messages) the gpu queues before its readers block.
+const GPU_QUEUE: usize = 4;
+
 /// How often the renderer loop wakes without a message (the subresource deadline is checked
 /// on these ticks).
 const RENDERER_TICK: Duration = Duration::from_millis(100);
@@ -204,7 +207,11 @@ fn serve_gpu(
     info!(role = %ProcessType::Gpu, policy = sandbox.policy_name(), "child ready");
 
     let (up, down) = ep.split();
-    let (events, inbox) = mpsc::channel();
+    // Bounded: a renderer flooding display lists must not grow this queue (each entry holds a
+    // shared-memory mapping until the state checks it). A full queue blocks the list reader,
+    // so the backpressure reaches the renderer's sends; the browser's few messages wait at
+    // most this many lists.
+    let (events, inbox) = mpsc::sync_channel(GPU_QUEUE);
     let down_events = events.clone();
     pump::spawn_reader("gpu-down", down, move |event| {
         down_events.send(GpuEvent::Down(event)).is_ok()

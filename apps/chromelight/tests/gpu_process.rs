@@ -85,6 +85,17 @@ fn a_gpu_child_rasters_a_list_and_reports_a_bad_one() {
             reason: BadMessageReason::DisplayListUndecodable
         }
     );
+    // A message of another type on the display-list channel: reported with seq 0 (no seq to
+    // trust), the gpu stays up.
+    let foreign = lists.to_opaque().to::<u64>();
+    foreign.send(42).expect("send a foreign message");
+    assert_eq!(
+        gpu.endpoint.recv_timeout(WAIT, &ctx).expect("a report"),
+        FromGpu::BadDisplayList {
+            seq: 0,
+            reason: BadMessageReason::DisplayListUndecodable
+        }
+    );
     gpu.endpoint.send(ToGpu::Ping(9)).expect("send ping");
     assert_eq!(
         gpu.endpoint.recv_timeout(WAIT, &ctx).expect("a pong"),

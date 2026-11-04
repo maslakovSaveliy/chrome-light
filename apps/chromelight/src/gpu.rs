@@ -7,7 +7,7 @@
 //!    of it is copied.
 //! 2. The browser sets the surface and its `seq`: a list for an older `seq`, or for one
 //!    already rastered, is `Stale`; a list for a newer one is held in a single slot (the
-//!    highest `seq` wins) until its `SetSurface` arrives.
+//!    latest to arrive wins, ADR-0016 §7) until its `SetSurface` arrives.
 //! 3. The list is copied out of shared memory, decoded with the in-decode limits of
 //!    [`cl_paint::wire`], validated and rasterised by [`cl_gfx::cpu::rasterize`] at the
 //!    browser's size — never the size the list claims.
@@ -127,11 +127,9 @@ impl GpuState {
             return;
         }
         let surface_seq = self.surface.map(|(_, s)| s);
-        let held_seq = self.pending.as_ref().map(|(s, _)| *s);
         let behind_surface = surface_seq.is_some_and(|s| seq < s);
         let future = surface_seq.is_none_or(|s| seq > s);
-        let below_held = future && held_seq.is_some_and(|held| held >= seq);
-        if seq <= self.last_rastered || behind_surface || below_held {
+        if seq <= self.last_rastered || behind_surface {
             out.push(stale(seq));
             return;
         }
@@ -140,7 +138,8 @@ impl GpuState {
             return;
         };
         if future {
-            // One slot: this list is newer than any held one.
+            // One slot, latest wins (ADR-0016 §7) — by arrival, not by seq, so no seq a
+            // renderer sends can pin the slot.
             if let Some((held, _)) = self.pending.replace((seq, bytes)) {
                 out.push(stale(held));
             }
@@ -182,7 +181,8 @@ impl GpuState {
             seq,
             width,
             height,
-            pixels: pixmap.data().to_vec(),
+            // The pixmap's own buffer, not a copy of it (a frame can be 1 GiB at the limit).
+            pixels: pixmap.take(),
         };
         if self.frame_sender {
             out.push(frame);
@@ -340,16 +340,23 @@ mod tests {
     }
 
     #[test]
-    fn a_future_list_is_held_and_the_highest_seq_wins() {
+    fn a_future_list_is_held_and_the_latest_wins() {
+        // ADR-0016 §7: one future list, latest wins — whatever its seq, so a renderer that
+        // once sends seq u64::MAX cannot pin the slot.
         let mut g = gpu();
         let _ = g.on(surface(40, 30, 1));
-        assert_eq!(g.on(list(3, &square((40.0, 30.0)))), []);
-        // A lower future seq does not displace the held one.
-        assert_eq!(g.on(list(2, &square((40.0, 30.0)))), [stale(2)]);
-        // A higher one does.
+        assert_eq!(g.on(list(u64::MAX, &square((40.0, 30.0)))), []);
+        assert_eq!(g.on(list(3, &square((40.0, 30.0)))), [stale(u64::MAX)]);
         assert_eq!(g.on(list(4, &square((40.0, 30.0)))), [stale(3)]);
-        assert_eq!(g.on(surface(40, 30, 3)), []);
         assert_eq!(frames(&g.on(surface(40, 30, 4))), [(4, 40, 30)]);
+    }
+
+    #[test]
+    fn a_held_list_above_the_new_surface_seq_stays_held() {
+        let mut g = gpu();
+        assert_eq!(g.on(list(3, &square((40.0, 30.0)))), []);
+        assert_eq!(g.on(surface(40, 30, 2)), []);
+        assert_eq!(frames(&g.on(surface(40, 30, 3))), [(3, 40, 30)]);
     }
 
     #[test]
@@ -379,6 +386,18 @@ mod tests {
     fn oversize_shm_rejected_before_copy() {
         let mut g = gpu();
         let _ = g.on(surface(40, 30, 1));
+        let huge = vec![0_u8; MAX_DISPLAY_LIST_BYTES + 1];
+        assert_eq!(
+            g.on(raw(1, &huge)),
+            [bad(1, BadMessageReason::DisplayListTooLarge)]
+        );
+    }
+
+    #[test]
+    fn the_length_is_checked_before_the_seq() {
+        // An oversized list is the renderer's fault whatever its seq: TooLarge, not Stale.
+        let mut g = gpu();
+        let _ = g.on(surface(40, 30, 5));
         let huge = vec![0_u8; MAX_DISPLAY_LIST_BYTES + 1];
         assert_eq!(
             g.on(raw(1, &huge)),
